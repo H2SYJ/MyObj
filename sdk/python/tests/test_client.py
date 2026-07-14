@@ -105,6 +105,41 @@ class MyObjClientTest(unittest.TestCase):
         self.assertEqual(session.calls[0]["json"]["files_md5"].__len__(), 2)
         self.assertEqual(session.calls[1]["data"]["chunk_index"], "0")
         self.assertEqual(session.calls[2]["data"]["chunk_index"], "1")
+        self.assertEqual(session.calls[1]["timeout"], 30.0)
+        self.assertIsNone(session.calls[2]["timeout"])
+
+    def test_resume_upload_disables_timeout_for_last_pending_chunk(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            file_path = Path(temp_dir) / "断点续传.txt"
+            file_path.write_text("abcdef", encoding="utf-8")
+            _, chunk_md5s = MyObjClient._hash_file(file_path, 2)
+
+            session = FakeSession(
+                [
+                    json_response(
+                        {
+                            "code": 201,
+                            "message": "继续上传",
+                            "data": {
+                                "precheck_id": "precheck-1",
+                                "md5": [chunk_md5s[2]],
+                            },
+                        }
+                    ),
+                    json_response({"code": 200, "message": "分片成功", "data": None}),
+                    json_response(
+                        {"code": 200, "message": "上传成功", "data": {"id": "file-1"}}
+                    ),
+                ]
+            )
+            client = self.make_client(session)
+
+            client.upload_file(file_path, "root", chunk_size=2)
+
+        self.assertEqual(session.calls[1]["data"]["chunk_index"], "0")
+        self.assertEqual(session.calls[2]["data"]["chunk_index"], "1")
+        self.assertEqual(session.calls[1]["timeout"], 30.0)
+        self.assertIsNone(session.calls[2]["timeout"])
 
     def test_ensure_directory_creates_missing_folder(self) -> None:
         session = FakeSession(

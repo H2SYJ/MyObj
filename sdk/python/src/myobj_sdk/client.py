@@ -461,6 +461,9 @@ class MyObjClient:
             raise MyObjHTTPError("预检成功，但响应中没有 precheck_id")
 
         total_chunks = len(chunk_md5s)
+        pending_chunks = sum(
+            chunk_md5 not in uploaded_md5s for chunk_md5 in chunk_md5s
+        )
         uploaded_bytes = 0
         last_response = precheck
         thumbnail_sent = False
@@ -501,7 +504,11 @@ class MyObjClient:
                         "/file/upload",
                         data=form,
                         files=files,
+                        # 补齐最后一个待上传分片后，服务端会同步合并并处理文件，
+                        # 该过程耗时取决于文件大小，因此不设置读取超时。
+                        timeout=None if pending_chunks == 1 else self.timeout,
                     )
+                    pending_chunks -= 1
 
                 uploaded_bytes += len(chunk)
                 if progress:
