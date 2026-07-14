@@ -23,6 +23,8 @@ import (
 	_ "image/jpeg"
 )
 
+const thumbnailJPEGQuality = 90
+
 // GenerateImageThumbnail 生成图片缩略图
 //
 // 参数:
@@ -143,8 +145,7 @@ func encodeImageByExtension(outputPath string, img image.Image) error {
 
 // 各格式编码函数
 func encodeJPEG(file *os.File, img image.Image) error {
-	// 注意: 实际使用时需要导入 "image/jpeg"
-	return jpeg.Encode(file, img, &jpeg.Options{Quality: 90})
+	return jpeg.Encode(file, img, &jpeg.Options{Quality: thumbnailJPEGQuality})
 }
 
 func encodePNG(file *os.File, img image.Image) error {

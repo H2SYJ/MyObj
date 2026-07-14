@@ -2,6 +2,7 @@ package impl
 
 import (
 	"context"
+	"myobj/src/pkg/custom_type"
 	"myobj/src/pkg/models"
 	"myobj/src/pkg/repository"
 
@@ -53,6 +54,29 @@ func (r *fileInfoRepository) GetByChunkSignature(ctx context.Context, signature 
 
 func (r *fileInfoRepository) Update(ctx context.Context, file *models.FileInfo) error {
 	return r.db.WithContext(ctx).Save(file).Error
+}
+
+// ListUnencryptedVideosAfter 按文件ID游标查询未加密视频，避免更新缩略图后分页漏项。
+func (r *fileInfoRepository) ListUnencryptedVideosAfter(ctx context.Context, afterID string, limit int) ([]*models.FileInfo, error) {
+	var files []*models.FileInfo
+	query := r.db.WithContext(ctx).
+		Where("mime LIKE ? AND is_enc = ?", "video/%", false)
+	if afterID != "" {
+		query = query.Where("id > ?", afterID)
+	}
+	err := query.Order("id ASC").Limit(limit).Find(&files).Error
+	return files, err
+}
+
+// UpdateThumbnailPath 只更新缩略图路径和更新时间，避免覆盖并发修改的其他字段。
+func (r *fileInfoRepository) UpdateThumbnailPath(ctx context.Context, id, thumbnailPath string) error {
+	return r.db.WithContext(ctx).
+		Model(&models.FileInfo{}).
+		Where("id = ?", id).
+		Updates(map[string]interface{}{
+			"thumbnail_img": thumbnailPath,
+			"updated_at":    custom_type.Now(),
+		}).Error
 }
 
 func (r *fileInfoRepository) Delete(ctx context.Context, id string) error {

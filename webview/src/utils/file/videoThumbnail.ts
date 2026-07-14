@@ -1,6 +1,7 @@
 const VIDEO_FILE_EXTENSION = /\.(mp4|webm|ogg|mov|m4v|avi|mkv)$/i
 const THUMBNAIL_MAX_DIMENSION = 300
-const THUMBNAIL_JPEG_QUALITY = 0.85
+// Canvas 使用 0-1 的质量范围，对应图片缩略图 JPEG Quality 90。
+const THUMBNAIL_JPEG_QUALITY = 0.9
 const VIDEO_LOAD_TIMEOUT = 15000
 
 export const isVideoFile = (file: File): boolean => {

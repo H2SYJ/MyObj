@@ -454,6 +454,33 @@ go build -buildvcs=false -o myobj-cli.exe .\src\cmd\cli
 ./myobj-cli system stats
 ```
 
+#### 历史视频缩略图补齐
+
+该命令只处理未加密视频，已有有效缩略图会自动跳过。宿主机执行前需要安装
+FFmpeg，并确保 `ffmpeg` 和 `ffprobe` 已加入 `PATH`。
+
+```bash
+# 只扫描和统计，不生成文件或更新数据库
+./myobj-cli thumbnail backfill --dry-run
+
+# 单线程执行补齐（默认）
+./myobj-cli thumbnail backfill
+
+# 最多支持 8 个视频并行处理
+./myobj-cli thumbnail backfill --concurrency 2
+```
+
+Docker 镜像已包含 CLI、FFmpeg 和 ffprobe，可以直接在服务容器中执行：
+
+```bash
+docker compose exec myobj ./myobj-cli thumbnail backfill --dry-run
+docker compose exec myobj ./myobj-cli thumbnail backfill
+```
+
+分片视频会先合并到 `obj_temp` 临时目录，请确保可用空间至少能够容纳当前处理的
+分片视频；任务结束或失败后会自动清理合并文件。实际补齐要求配置项
+`file.thumbnail=true`，重复执行不会覆盖已有有效缩略图。
+
 #### CLI 特色功能
 
 - ✨ **美观的界面** - 使用 [pterm](https://github.com/pterm/pterm) 提供彩色输出和表格展示

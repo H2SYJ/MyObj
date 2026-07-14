@@ -23,6 +23,10 @@ type FileInfoRepository interface {
 	GetByHash(ctx context.Context, hash string) (*models.FileInfo, error)
 	GetByChunkSignature(ctx context.Context, signature string, fileSize int64) (*models.FileInfo, error)
 	Update(ctx context.Context, file *models.FileInfo) error
+	// ListUnencryptedVideosAfter 按文件ID游标查询未加密视频。
+	ListUnencryptedVideosAfter(ctx context.Context, afterID string, limit int) ([]*models.FileInfo, error)
+	// UpdateThumbnailPath 只更新文件的缩略图路径和更新时间。
+	UpdateThumbnailPath(ctx context.Context, id, thumbnailPath string) error
 	Delete(ctx context.Context, id string) error
 	List(ctx context.Context, offset, limit int) ([]*models.FileInfo, error)
 	Count(ctx context.Context) (int64, error)

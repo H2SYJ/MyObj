@@ -10,6 +10,8 @@ import (
 	"myobj/src/pkg/cache"
 	"myobj/src/pkg/logger"
 	"myobj/src/pkg/models"
+	"myobj/src/pkg/preview"
+	"myobj/src/pkg/task"
 	"myobj/src/pkg/util"
 	"os"
 	"strings"
@@ -36,6 +38,28 @@ func main() {
 		Usage:   "MyObj 系统管理工具",
 		Before:  initialize,
 		Commands: []*cli.Command{
+			{
+				Name:  "thumbnail",
+				Usage: "缩略图管理",
+				Subcommands: []*cli.Command{
+					{
+						Name:   "backfill",
+						Usage:  "为历史未加密视频补齐缩略图",
+						Action: backfillVideoThumbnailsAction,
+						Flags: []cli.Flag{
+							&cli.BoolFlag{
+								Name:  "dry-run",
+								Usage: "只扫描和统计，不生成文件或更新数据库",
+							},
+							&cli.IntFlag{
+								Name:  "concurrency",
+								Usage: "同时处理的视频数量（1-8）",
+								Value: 1,
+							},
+						},
+					},
+				},
+			},
 			{
 				Name:    "user",
 				Aliases: []string{"u"},
@@ -125,6 +149,66 @@ func main() {
 		pterm.Error.Println(err)
 		os.Exit(1)
 	}
+}
+
+// backfillVideoThumbnailsAction 为历史未加密视频补齐缩略图。
+func backfillVideoThumbnailsAction(c *cli.Context) error {
+	concurrency := c.Int("concurrency")
+	if concurrency < 1 || concurrency > 8 {
+		return fmt.Errorf("concurrency 必须在 1 到 8 之间")
+	}
+	dryRun := c.Bool("dry-run")
+	if !dryRun && !config.CONFIG.File.Thumbnail {
+		return fmt.Errorf("配置 file.thumbnail=false，无法执行缩略图补齐")
+	}
+
+	var generator preview.VideoThumbnailGenerator
+	if !dryRun {
+		ffmpegGenerator, err := preview.NewFFmpegVideoThumbnailGenerator()
+		if err != nil {
+			return err
+		}
+		generator = ffmpegGenerator
+	}
+
+	backfiller := task.NewVideoThumbnailBackfiller(db.FileInfo(), db.FileChunk(), generator)
+	message := "正在扫描历史视频..."
+	if !dryRun {
+		message = "正在补齐历史视频缩略图..."
+	}
+	spinner, _ := pterm.DefaultSpinner.Start(message)
+	stats, err := backfiller.Run(c.Context, task.VideoThumbnailBackfillOptions{
+		DryRun:      dryRun,
+		Concurrency: concurrency,
+		TempDir:     config.CONFIG.File.TempDir,
+	})
+	spinner.Stop()
+	if err != nil {
+		return err
+	}
+
+	pterm.DefaultSection.Println("视频缩略图补齐结果")
+	pterm.DefaultTable.WithHasHeader().WithData(pterm.TableData{
+		{"扫描", "生成", "复用", "待生成", "跳过", "失败"},
+		{
+			fmt.Sprintf("%d", stats.Scanned),
+			fmt.Sprintf("%d", stats.Generated),
+			fmt.Sprintf("%d", stats.Reused),
+			fmt.Sprintf("%d", stats.Pending),
+			fmt.Sprintf("%d", stats.Skipped),
+			fmt.Sprintf("%d", stats.Failed),
+		},
+	}).Render()
+
+	if dryRun {
+		pterm.Info.Println("dry-run 已完成，未生成文件或更新数据库")
+	} else {
+		pterm.Success.Println("历史视频缩略图补齐完成")
+	}
+	if stats.Failed > 0 {
+		return fmt.Errorf("有 %d 个视频处理失败，请查看日志后重新执行", stats.Failed)
+	}
+	return nil
 }
 
 // initialize 初始化系统组件

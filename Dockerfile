@@ -16,8 +16,9 @@ RUN go mod download
 # 复制源代码
 COPY . .
 
-# 构建应用
+# 构建应用和管理 CLI
 RUN CGO_ENABLED=1 GOOS=linux go build -a -installsuffix cgo -o myobj ./src/cmd/server/main.go
+RUN CGO_ENABLED=1 GOOS=linux go build -a -installsuffix cgo -o myobj-cli ./src/cmd/cli/main.go
 
 # 运行阶段
 FROM alpine:latest
@@ -28,9 +29,10 @@ WORKDIR /app
 # 安装运行时依赖
 # CGO 构建会动态链接 GCC/C++ 运行库，最终镜像必须包含对应的共享库。
 RUN apk add --no-cache \
-    ca-certificates \
-    tzdata \
-    libgcc \
+	ca-certificates \
+	tzdata \
+	ffmpeg \
+	libgcc \
     libstdc++
 
 # 设置时区为上海
@@ -45,6 +47,7 @@ RUN mkdir -p /app/logs \
 
 # 从构建阶段复制可执行文件
 COPY --from=builder /build/myobj .
+COPY --from=builder /build/myobj-cli .
 
 # 复制前端静态文件
 COPY --from=builder /build/webview/dist ./webview/dist
