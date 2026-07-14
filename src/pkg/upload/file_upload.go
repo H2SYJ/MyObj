@@ -28,6 +28,8 @@ import (
 type FileUploadData struct {
 	// 临时文件路径
 	TempFilePath string `json:"temp_file_path"`
+	// 临时视频缩略图路径
+	TempThumbnailPath string `json:"temp_thumbnail_path"`
 	// 文件名
 	FileName string `json:"file_name"`
 	// 文件大小
@@ -113,6 +115,7 @@ func ProcessUploadedFile(data *FileUploadData, repoFactory *impl.RepositoryFacto
 
 	// 3.2 异步生成缩略图（如果需要）
 	var needThumbnail bool
+	var providedThumbnailPath string
 	if config.CONFIG.File.Thumbnail && isImage(mimeType) {
 		needThumbnail = true
 		wg.Add(1)
@@ -123,6 +126,13 @@ func ProcessUploadedFile(data *FileUploadData, repoFactory *impl.RepositoryFacto
 			err := preview.GenerateImageThumbnail(mergedFilePath, tempThumbnail, 300)
 			resultChan <- asyncResult{thumbnailPath: tempThumbnail, err: err}
 		}()
+	} else if config.CONFIG.File.Thumbnail && isVideo(mimeType) && !data.IsEnc && data.TempThumbnailPath != "" {
+		if _, err := os.Stat(data.TempThumbnailPath); err != nil {
+			logger.LOG.Warn("视频缩略图不存在，继续处理原视频", "path", data.TempThumbnailPath, "error", err)
+		} else {
+			needThumbnail = true
+			providedThumbnailPath = data.TempThumbnailPath
+		}
 	}
 
 	// 等待异步任务完成
@@ -143,6 +153,9 @@ func ProcessUploadedFile(data *FileUploadData, repoFactory *impl.RepositoryFacto
 		if result.thumbnailPath != "" {
 			tempThumbnailPath = result.thumbnailPath
 		}
+	}
+	if tempThumbnailPath == "" {
+		tempThumbnailPath = providedThumbnailPath
 	}
 
 	// 4. 选择存储磁盘（按剩余空间最大原则）
@@ -420,6 +433,11 @@ func detectMimeType(filePath string) (string, error) {
 // isImage 判断MIME类型是否为图片
 func isImage(mimeType string) bool {
 	return strings.HasPrefix(mimeType, "image/")
+}
+
+// isVideo 判断MIME类型是否为视频
+func isVideo(mimeType string) bool {
+	return strings.HasPrefix(mimeType, "video/")
 }
 
 // selectBestDisk 选择剩余空间最大的磁盘

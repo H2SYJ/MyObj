@@ -9,6 +9,7 @@ import (
 	"myobj/src/pkg/cache"
 	"myobj/src/pkg/logger"
 	"myobj/src/pkg/models"
+	"net/http"
 	"path/filepath"
 
 	"github.com/gin-gonic/gin"
@@ -445,6 +446,7 @@ func (f *FileHandler) SetFilePublic(c *gin.Context) {
 // @Security BearerAuth
 // @Param precheck_id formData string true "预检ID"
 // @Param file formData file true "文件数据"
+// @Param thumbnail formData file false "视频缩略图（JPEG，最大1MB，宽高不超过1000像素）"
 // @Param chunk_index formData int false "分片索引"
 // @Param total_chunks formData int false "总分片数"
 // @Param chunk_md5 formData string false "分片MD5"
@@ -469,9 +471,19 @@ func (f *FileHandler) UploadFile(c *gin.Context) {
 	}
 	defer file.Close()
 
-	// 3. 调用 Service 处理上传
+	// 3. 获取可选的视频缩略图
+	thumbnail, thumbnailHeader, thumbnailErr := c.Request.FormFile("thumbnail")
+	if thumbnailErr == nil {
+		defer thumbnail.Close()
+	} else if !errors.Is(thumbnailErr, http.ErrMissingFile) {
+		logger.LOG.Warn("读取视频缩略图失败，继续上传原文件", "error", thumbnailErr)
+		thumbnail = nil
+		thumbnailHeader = nil
+	}
+
+	// 4. 调用 Service 处理上传
 	userID := c.GetString("userID")
-	result, err := f.service.UploadFile(req, file, header, userID)
+	result, err := f.service.UploadFile(req, file, header, thumbnail, thumbnailHeader, userID)
 	if err != nil {
 		c.JSON(200, models.NewJsonResponse(500, "上传失败", err.Error()))
 		return

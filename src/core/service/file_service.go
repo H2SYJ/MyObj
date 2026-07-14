@@ -1065,7 +1065,7 @@ func (f *FileService) DeleteFiles(req *request.DeleteFileRequest, userID string)
 }
 
 // UploadFile 文件上传处理
-func (f *FileService) UploadFile(req *request.FileUploadRequest, file multipart.File, header *multipart.FileHeader, userID string) (*models.JsonResponse, error) {
+func (f *FileService) UploadFile(req *request.FileUploadRequest, file multipart.File, header *multipart.FileHeader, thumbnail multipart.File, thumbnailHeader *multipart.FileHeader, userID string) (*models.JsonResponse, error) {
 	ctx := context.Background()
 
 	// 1. 从缓存获取预检信息
@@ -1163,20 +1163,34 @@ func (f *FileService) UploadFile(req *request.FileUploadRequest, file multipart.
 	}
 	logger.LOG.Info("创建临时目录", "path", tempBaseDir, "diskPath", bestDisk.DataPath)
 
+	// 缩略图是可选数据，校验或保存失败不能阻断主文件上传。
+	tempThumbnailPath := upload.TempVideoThumbnailPath(tempBaseDir)
+	if thumbnail != nil && thumbnailHeader != nil && !req.IsEnc {
+		savedPath, saveErr := upload.SaveVideoThumbnail(thumbnail, thumbnailHeader.Size, tempBaseDir)
+		if saveErr != nil {
+			logger.LOG.Warn("保存视频缩略图失败，继续上传原文件", "error", saveErr, "fileName", precheckReq.FileName)
+		} else {
+			tempThumbnailPath = savedPath
+		}
+	}
+	if _, statErr := os.Stat(tempThumbnailPath); statErr != nil {
+		tempThumbnailPath = ""
+	}
+
 	// 3. 判断是否为分片上传
 	isChunkUpload := req.ChunkIndex != nil && req.TotalChunks != nil
 
 	if isChunkUpload {
 		// 分片上传处理
-		return f.handleChunkUpload(ctx, req, file, header, userID, tempBaseDir, &precheckResp)
+		return f.handleChunkUpload(ctx, req, file, header, userID, tempBaseDir, tempThumbnailPath, &precheckResp)
 	} else {
 		// 小文件直传处理
-		return f.handleSingleUpload(ctx, req, file, header, userID, tempBaseDir, &precheckResp)
+		return f.handleSingleUpload(ctx, req, file, header, userID, tempBaseDir, tempThumbnailPath, &precheckResp)
 	}
 }
 
 // handleChunkUpload 处理分片上传
-func (f *FileService) handleChunkUpload(ctx context.Context, req *request.FileUploadRequest, file multipart.File, header *multipart.FileHeader, userID, tempBaseDir string, precheckResp *response.FilePrecheckResponse) (*models.JsonResponse, error) {
+func (f *FileService) handleChunkUpload(ctx context.Context, req *request.FileUploadRequest, file multipart.File, header *multipart.FileHeader, userID, tempBaseDir, tempThumbnailPath string, precheckResp *response.FilePrecheckResponse) (*models.JsonResponse, error) {
 	chunkIndex := *req.ChunkIndex
 	totalChunks := *req.TotalChunks
 
@@ -1310,19 +1324,20 @@ func (f *FileService) handleChunkUpload(ctx context.Context, req *request.FileUp
 	}
 
 	uploadData := &upload.FileUploadData{
-		TempFilePath:    filepath.Join(tempBaseDir, "0.chunk.data"), // 第一个分片路径作为基础
-		FileName:        header.Filename,
-		FileSize:        precheckReq.FileSize,
-		ChunkSignature:  precheckReq.ChunkSignature,
-		FirstChunkHash:  firstChunkHash,
-		SecondChunkHash: secondChunkHash,
-		ThirdChunkHash:  thirdChunkHash,
-		IsEnc:           req.IsEnc,
-		IsChunk:         true,
-		ChunkCount:      totalChunks,
-		VirtualPath:     precheckReq.PathID,
-		UserID:          userID,
-		FilePassword:    req.FilePassword, // 添加加密密码
+		TempFilePath:      filepath.Join(tempBaseDir, "0.chunk.data"), // 第一个分片路径作为基础
+		TempThumbnailPath: tempThumbnailPath,
+		FileName:          header.Filename,
+		FileSize:          precheckReq.FileSize,
+		ChunkSignature:    precheckReq.ChunkSignature,
+		FirstChunkHash:    firstChunkHash,
+		SecondChunkHash:   secondChunkHash,
+		ThirdChunkHash:    thirdChunkHash,
+		IsEnc:             req.IsEnc,
+		IsChunk:           true,
+		ChunkCount:        totalChunks,
+		VirtualPath:       precheckReq.PathID,
+		UserID:            userID,
+		FilePassword:      req.FilePassword, // 添加加密密码
 	}
 
 	fileID, err := upload.ProcessUploadedFile(uploadData, f.factory)
@@ -1353,7 +1368,7 @@ func (f *FileService) handleChunkUpload(ctx context.Context, req *request.FileUp
 }
 
 // handleSingleUpload 处理小文件直传
-func (f *FileService) handleSingleUpload(ctx context.Context, req *request.FileUploadRequest, file multipart.File, header *multipart.FileHeader, userID, tempBaseDir string, precheckResp *response.FilePrecheckResponse) (*models.JsonResponse, error) {
+func (f *FileService) handleSingleUpload(ctx context.Context, req *request.FileUploadRequest, file multipart.File, header *multipart.FileHeader, userID, tempBaseDir, tempThumbnailPath string, precheckResp *response.FilePrecheckResponse) (*models.JsonResponse, error) {
 	// 1. 保存临时文件
 	tempFilePath := filepath.Join(tempBaseDir, "upload.tmp")
 	tempFile, err := os.Create(tempFilePath)
@@ -1395,15 +1410,16 @@ func (f *FileService) handleSingleUpload(ctx context.Context, req *request.FileU
 
 	// 3. 构造上传数据
 	uploadData := &upload.FileUploadData{
-		TempFilePath:   tempFilePath,
-		FileName:       header.Filename,
-		FileSize:       header.Size,
-		ChunkSignature: precheckReq.ChunkSignature,
-		IsEnc:          req.IsEnc,
-		IsChunk:        false,
-		VirtualPath:    precheckReq.PathID,
-		UserID:         userID,
-		FilePassword:   req.FilePassword, // 添加加密密码
+		TempFilePath:      tempFilePath,
+		TempThumbnailPath: tempThumbnailPath,
+		FileName:          header.Filename,
+		FileSize:          header.Size,
+		ChunkSignature:    precheckReq.ChunkSignature,
+		IsEnc:             req.IsEnc,
+		IsChunk:           false,
+		VirtualPath:       precheckReq.PathID,
+		UserID:            userID,
+		FilePassword:      req.FilePassword, // 添加加密密码
 	}
 
 	// 设置hash信息（如果有）

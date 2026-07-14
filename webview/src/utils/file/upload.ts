@@ -4,6 +4,7 @@ import { UPLOAD_CONFIG } from '@/config/api'
 import type { ApiResponse } from '@/types'
 import logger from '@/plugins/logger'
 import { uploadTaskManager } from './uploadTaskManager'
+import { generateVideoThumbnail, isVideoFile } from './videoThumbnail'
 import i18n from '@/i18n'
 
 export interface UploadConfig {
@@ -331,7 +332,9 @@ export const uploadSingleFile = async (params: UploadParams): Promise<ApiRespons
         uploadTaskManager.updateTask(taskId, {
           precheckProgress,
           progress: precheckProgress,
-          currentStep: i18n.global.t('upload.calculatingFileHash', { progress: md5Progress }) || `正在计算文件哈希值... ${md5Progress}%`
+          currentStep:
+            i18n.global.t('upload.calculatingFileHash', { progress: md5Progress }) ||
+            `正在计算文件哈希值... ${md5Progress}%`
         })
       }
       // 保持原有的进度回调（用于外部显示）
@@ -356,7 +359,9 @@ export const uploadSingleFile = async (params: UploadParams): Promise<ApiRespons
         uploadTaskManager.updateTask(taskId, {
           precheckProgress: chunkProgress,
           progress: chunkProgress,
-          currentStep: i18n.global.t('upload.calculatingChunksHash', { current: i + 1, total: totalChunks }) || `正在计算分片哈希值... ${i + 1}/${totalChunks}`
+          currentStep:
+            i18n.global.t('upload.calculatingChunksHash', { current: i + 1, total: totalChunks }) ||
+            `正在计算分片哈希值... ${i + 1}/${totalChunks}`
         })
       }
     }
@@ -409,7 +414,7 @@ export const uploadSingleFile = async (params: UploadParams): Promise<ApiRespons
         precheckResponse.message ||
         i18n.global.t('upload.precheckFailed', { fileName: file.name, errorMsg: '' }) ||
         '预检失败'
-      
+
       // 预检失败，更新任务状态
       // 注意：即使预检失败，后端可能也返回了 precheck_id，需要保存以避免重复创建任务
       let precheckIdFromResponse: string | undefined
@@ -421,12 +426,13 @@ export const uploadSingleFile = async (params: UploadParams): Promise<ApiRespons
           precheckIdFromResponse = data.precheck_id || data.id
         }
       }
-      
+
       if (taskId) {
         const updateData: any = {
           status: 'failed',
           error: errorMsg,
-          currentStep: i18n.global.t('upload.precheckFailed', { fileName: file.name, errorMsg }) || `预检失败: ${errorMsg}`
+          currentStep:
+            i18n.global.t('upload.precheckFailed', { fileName: file.name, errorMsg }) || `预检失败: ${errorMsg}`
         }
         // 如果后端返回了 precheck_id，保存它以避免同步时重复创建任务
         if (precheckIdFromResponse) {
@@ -434,7 +440,7 @@ export const uploadSingleFile = async (params: UploadParams): Promise<ApiRespons
         }
         uploadTaskManager.updateTask(taskId, updateData)
       }
-      
+
       ElMessage.error(
         i18n.global.t('upload.precheckFailed', { fileName: file.name, errorMsg }) ||
           `文件 ${file.name} 预检失败: ${errorMsg}`
@@ -516,6 +522,18 @@ export const uploadSingleFile = async (params: UploadParams): Promise<ApiRespons
       })
     }
 
+    let videoThumbnail: File | undefined
+    if (!is_enc && isVideoFile(file)) {
+      try {
+        videoThumbnail = await generateVideoThumbnail(file)
+      } catch (error) {
+        logger.warn('生成视频缩略图失败，继续上传原视频', {
+          fileName: file.name,
+          error
+        })
+      }
+    }
+
     if (file.size <= uploadConfig.chunkSize) {
       if (taskId) {
         uploadTaskManager.updateProgress(taskId, 10, Math.floor(file.size * 0.1))
@@ -524,6 +542,7 @@ export const uploadSingleFile = async (params: UploadParams): Promise<ApiRespons
       const uploadParams = {
         precheck_id: precheckId,
         file: file,
+        thumbnail: videoThumbnail,
         chunk_index: 0,
         total_chunks: 1,
         chunk_md5: fileMD5,
@@ -554,6 +573,10 @@ export const uploadSingleFile = async (params: UploadParams): Promise<ApiRespons
         throw new Error(uploadResponse.message)
       }
     } else {
+      const thumbnailChunkIndex = videoThumbnail
+        ? (Array.from({ length: totalChunks }, (_, index) => index).find(index => !uploadedChunks.has(index)) ?? 0)
+        : -1
+
       for (let i = 0; i < totalChunks; i++) {
         const start = i * uploadConfig.chunkSize
         const end = Math.min(start + uploadConfig.chunkSize, file.size)
@@ -610,6 +633,7 @@ export const uploadSingleFile = async (params: UploadParams): Promise<ApiRespons
                 {
                   precheck_id: precheckId,
                   file: chunkFile,
+                  thumbnail: chunkIndex === thumbnailChunkIndex ? videoThumbnail : undefined,
                   chunk_index: chunkIndex,
                   total_chunks: totalChunks,
                   chunk_md5: chunkMD5,
@@ -639,7 +663,10 @@ export const uploadSingleFile = async (params: UploadParams): Promise<ApiRespons
                     // 确保 totalUploaded 不超过 file.size
                     const clampedTotalUploaded = Math.min(Math.max(0, totalUploaded), file.size)
                     // 确保进度在 10-100 范围内（预检占 10%，实际上传占 90%）
-                    const totalProgress = Math.max(10, Math.min(100, Math.floor(10 + (clampedTotalUploaded / file.size) * 90)))
+                    const totalProgress = Math.max(
+                      10,
+                      Math.min(100, Math.floor(10 + (clampedTotalUploaded / file.size) * 90))
+                    )
                     uploadTaskManager.updateProgress(taskId, totalProgress, clampedTotalUploaded)
                   }
                 },

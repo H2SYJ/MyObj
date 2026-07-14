@@ -196,6 +196,7 @@ export const getUploadProgress = (precheckId: string) => {
 export interface uploadParams {
   precheck_id: string
   file: File
+  thumbnail?: File
   chunk_index: number
   total_chunks: number
   chunk_md5: string
@@ -219,6 +220,9 @@ export const uploadFile = (
   formData.append('is_enc', data.is_enc.toString())
   if (data.is_enc && data.file_password) {
     formData.append('file_password', data.file_password)
+  }
+  if (data.thumbnail) {
+    formData.append('thumbnail', data.thumbnail)
   }
   return upload(API_ENDPOINTS.FILE.UPLOAD, data.file, formData, onProgress, options)
 }

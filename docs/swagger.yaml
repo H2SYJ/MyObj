@@ -899,6 +899,10 @@ paths:
         name: file
         required: true
         type: file
+      - description: 视频缩略图（JPEG，最大1MB，宽高不超过1000像素）
+        in: formData
+        name: thumbnail
+        type: file
       - description: 分片索引
         in: formData
         name: chunk_index

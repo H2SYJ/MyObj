@@ -889,6 +889,12 @@ const docTemplate = `{
                         "required": true
                     },
                     {
+                        "type": "file",
+                        "description": "视频缩略图（JPEG，最大1MB，宽高不超过1000像素）",
+                        "name": "thumbnail",
+                        "in": "formData"
+                    },
+                    {
                         "type": "integer",
                         "description": "分片索引",
                         "name": "chunk_index",
