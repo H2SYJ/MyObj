@@ -26,7 +26,12 @@ FROM alpine:latest
 WORKDIR /app
 
 # 安装运行时依赖
-RUN apk --no-cache add ca-certificates tzdata
+# CGO 构建会动态链接 GCC/C++ 运行库，最终镜像必须包含对应的共享库。
+RUN apk add --no-cache \
+    ca-certificates \
+    tzdata \
+    libgcc \
+    libstdc++
 
 # 设置时区为上海
 ENV TZ=Asia/Shanghai
