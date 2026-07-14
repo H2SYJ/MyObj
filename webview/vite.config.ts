@@ -117,6 +117,10 @@ export default defineConfig(({ mode, command }) => {
           manualChunks: (id) => {
             // node_modules 中的包
             if (id.includes('node_modules')) {
+              // Element Plus Icons（必须在 Element Plus 之前检查）
+              if (id.includes('@element-plus/icons-vue')) {
+                return 'element-plus-icons'
+              }
               // Vue 核心（最常用，单独打包，必须在 Element Plus 之前检查）
               if (id.includes('vue') && !id.includes('vue-router') && !id.includes('vue-i18n') && !id.includes('element-plus')) {
                 return 'vue-core'
@@ -124,10 +128,6 @@ export default defineConfig(({ mode, command }) => {
               // Element Plus（UI框架，体积较大，单独打包，依赖 Vue）
               if (id.includes('element-plus')) {
                 return 'element-plus'
-              }
-              // Element Plus Icons（图标库）
-              if (id.includes('@element-plus/icons-vue')) {
-                return 'element-plus-icons'
               }
               // Vue Router（路由相关）
               if (id.includes('vue-router')) {
@@ -156,42 +156,10 @@ export default defineConfig(({ mode, command }) => {
               // 其他第三方库
               return 'vendor'
             }
-            
-            // 业务代码按模块分包
-            if (id.includes('/src/views/')) {
-              // 文件管理相关页面
-              if (id.includes('/Files/') || id.includes('/Shares/') || id.includes('/Trash/')) {
-                return 'views-files'
-              }
-              // 任务相关页面
-              if (id.includes('/Tasks/') || id.includes('/Offline/')) {
-                return 'views-tasks'
-              }
-              // 管理相关页面
-              if (id.includes('/Admin/')) {
-                return 'views-admin'
-              }
-              // 设置相关页面
-              if (id.includes('/Settings/')) {
-                return 'views-settings'
-              }
-              // 其他页面
-              return 'views-others'
-            }
-            
-            // 组件按功能分包
-            if (id.includes('/src/components/')) {
-              // 表格相关组件
-              if (id.includes('Table') || id.includes('Pagination')) {
-                return 'components-table'
-              }
-              // 布局相关组件
-              if (id.includes('Layout') || id.includes('Header') || id.includes('Sidebar')) {
-                return 'components-layout'
-              }
-              // 其他组件
-              return 'components-others'
-            }
+
+            // 业务模块交给 Rollup 按动态导入边界自动分包。
+            // 强制按目录归组会把相互依赖的组件、组合式函数和页面拆进不同 chunk，
+            // 形成循环依赖并在运行时触发 “Cannot access before initialization”。
           },
           // 文件命名规则
           chunkFileNames: 'assets/js/[name]-[hash].js',
