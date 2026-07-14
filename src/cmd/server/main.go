@@ -92,7 +92,6 @@ func main() {
 func initConfig() error {
 	log.Println("[初始化] 正在加载配置文件...")
 	if err := config.InitConfig(); err != nil {
-		logger.LOG.Error("配置初始化失败", "error", err)
 		return err
 	}
 	log.Println("[成功] 配置文件加载完成")
