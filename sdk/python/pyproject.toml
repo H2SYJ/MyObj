@@ -1,0 +1,24 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "myobj-sdk"
+version = "0.1.0"
+description = "MyObj 文件管理 Python SDK"
+readme = "README.md"
+requires-python = ">=3.9"
+dependencies = [
+    "cryptography>=41.0.0",
+    "requests>=2.31.0",
+]
+
+[project.optional-dependencies]
+test = []
+
+[tool.setuptools.package-data]
+myobj_sdk = ["py.typed"]
+
+[tool.setuptools.packages.find]
+where = ["src"]
+

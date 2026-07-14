@@ -4,3 +4,9 @@
 .idea
 .vscode
 /obj_temp/
+
+# Python SDK 构建与测试产物
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
