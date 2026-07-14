@@ -106,6 +106,39 @@ class MyObjClientTest(unittest.TestCase):
         self.assertEqual(session.calls[1]["data"]["chunk_index"], "0")
         self.assertEqual(session.calls[2]["data"]["chunk_index"], "1")
 
+    def test_ensure_directory_creates_missing_folder(self) -> None:
+        session = FakeSession(
+            [
+                json_response(
+                    {
+                        "code": 200,
+                        "message": "ok",
+                        "data": {"folders": [], "total": 0, "page_size": 100},
+                    }
+                ),
+                json_response({"code": 200, "message": "创建目录成功", "data": None}),
+                json_response(
+                    {
+                        "code": 200,
+                        "message": "ok",
+                        "data": {
+                            "folders": [{"name": "演员甲", "path": "12"}],
+                            "total": 1,
+                            "page_size": 100,
+                        },
+                    }
+                ),
+            ]
+        )
+        client = self.make_client(session)
+
+        path_id = client.ensure_directory("2", "演员甲")
+
+        self.assertEqual(path_id, "12")
+        self.assertEqual(
+            session.calls[1]["json"], {"parent_level": "2", "dir_path": "演员甲"}
+        )
+
 
 if __name__ == "__main__":
     unittest.main()

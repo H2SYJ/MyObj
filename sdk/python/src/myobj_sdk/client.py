@@ -266,6 +266,58 @@ class MyObjClient:
             json={"parent_level": parent_level, "dir_path": dir_path},
         )
 
+    def ensure_directory(
+        self,
+        parent_level: str,
+        dir_path: str,
+        *,
+        page_size: int = 100,
+    ) -> str:
+        """查找目录，不存在时创建，并返回目录的路径 ID。"""
+
+        if not dir_path.strip():
+            raise ValueError("dir_path 不能为空")
+        self._check_page(1, page_size)
+
+        def find_directory() -> Optional[str]:
+            page = 1
+            while True:
+                result = self.list_files(
+                    virtual_path=str(parent_level),
+                    page=page,
+                    page_size=page_size,
+                )
+                data = result.get("data")
+                if not isinstance(data, Mapping):
+                    raise MyObjHTTPError("文件列表响应中缺少 data 对象")
+
+                folders = data.get("folders")
+                if isinstance(folders, list):
+                    for folder in folders:
+                        if not isinstance(folder, Mapping):
+                            continue
+                        if (
+                            folder.get("name") == dir_path
+                            and folder.get("path") is not None
+                        ):
+                            return str(folder["path"])
+
+                total = int(data.get("total", 0) or 0)
+                actual_page_size = int(data.get("page_size", page_size) or page_size)
+                if page * actual_page_size >= total:
+                    return None
+                page += 1
+
+        existing_path = find_directory()
+        if existing_path is not None:
+            return existing_path
+
+        self.create_directory(str(parent_level), dir_path)
+        created_path = find_directory()
+        if created_path is None:
+            raise MyObjHTTPError(f"目录 {dir_path} 创建成功，但未能查询到路径 ID")
+        return created_path
+
     def move_file(
         self, file_id: str, source_path: str, target_path: str
     ) -> dict[str, Any]:

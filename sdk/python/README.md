@@ -42,6 +42,7 @@ paths = client.get_virtual_paths()
 
 # 创建、重命名和删除目录
 client.create_directory(parent_level="/", dir_path="资料")
+path_id = client.ensure_directory(parent_level="2", dir_path="资料")
 client.rename_directory(dir_id=12, new_dir_name="归档资料")
 client.delete_directory(dir_id=12)
 
@@ -147,4 +148,3 @@ with MyObjClient(
     public_key_path="public_key.pem",
 ) as client:
     print(client.list_files(page=1, page_size=20))
-
