@@ -27,6 +27,58 @@ client = MyObjClient(
 
 SDK 会为每次请求重新生成 `X-Timestamp`、`X-Nonce` 和 `X-Signature`，不要再额外设置 `Authorization` 请求头。
 
+## Debug 日志
+
+SDK 使用 Python 标准 `logging` 输出请求调试信息，logger 名称为 `myobj_sdk`。SDK 默认不会修改应用程序的日志级别或处理器，因此需要在创建客户端或发起请求前由调用方完成配置。
+
+仅将 SDK 的 DEBUG 日志输出到控制台：
+
+```python
+import logging
+
+
+sdk_logger = logging.getLogger("myobj_sdk")
+sdk_logger.setLevel(logging.DEBUG)
+sdk_logger.propagate = False
+
+console_handler = logging.StreamHandler()
+console_handler.setLevel(logging.DEBUG)
+console_handler.setFormatter(
+    logging.Formatter(
+        "%(asctime)s %(levelname)s %(name)s %(message)s",
+    )
+)
+sdk_logger.addHandler(console_handler)
+```
+
+同时写入 UTF-8 日志文件：
+
+```python
+file_handler = logging.FileHandler(
+    "myobj-sdk.log",
+    encoding="utf-8",
+)
+file_handler.setLevel(logging.DEBUG)
+file_handler.setFormatter(
+    logging.Formatter(
+        "%(asctime)s %(levelname)s %(name)s %(message)s",
+    )
+)
+sdk_logger.addHandler(file_handler)
+```
+
+如果应用已经统一配置了根 logger，也可以只设置 SDK 的日志级别：
+
+```python
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s %(levelname)s %(name)s %(message)s",
+)
+logging.getLogger("myobj_sdk").setLevel(logging.DEBUG)
+```
+
+重复执行日志配置会重复添加处理器，建议只在应用入口配置一次。DEBUG 日志包含请求方法、地址、脱敏后的参数摘要、HTTP 状态码、业务状态码和耗时。API Key、认证签名、密码、令牌、文件内容及下载响应体不会写入日志。上传进度条开启时，控制台 DEBUG 日志会完整输出，进度条会在日志输出后自动恢复。
+
 ## 文件与目录
 
 ```python
@@ -62,20 +114,40 @@ client.delete_files(["用户文件ID一", "用户文件ID二"])
 ## 上传
 
 ```python
+result = client.upload_file(
+    "D:/资料/报告.pdf",
+    path_id="目标目录ID",
+)
+print(result["message"])
+```
+
+默认按 5MB 分片，并在终端显示上传进度条。SDK 会计算整文件和分片 MD5，支持服务端秒传及根据预检结果跳过已上传分片。开启 DEBUG 日志时，上传期间的控制台日志会完整输出，进度条会在日志输出后自动恢复。
+
+不需要终端进度条时可以关闭：
+
+```python
+client.upload_file(
+    "D:/资料/报告.pdf",
+    path_id="目标目录ID",
+    show_progress=False,
+)
+```
+
+已有的进度回调仍然可用。只需要自定义进度展示时，可以同时关闭默认进度条：
+
+```python
 def show_progress(completed: int, total: int) -> None:
     percent = 100 if total == 0 else completed * 100 // total
     print(f"上传进度：{percent}%")
 
 
-result = client.upload_file(
+client.upload_file(
     "D:/资料/报告.pdf",
     path_id="目标目录ID",
     progress=show_progress,
+    show_progress=False,
 )
-print(result["message"])
 ```
-
-默认按 5MB 分片。SDK 会计算整文件和分片 MD5，支持服务端秒传及根据预检结果跳过已上传分片。
 
 加密上传：
 

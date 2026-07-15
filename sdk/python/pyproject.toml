@@ -11,6 +11,7 @@ requires-python = ">=3.9"
 dependencies = [
     "cryptography>=41.0.0",
     "requests>=2.31.0",
+    "tqdm>=4.66.0",
 ]
 
 [project.optional-dependencies]
@@ -21,4 +22,3 @@ myobj_sdk = ["py.typed"]
 
 [tool.setuptools.packages.find]
 where = ["src"]
-
