@@ -13,7 +13,7 @@ import (
 
 // DiskByte 常量定义
 const (
-	DiskByte = 1024 * 1024 * 1024
+	DiskByte int64 = 1024 * 1024 * 1024
 )
 
 // DiskInfo 磁盘信息结构体
@@ -79,6 +79,47 @@ func DiskInfoPath(mount string) (*DiskInfo, error) {
 	}
 
 	return nil, fmt.Errorf("未找到指定路径的磁盘信息: %s", mount)
+}
+
+// GetPathDiskSpace 获取指定路径所在磁盘的空间信息。
+// 路径尚未创建时，会向上查找最近的已存在父目录。
+func GetPathDiskSpace(path string) (*DiskInfo, error) {
+	if strings.TrimSpace(path) == "" {
+		return nil, fmt.Errorf("磁盘路径不能为空")
+	}
+
+	absPath, err := filepath.Abs(path)
+	if err != nil {
+		return nil, fmt.Errorf("获取磁盘路径的绝对路径失败: %w", err)
+	}
+
+	existingPath := filepath.Clean(absPath)
+	for {
+		if _, statErr := os.Stat(existingPath); statErr == nil {
+			break
+		} else if !os.IsNotExist(statErr) {
+			return nil, fmt.Errorf("访问磁盘路径失败: %w", statErr)
+		}
+
+		parent := filepath.Dir(existingPath)
+		if parent == existingPath {
+			return nil, fmt.Errorf("未找到磁盘路径的已存在父目录: %s", absPath)
+		}
+		existingPath = parent
+	}
+
+	usage, err := disk.Usage(existingPath)
+	if err != nil {
+		return nil, fmt.Errorf("获取路径所在磁盘信息失败: %w", err)
+	}
+
+	return &DiskInfo{
+		Mount: usage.Path,
+		Total: usage.Total,
+		Used:  usage.Used,
+		Free:  usage.Free,
+		Avail: usage.Free,
+	}, nil
 }
 
 // GetCurrentDirectoryDiskSpace 获取当前软件所在磁盘的空间信息

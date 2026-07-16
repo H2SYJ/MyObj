@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"math"
 	"myobj/src/core/domain/request"
 	"myobj/src/core/domain/response"
 	"myobj/src/internal/repository/impl"
@@ -666,6 +667,10 @@ func (a *AdminService) AdminDiskList() (*models.JsonResponse, error) {
 // AdminCreateDisk 创建磁盘
 func (a *AdminService) AdminCreateDisk(req *request.AdminCreateDiskRequest) (*models.JsonResponse, error) {
 	ctx := context.Background()
+	sizeBytes, err := diskSizeGBToBytes(req.Size)
+	if err != nil {
+		return nil, err
+	}
 
 	// 检查路径是否已存在
 	existingDisk, err := a.factory.Disk().GetByPath(ctx, req.DiskPath)
@@ -684,7 +689,7 @@ func (a *AdminService) AdminCreateDisk(req *request.AdminCreateDiskRequest) (*mo
 		ID:       diskID,
 		DiskPath: req.DiskPath,
 		DataPath: req.DataPath,
-		Size:     req.Size,
+		Size:     sizeBytes,
 	}
 
 	if err = a.factory.Disk().Create(ctx, disk); err != nil {
@@ -712,7 +717,11 @@ func (a *AdminService) AdminUpdateDisk(req *request.AdminUpdateDiskRequest) (*mo
 		disk.DataPath = req.DataPath
 	}
 	if req.Size > 0 {
-		disk.Size = req.Size * 1024 * 1024 * 1024 // GB转字节
+		sizeBytes, sizeErr := diskSizeGBToBytes(req.Size)
+		if sizeErr != nil {
+			return nil, sizeErr
+		}
+		disk.Size = sizeBytes
 	}
 
 	if err = a.factory.Disk().Update(ctx, disk); err != nil {
@@ -721,6 +730,16 @@ func (a *AdminService) AdminUpdateDisk(req *request.AdminUpdateDiskRequest) (*mo
 	}
 
 	return models.NewJsonResponse(200, "更新成功", disk), nil
+}
+
+func diskSizeGBToBytes(sizeGB int64) (int64, error) {
+	if sizeGB <= 0 {
+		return 0, fmt.Errorf("磁盘大小必须大于0GB")
+	}
+	if sizeGB > math.MaxInt64/util.DiskByte {
+		return 0, fmt.Errorf("磁盘大小超出支持范围")
+	}
+	return sizeGB * util.DiskByte, nil
 }
 
 // AdminDeleteDisk 删除磁盘

@@ -78,7 +78,7 @@
         <el-form-item :label="t('admin.disks.sizeGB')" prop="size">
           <el-input-number
             v-model="formData.size"
-            :min="0"
+            :min="1"
             :max="999999"
             style="width: 100%"
             :disabled="inputMode === 'scan' && !isEdit && formData.selected_disk !== ''"
@@ -147,11 +147,10 @@
     ]
   }
 
-  // 格式化存储空间（后端返回的是字节，需要转换为GB显示）
+  // 格式化存储空间（后端统一返回字节）
   const formatStorage = (bytes: number) => {
     if (bytes === 0) return t('admin.disks.notSet')
-    // return formatSize(bytes)
-    return bytes + 'GB'
+    return formatSize(bytes)
   }
 
   // 格式化字节（用于扫描磁盘显示）
@@ -267,7 +266,7 @@
       if (valid) {
         submitting.value = true
         try {
-          // 前端输入的是 GB，后端期望的也是 GB（后端会转换为字节）
+          // 表单输入GB，后端负责统一转换为字节保存。
           const submitData = {
             ...formData,
             size: formData.size // 保持 GB，后端会转换

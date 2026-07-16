@@ -133,11 +133,16 @@ func (f *FileService) Precheck(req *request.UploadPrecheckRequest, c cache.Cache
 			return models.NewJsonResponse(200, "秒传成功", nil), nil
 		}
 	}
+	bestDisk, err := upload.SelectBestDisk(ctx, f.factory, req.FileSize)
+	if err != nil {
+		return nil, err
+	}
 	uid := uuid.New().String()
 	//无法触发秒传，但可上传，返回校验ID
 	key := fmt.Sprintf("fileUpload:%s", uid)
 	res := new(response.FilePrecheckResponse)
 	res.PrecheckID = uid
+	res.DiskID = bestDisk.ID
 	chunks, err := f.factory.UploadChunk().GetByUserIDAndFileName(ctx, user.ID, req.FileName)
 	if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
 		logger.LOG.Error("获取文件分片失败", "error", err, "chunkSignature", req.ChunkSignature)
@@ -1098,8 +1103,7 @@ func (f *FileService) UploadFile(req *request.FileUploadRequest, file multipart.
 		return nil, fmt.Errorf("无效的预检ID")
 	}
 
-	// 3. 选择合适的磁盘（按剩余空间最大原则）
-	// 获取预检请求中的文件大小
+	// 3. 获取预检请求中的文件大小
 	var fileSize int64
 	reqCacheKey := fmt.Sprintf("fileUploadReq:%s", req.PrecheckID)
 	reqData, err := f.cacheLocal.Get(reqCacheKey)
@@ -1124,28 +1128,26 @@ func (f *FileService) UploadFile(req *request.FileUploadRequest, file multipart.
 	}
 	fileSize = precheckReq.FileSize
 
-	// 选择最佳磁盘
-	disks, err := f.factory.Disk().List(ctx, 0, 1000)
-	if err != nil {
-		logger.LOG.Error("查询磁盘列表失败", "error", err)
-		return nil, fmt.Errorf("查询磁盘列表失败: %w", err)
-	}
-	if len(disks) == 0 {
-		return nil, fmt.Errorf("没有可用的存储磁盘")
-	}
-
-	// 选择剩余空间最大且能容纳文件的磁盘
+	// 新预检会固定存储磁盘；旧缓存缺少磁盘ID时执行一次兼容选择并回写缓存。
 	var bestDisk *models.Disk
-	var maxFreeSpace int64 = -1
-	for _, disk := range disks {
-		freeSpaceBytes := int64(disk.Size) * 1024 * 1024 * 1024 // GB转字节
-		if freeSpaceBytes >= fileSize && freeSpaceBytes > maxFreeSpace {
-			maxFreeSpace = freeSpaceBytes
-			bestDisk = disk
+	if precheckResp.DiskID != "" {
+		bestDisk, err = f.factory.Disk().GetByID(ctx, precheckResp.DiskID)
+		if err != nil {
+			return nil, fmt.Errorf("预检选择的存储磁盘不存在: %w", err)
 		}
-	}
-	if bestDisk == nil {
-		return nil, fmt.Errorf("没有足够空间的磁盘")
+	} else {
+		bestDisk, err = upload.SelectBestDisk(ctx, f.factory, fileSize)
+		if err != nil {
+			return nil, err
+		}
+		precheckResp.DiskID = bestDisk.ID
+		updatedPrecheck, marshalErr := json.Marshal(&precheckResp)
+		if marshalErr != nil {
+			return nil, fmt.Errorf("更新预检信息失败: %w", marshalErr)
+		}
+		if setErr := f.cacheLocal.Set(cacheKey, string(updatedPrecheck), 12*60*60); setErr != nil {
+			logger.LOG.Warn("回写预检磁盘信息失败", "error", setErr, "precheckID", req.PrecheckID)
+		}
 	}
 
 	// 4. 在选中磁盘的temp目录下创建临时目录：{DiskPath}/temp/{fileName}_{sessionID}/
@@ -1337,6 +1339,7 @@ func (f *FileService) handleChunkUpload(ctx context.Context, req *request.FileUp
 		ChunkCount:        totalChunks,
 		VirtualPath:       precheckReq.PathID,
 		UserID:            userID,
+		DiskID:            precheckResp.DiskID,
 		FilePassword:      req.FilePassword, // 添加加密密码
 	}
 
@@ -1419,6 +1422,7 @@ func (f *FileService) handleSingleUpload(ctx context.Context, req *request.FileU
 		IsChunk:           false,
 		VirtualPath:       precheckReq.PathID,
 		UserID:            userID,
+		DiskID:            precheckResp.DiskID,
 		FilePassword:      req.FilePassword, // 添加加密密码
 	}
 

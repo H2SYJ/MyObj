@@ -104,6 +104,7 @@ type ShareListItem struct {
 type FilePrecheckResponse struct {
 	PrecheckID string   `json:"precheck_id"`
 	Md5        []string `json:"md5"`
+	DiskID     string   `json:"disk_id,omitempty"`
 }
 
 // UploadProgressResponse 上传进度响应结构体

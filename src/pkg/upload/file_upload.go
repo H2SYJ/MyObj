@@ -52,6 +52,8 @@ type FileUploadData struct {
 	VirtualPath string `json:"virtual_path"`
 	// 上传用户ID
 	UserID string `json:"user_id"`
+	// 预检阶段选中的存储磁盘ID
+	DiskID string `json:"disk_id"`
 	// 文件加密密码（明文）
 	FilePassword string `json:"file_password"`
 }
@@ -158,10 +160,16 @@ func ProcessUploadedFile(data *FileUploadData, repoFactory *impl.RepositoryFacto
 		tempThumbnailPath = providedThumbnailPath
 	}
 
-	// 4. 选择存储磁盘（按剩余空间最大原则）
-	disk, err := selectBestDisk(ctx, repoFactory, data.FileSize)
+	// 4. 使用预检阶段选中的存储磁盘，确保临时文件和最终文件位于同一磁盘。
+	var disk *models.Disk
+	if data.DiskID != "" {
+		disk, err = repoFactory.Disk().GetByID(ctx, data.DiskID)
+	} else {
+		// 兼容未携带磁盘ID的旧调用方。
+		disk, err = SelectBestDisk(ctx, repoFactory, data.FileSize)
+	}
 	if err != nil {
-		return "", fmt.Errorf("选择存储磁盘失败: %w", err)
+		return "", fmt.Errorf("获取存储磁盘失败: %w", err)
 	}
 
 	// 5. 生成文件ID和存储路径
@@ -440,8 +448,12 @@ func isVideo(mimeType string) bool {
 	return strings.HasPrefix(mimeType, "video/")
 }
 
-// selectBestDisk 选择剩余空间最大的磁盘
-func selectBestDisk(ctx context.Context, repoFactory *impl.RepositoryFactory, fileSize int64) (*models.Disk, error) {
+// SelectBestDisk 根据存储路径的真实可用空间选择磁盘。
+func SelectBestDisk(ctx context.Context, repoFactory *impl.RepositoryFactory, fileSize int64) (*models.Disk, error) {
+	if fileSize < 0 {
+		return nil, fmt.Errorf("文件大小不能为负数")
+	}
+
 	disks, err := repoFactory.Disk().List(ctx, 0, 1000)
 	if err != nil {
 		return nil, fmt.Errorf("查询磁盘列表失败: %w", err)
@@ -451,22 +463,33 @@ func selectBestDisk(ctx context.Context, repoFactory *impl.RepositoryFactory, fi
 		return nil, fmt.Errorf("没有可用的存储磁盘")
 	}
 
-	// 选择剩余空间最大且能容纳文件的磁盘
+	// 选择真实可用空间最大且能容纳文件的磁盘。
 	var bestDisk *models.Disk
-	var maxFreeSpace int64 = -1
+	var bestFreeSpace uint64
+	var maxAvailableSpace uint64
+	var checkedDisks int
 
 	for _, disk := range disks {
-		// 磁盘大小单位是GB，需要转换为字节
-		freeSpaceBytes := int64(disk.Size) * 1024 * 1024 * 1024 // GB转字节
-
-		if freeSpaceBytes >= fileSize && freeSpaceBytes > maxFreeSpace {
-			maxFreeSpace = freeSpaceBytes
+		diskInfo, infoErr := util.GetPathDiskSpace(disk.DataPath)
+		if infoErr != nil {
+			logger.LOG.Warn("获取存储磁盘可用空间失败", "diskID", disk.ID, "dataPath", disk.DataPath, "error", infoErr)
+			continue
+		}
+		checkedDisks++
+		if diskInfo.Avail > maxAvailableSpace {
+			maxAvailableSpace = diskInfo.Avail
+		}
+		if diskInfo.Avail >= uint64(fileSize) && (bestDisk == nil || diskInfo.Avail > bestFreeSpace) {
+			bestFreeSpace = diskInfo.Avail
 			bestDisk = disk
 		}
 	}
 
+	if checkedDisks == 0 {
+		return nil, fmt.Errorf("无法获取存储磁盘的可用空间")
+	}
 	if bestDisk == nil {
-		return nil, fmt.Errorf("没有足够空间的磁盘")
+		return nil, fmt.Errorf("没有足够空间的磁盘，需要 %s，最大可用 %s", util.FormatBytes(uint64(fileSize)), util.FormatBytes(maxAvailableSpace))
 	}
 
 	return bestDisk, nil

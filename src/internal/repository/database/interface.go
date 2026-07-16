@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"myobj/src/config"
 	"myobj/src/pkg/logger"
+	"myobj/src/pkg/models"
+	"myobj/src/pkg/util"
 
 	"gorm.io/gorm"
 	gormlogger "gorm.io/gorm/logger"
@@ -38,8 +40,32 @@ func InitDataBase() {
 		logger.LOG.Error("[数据库] 不支持的数据库类型", "type", dbType)
 		panic(fmt.Sprintf("不支持的数据库类型: %s", dbType))
 	}
+	migratedDisks, err := migrateLegacyDiskSizes(databasePool)
+	if err != nil {
+		logger.LOG.Error("迁移磁盘容量单位失败", "error", err)
+		panic(fmt.Sprintf("迁移磁盘容量单位失败: %v", err))
+	}
+	if migratedDisks > 0 {
+		logger.LOG.Info("磁盘容量单位迁移完成", "count", migratedDisks)
+	}
 
 	logger.LOG.Info("[数据库] 数据库连接池初始化成功 ✓")
+}
+
+// migrateLegacyDiskSizes 将旧版本按GB保存的磁盘容量转换为字节。
+// 管理端历史输入上限为999999GB，因此小于等于该值的正数可判定为旧数据。
+func migrateLegacyDiskSizes(db *gorm.DB) (int64, error) {
+	const maxLegacyDiskSizeGB int64 = 999999
+	if !db.Migrator().HasTable(&models.Disk{}) {
+		return 0, nil
+	}
+	result := db.Model(&models.Disk{}).
+		Where("size > 0 AND size <= ?", maxLegacyDiskSizeGB).
+		Update("size", gorm.Expr("size * ?", util.DiskByte))
+	if result.Error != nil {
+		return 0, result.Error
+	}
+	return result.RowsAffected, nil
 }
 
 // initMySQL 初始化MySQL数据库连接
