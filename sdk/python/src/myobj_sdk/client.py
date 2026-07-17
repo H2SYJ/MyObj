@@ -511,7 +511,6 @@ class MyObjClient:
         file_path: PathLike,
         path_id: str,
         *,
-        chunk_size: int = DEFAULT_CHUNK_SIZE,
         encrypted: bool = False,
         file_password: str = "",
         thumbnail_path: Optional[PathLike] = None,
@@ -523,11 +522,10 @@ class MyObjClient:
         source_path = Path(file_path)
         if not source_path.is_file():
             raise FileNotFoundError(f"文件不存在: {source_path}")
-        if chunk_size <= 0:
-            raise ValueError("chunk_size 必须大于 0")
         if encrypted and not file_password:
             raise ValueError("加密上传必须提供 file_password")
 
+        chunk_size = self.DEFAULT_CHUNK_SIZE
         file_size = source_path.stat().st_size
         file_md5, chunk_md5s = self._hash_file(source_path, chunk_size)
         with ExitStack() as upload_stack:

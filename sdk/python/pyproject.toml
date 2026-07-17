@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "myobj-sdk"
-version = "0.1.0"
+version = "0.2.0"
 description = "MyObj 文件管理 Python SDK"
 readme = "README.md"
 requires-python = ">=3.9"

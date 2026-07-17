@@ -126,11 +126,10 @@ class MyObjClientTest(unittest.TestCase):
 
         with tempfile.TemporaryDirectory() as temp_dir:
             file_path = Path(temp_dir) / "示例.txt"
-            file_path.write_text("abcdef", encoding="utf-8")
+            file_path.write_bytes(b"a" * MyObjClient.DEFAULT_CHUNK_SIZE + b"b")
             result = client.upload_file(
                 file_path,
                 "root",
-                chunk_size=3,
                 show_progress=False,
             )
 
@@ -145,8 +144,10 @@ class MyObjClientTest(unittest.TestCase):
     def test_resume_upload_disables_timeout_for_last_pending_chunk(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             file_path = Path(temp_dir) / "断点续传.txt"
-            file_path.write_text("abcdef", encoding="utf-8")
-            _, chunk_md5s = MyObjClient._hash_file(file_path, 2)
+            file_path.write_bytes(b"a" * MyObjClient.DEFAULT_CHUNK_SIZE + b"b")
+            _, chunk_md5s = MyObjClient._hash_file(
+                file_path, MyObjClient.DEFAULT_CHUNK_SIZE
+            )
 
             session = FakeSession(
                 [
@@ -156,11 +157,10 @@ class MyObjClientTest(unittest.TestCase):
                             "message": "继续上传",
                             "data": {
                                 "precheck_id": "precheck-1",
-                                "md5": [chunk_md5s[2]],
+                                "md5": [chunk_md5s[1]],
                             },
                         }
                     ),
-                    json_response({"code": 200, "message": "分片成功", "data": None}),
                     json_response(
                         {"code": 200, "message": "上传成功", "data": {"id": "file-1"}}
                     ),
@@ -171,14 +171,17 @@ class MyObjClientTest(unittest.TestCase):
             client.upload_file(
                 file_path,
                 "root",
-                chunk_size=2,
                 show_progress=False,
             )
 
         self.assertEqual(session.calls[1]["data"]["chunk_index"], "0")
-        self.assertEqual(session.calls[2]["data"]["chunk_index"], "1")
-        self.assertEqual(session.calls[1]["timeout"], 30.0)
-        self.assertIsNone(session.calls[2]["timeout"])
+        self.assertIsNone(session.calls[1]["timeout"])
+
+    def test_upload_rejects_removed_chunk_size_argument(self) -> None:
+        client = self.make_client(FakeSession([]))
+
+        with self.assertRaises(TypeError):
+            client.upload_file("不存在.txt", "root", chunk_size=1024)  # type: ignore[call-arg]
 
     def test_ensure_directory_creates_missing_folder(self) -> None:
         session = FakeSession(
@@ -298,7 +301,7 @@ class MyObjClientTest(unittest.TestCase):
 
         with tempfile.TemporaryDirectory() as temp_dir:
             file_path = Path(temp_dir) / "示例.txt"
-            file_path.write_text("abcdef", encoding="utf-8")
+            file_path.write_bytes(b"a" * MyObjClient.DEFAULT_CHUNK_SIZE + b"b")
             with patch("myobj_sdk.client.tqdm", side_effect=make_progress_bar), patch(
                 "myobj_sdk.client.logging_redirect_tqdm"
             ) as redirect:
@@ -306,18 +309,26 @@ class MyObjClientTest(unittest.TestCase):
                 client.upload_file(
                     file_path,
                     "root",
-                    chunk_size=3,
                     progress=lambda completed, total: callback_values.append(
                         (completed, total)
                     ),
                 )
 
         self.assertEqual(len(progress_bars), 1)
-        self.assertEqual(progress_bars[0].options["total"], 6)
-        self.assertEqual(progress_bars[0].updates, [3, 3])
+        expected_total = MyObjClient.DEFAULT_CHUNK_SIZE + 1
+        self.assertEqual(progress_bars[0].options["total"], expected_total)
+        self.assertEqual(
+            progress_bars[0].updates, [MyObjClient.DEFAULT_CHUNK_SIZE, 1]
+        )
         self.assertEqual(progress_bars[0].refresh_count, 1)
         self.assertTrue(progress_bars[0].closed)
-        self.assertEqual(callback_values, [(3, 6), (6, 6)])
+        self.assertEqual(
+            callback_values,
+            [
+                (MyObjClient.DEFAULT_CHUNK_SIZE, expected_total),
+                (expected_total, expected_total),
+            ],
+        )
         redirect.assert_called_once()
 
     def test_upload_can_disable_progress_bar(self) -> None:

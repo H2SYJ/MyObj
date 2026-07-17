@@ -28,11 +28,14 @@ export interface UploadTask {
   totalDuration?: number // 总耗时（毫秒）
   averageSpeed?: number // 平均速度（字节/秒）
   isInstantUpload?: boolean // 是否秒传
+  isExternal?: boolean // 是否为当前浏览器之外创建的上传任务
 }
 
 class UploadTaskManager {
   private tasks: Map<string, UploadTask> = new Map()
   private listeners: Set<(tasks: UploadTask[]) => void> = new Set()
+  private batchDepth = 0
+  private notificationPending = false
   private readonly STORAGE_KEY = 'upload_tasks'
   private readonly DELETED_TASKS_KEY = 'deleted_upload_tasks'
   private deletedPrecheckIds: Set<string> = new Set()
@@ -173,18 +176,18 @@ class UploadTaskManager {
       task.progress = 100
       task.uploaded_size = task.file_size
       task.isInstantUpload = isInstantUpload
-      
+
       // 计算总耗时和平均速度
       if (task.startTime) {
         task.endTime = now
         task.totalDuration = now - task.startTime
-        
+
         // 计算平均速度（字节/秒）
         if (task.totalDuration > 0 && task.file_size > 0) {
           task.averageSpeed = (task.file_size / task.totalDuration) * 1000 // 转换为字节/秒
         }
       }
-      
+
       this.saveTasksToStorage()
       this.notifyListeners()
     }
@@ -285,7 +288,12 @@ class UploadTaskManager {
     const task = this.tasks.get(taskId)
     if (task) {
       // 支持取消预检中的任务
-      if (task.status === 'prechecking' || task.status === 'pending' || task.status === 'uploading' || task.status === 'paused') {
+      if (
+        task.status === 'prechecking' ||
+        task.status === 'pending' ||
+        task.status === 'uploading' ||
+        task.status === 'paused'
+      ) {
         task.status = 'cancelled'
         task.speed = '0 KB/s'
         task.currentStep = undefined
@@ -310,13 +318,23 @@ class UploadTaskManager {
         if (updates.progress < currentProgress) {
           // 进度倒退，不更新 progress，但更新其他属性
           const { progress, ...otherUpdates } = updates
+          const hasChanges = Object.entries(otherUpdates).some(
+            ([key, value]) => task[key as keyof UploadTask] !== value
+          )
+          if (!hasChanges) {
+            return
+          }
           Object.assign(task, otherUpdates)
           this.saveTasksToStorage()
           this.notifyListeners()
           return
         }
       }
-      
+
+      const hasChanges = Object.entries(updates).some(([key, value]) => task[key as keyof UploadTask] !== value)
+      if (!hasChanges) {
+        return
+      }
       Object.assign(task, updates)
       this.saveTasksToStorage()
       this.notifyListeners()
@@ -337,6 +355,27 @@ class UploadTaskManager {
       }
       this.tasks.delete(taskId)
       this.saveTasksToStorage()
+      this.notifyListeners()
+    }
+  }
+
+  /** 批量删除指定任务，并记录对应的后端任务ID。 */
+  deleteTasks(taskIds: string[]): void {
+    let changed = false
+    taskIds.forEach(taskId => {
+      const task = this.tasks.get(taskId)
+      if (!task) {
+        return
+      }
+      if (task.precheckId) {
+        this.deletedPrecheckIds.add(task.precheckId)
+      }
+      this.tasks.delete(taskId)
+      changed = true
+    })
+
+    if (changed) {
+      this.saveDeletedPrecheckIds()
       this.notifyListeners()
     }
   }
@@ -449,6 +488,39 @@ class UploadTaskManager {
     return this.tasks.get(taskId)
   }
 
+  /** 批量修改任务，结束时最多通知监听器一次。 */
+  batchUpdate<T>(operation: () => T): T {
+    this.batchDepth++
+    try {
+      return operation()
+    } finally {
+      this.batchDepth--
+      if (this.batchDepth === 0 && this.notificationPending) {
+        this.notificationPending = false
+        this.notifyListeners()
+      }
+    }
+  }
+
+  /**
+   * 删除完整后端快照中已经不存在的外部任务。
+   * 此操作不写入用户删除标记，任务重新出现时仍可再次同步。
+   */
+  removeMissingExternalTasks(backendTaskIds: Set<string>): number {
+    const taskIdsToRemove: string[] = []
+    this.tasks.forEach((task, taskId) => {
+      if (task.isExternal && task.precheckId && !backendTaskIds.has(task.precheckId)) {
+        taskIdsToRemove.push(taskId)
+      }
+    })
+
+    taskIdsToRemove.forEach(taskId => this.tasks.delete(taskId))
+    if (taskIdsToRemove.length > 0) {
+      this.notifyListeners()
+    }
+    return taskIdsToRemove.length
+  }
+
   /**
    * 订阅任务变化
    * @param listener 监听器函数，当任务列表变化时会被调用
@@ -464,6 +536,10 @@ class UploadTaskManager {
   }
 
   private notifyListeners() {
+    if (this.batchDepth > 0) {
+      this.notificationPending = true
+      return
+    }
     const tasks = this.getAllTasks()
     this.saveTasksToStorage()
     this.listeners.forEach(listener => {
@@ -512,7 +588,7 @@ class UploadTaskManager {
             task.speed = '0 KB/s'
             task.currentStep = undefined
           } else if (task.status === 'uploading' || task.status === 'pending') {
-            task.status = 'paused'
+            task.status = task.isExternal ? 'uploading' : 'paused'
             task.speed = '0 KB/s'
           } else if (task.status === 'paused') {
             task.speed = '0 KB/s'

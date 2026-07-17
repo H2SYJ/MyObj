@@ -37,8 +37,16 @@
           <template #default="{ row }">
             <div class="status-cell">
               <el-tag :type="getUploadStatusType(row.status)">{{ getUploadStatusText(row.status) }}</el-tag>
+              <el-tag v-if="row.isExternal" type="info" size="small">
+                {{ t('tasks.externalUpload') }}
+              </el-tag>
               <!-- 秒传标识 -->
-              <el-tag v-if="row.isInstantUpload && row.status === 'completed'" type="success" size="small" class="instant-tag">
+              <el-tag
+                v-if="row.isInstantUpload && row.status === 'completed'"
+                type="success"
+                size="small"
+                class="instant-tag"
+              >
                 {{ t('tasks.instantUpload') }}
               </el-tag>
               <!-- 预检中时显示当前步骤 -->
@@ -53,7 +61,12 @@
           <template #default="{ row }">
             <div class="progress-cell">
               <el-progress
-                :percentage="Math.max(0, Math.min(100, row.status === 'prechecking' ? (row.precheckProgress || 0) : (row.progress || 0)))"
+                :percentage="
+                  Math.max(
+                    0,
+                    Math.min(100, row.status === 'prechecking' ? row.precheckProgress || 0 : row.progress || 0)
+                  )
+                "
                 :status="row.status === 'completed' ? 'success' : row.status === 'failed' ? 'exception' : undefined"
                 :color="row.status === 'prechecking' ? '#409EFF' : undefined"
               />
@@ -90,7 +103,7 @@
         <el-table-column :label="t('tasks.operation')" width="180" fixed="right" class-name="mobile-actions-column">
           <template #default="{ row }">
             <el-button
-              v-if="row.status === 'uploading'"
+              v-if="!row.isExternal && row.status === 'uploading'"
               link
               icon="VideoPause"
               type="warning"
@@ -99,7 +112,7 @@
               {{ t('tasks.pause') }}
             </el-button>
             <el-button
-              v-if="row.status === 'paused'"
+              v-if="!row.isExternal && row.status === 'paused'"
               link
               icon="VideoPlay"
               type="primary"
@@ -108,7 +121,13 @@
               {{ t('tasks.resume') }}
             </el-button>
             <el-button
-              v-if="row.status === 'uploading' || row.status === 'pending' || row.status === 'paused' || row.status === 'prechecking'"
+              v-if="
+                !row.isExternal &&
+                (row.status === 'uploading' ||
+                  row.status === 'pending' ||
+                  row.status === 'paused' ||
+                  row.status === 'prechecking')
+              "
               link
               icon="Close"
               type="danger"
@@ -117,6 +136,9 @@
               {{ t('tasks.cancel') }}
             </el-button>
             <el-button
+              v-if="
+                !row.isExternal || row.status === 'completed' || row.status === 'failed' || row.status === 'cancelled'
+              "
               link
               icon="Delete"
               type="danger"
@@ -143,7 +165,15 @@
                   <el-tag :type="getUploadStatusType(row.status)" size="small" effect="plain">
                     {{ getUploadStatusText(row.status) }}
                   </el-tag>
-                  <el-tag v-if="row.isInstantUpload && row.status === 'completed'" type="success" size="small" class="instant-tag-mobile">
+                  <el-tag v-if="row.isExternal" type="info" size="small" effect="plain">
+                    {{ t('tasks.externalUpload') }}
+                  </el-tag>
+                  <el-tag
+                    v-if="row.isInstantUpload && row.status === 'completed'"
+                    type="success"
+                    size="small"
+                    class="instant-tag-mobile"
+                  >
                     {{ t('tasks.instantUpload') }}
                   </el-tag>
                 </div>
@@ -153,7 +183,7 @@
           </div>
           <div class="task-actions">
             <el-button
-              v-if="row.status === 'uploading'"
+              v-if="!row.isExternal && row.status === 'uploading'"
               link
               type="warning"
               @click.stop="$emit('pause', row.id)"
@@ -162,7 +192,7 @@
               <el-icon><VideoPause /></el-icon>
             </el-button>
             <el-button
-              v-if="row.status === 'paused'"
+              v-if="!row.isExternal && row.status === 'paused'"
               link
               type="primary"
               @click.stop="$emit('resume', row.id)"
@@ -171,7 +201,9 @@
               <el-icon><VideoPlay /></el-icon>
             </el-button>
             <el-button
-              v-if="row.status === 'uploading' || row.status === 'pending' || row.status === 'paused'"
+              v-if="
+                !row.isExternal && (row.status === 'uploading' || row.status === 'pending' || row.status === 'paused')
+              "
               link
               type="danger"
               @click.stop="$emit('cancel', row.id)"
@@ -180,6 +212,9 @@
               <el-icon><Close /></el-icon>
             </el-button>
             <el-button
+              v-if="
+                !row.isExternal || row.status === 'completed' || row.status === 'failed' || row.status === 'cancelled'
+              "
               link
               type="danger"
               @click.stop="$emit('delete', row.id)"
@@ -192,7 +227,9 @@
         </div>
         <div class="task-progress-wrapper">
           <el-progress
-            :percentage="Math.max(0, Math.min(100, row.status === 'prechecking' ? (row.precheckProgress || 0) : (row.progress || 0)))"
+            :percentage="
+              Math.max(0, Math.min(100, row.status === 'prechecking' ? row.precheckProgress || 0 : row.progress || 0))
+            "
             :status="row.status === 'completed' ? 'success' : row.status === 'failed' ? 'exception' : undefined"
             :stroke-width="4"
             :color="row.status === 'prechecking' ? '#409EFF' : undefined"
@@ -220,12 +257,7 @@
       </div>
     </div>
 
-    <EmptyState
-      v-if="tasks.length === 0 && !loading"
-      type="task"
-      :show-actions="false"
-      compact
-    />
+    <EmptyState v-if="tasks.length === 0 && !loading" type="task" :show-actions="false" compact />
 
     <!-- 分页 -->
     <pagination
@@ -241,7 +273,14 @@
 </template>
 
 <script setup lang="ts">
-  import { formatSize, formatDate, formatSpeed, formatDuration, getUploadStatusType, getUploadStatusText } from '@/utils'
+  import {
+    formatSize,
+    formatDate,
+    formatSpeed,
+    formatDuration,
+    getUploadStatusType,
+    getUploadStatusText
+  } from '@/utils'
   import { useI18n } from '@/composables'
   import EmptyState from '@/components/EmptyState/index.vue'
 

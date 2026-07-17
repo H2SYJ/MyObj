@@ -263,8 +263,8 @@ export const getPublicFileList = (params: PublicFileListParams) => {
   return get<ApiResponse<PublicFileListResponse>>(API_ENDPOINTS.FILE.PUBLIC_LIST, filteredParams)
 }
 
-// 未完成的上传任务项
-export interface UncompletedUploadTask {
+// 上传任务项
+export interface UploadTaskItem {
   id: string
   file_name: string
   file_size: number
@@ -278,6 +278,22 @@ export interface UncompletedUploadTask {
   create_time: string
   update_time: string
   expire_time: string
+}
+
+export type UncompletedUploadTask = UploadTaskItem
+
+export interface UploadTaskListResponse {
+  tasks: UploadTaskItem[]
+  total: number
+  page: number
+  page_size: number
+}
+
+/**
+ * 分页查询全部上传任务
+ */
+export const listUploadTasks = (page: number, pageSize: number) => {
+  return get<ApiResponse<UploadTaskListResponse>>(API_ENDPOINTS.FILE.TASK_LIST, { page, pageSize })
 }
 
 /**

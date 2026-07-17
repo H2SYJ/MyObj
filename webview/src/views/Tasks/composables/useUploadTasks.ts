@@ -19,6 +19,9 @@ export function useUploadTasks() {
   const pageSize = ref(20)
   const total = computed(() => allUploadTasks.value.length)
 
+  const isExternalTaskActive = (task: any) =>
+    Boolean(task?.isExternal && !['completed', 'failed', 'cancelled'].includes(task.status))
+
   // 更新分页数据
   const updatePaginatedTasks = () => {
     const start = (currentPage.value - 1) * pageSize.value
@@ -63,6 +66,11 @@ export function useUploadTasks() {
 
   // 暂停上传
   const pauseUpload = (taskId: string) => {
+    const task = uploadTaskManager.getTask(taskId)
+    if (isExternalTaskActive(task)) {
+      proxy?.$modal.msgWarning(t('tasks.externalTaskReadOnly'))
+      return
+    }
     uploadTaskManager.pauseTask(taskId)
     uploadTaskManager.cancelAllUploads(taskId)
     proxy?.$modal.msgSuccess(t('tasks.paused'))
@@ -73,6 +81,10 @@ export function useUploadTasks() {
     const task = uploadTaskManager.getTask(taskId)
     if (!task) {
       proxy?.$modal.msgError(t('tasks.taskNotExists') || '任务不存在')
+      return
+    }
+    if (isExternalTaskActive(task)) {
+      proxy?.$modal.msgWarning(t('tasks.externalTaskReadOnly'))
       return
     }
 
@@ -202,6 +214,11 @@ export function useUploadTasks() {
   // 取消上传
   const cancelUpload = async (taskId: string) => {
     try {
+      const task = uploadTaskManager.getTask(taskId)
+      if (isExternalTaskActive(task)) {
+        proxy?.$modal.msgWarning(t('tasks.externalTaskReadOnly'))
+        return
+      }
       await proxy?.$modal.confirm(t('tasks.confirmCancelUpload'))
       uploadTaskManager.cancelTask(taskId)
       uploadTaskManager.cancelAllUploads(taskId)
@@ -218,6 +235,10 @@ export function useUploadTasks() {
       const task = uploadTaskManager.getTask(taskId)
       if (!task) {
         proxy?.$modal.msgError(t('tasks.taskNotExists') || '任务不存在')
+        return
+      }
+      if (isExternalTaskActive(task)) {
+        proxy?.$modal.msgWarning(t('tasks.externalTaskReadOnly'))
         return
       }
 
@@ -275,30 +296,39 @@ export function useUploadTasks() {
   const clearAllUploadTasks = async () => {
     try {
       const allTasks = uploadTaskManager.getAllTasks()
-      if (allTasks.length === 0) {
+      const clearableTasks = allTasks.filter(task => !isExternalTaskActive(task))
+      if (clearableTasks.length === 0) {
         proxy?.$modal.msgWarning(t('tasks.noTasksToClear') || '没有可清空的任务')
         return
       }
 
+      clearAllLoading.value = true
+
       // 统计不同状态的任务数量
-      const uploadingTasks = allTasks.filter(t => t.status === 'uploading' || t.status === 'prechecking' || t.status === 'pending')
-      const otherTasks = allTasks.filter(t => !['uploading', 'prechecking', 'pending'].includes(t.status))
+      const uploadingTasks = clearableTasks.filter(
+        t => t.status === 'uploading' || t.status === 'prechecking' || t.status === 'pending'
+      )
+      const otherTasks = clearableTasks.filter(t => !['uploading', 'prechecking', 'pending'].includes(t.status))
 
       let confirmMessage = ''
       if (uploadingTasks.length > 0 && otherTasks.length > 0) {
-        confirmMessage = t('tasks.confirmClearAllWithUploading', {
-          total: allTasks.length,
-          uploading: uploadingTasks.length,
-          other: otherTasks.length
-        }) || `确认清空所有上传任务？\n共有 ${allTasks.length} 个任务，其中 ${uploadingTasks.length} 个正在上传/预检中，${otherTasks.length} 个已完成/失败/已取消。\n正在上传的任务将被取消。`
+        confirmMessage =
+          t('tasks.confirmClearAllWithUploading', {
+            total: clearableTasks.length,
+            uploading: uploadingTasks.length,
+            other: otherTasks.length
+          }) ||
+          `确认清空所有上传任务？\n共有 ${clearableTasks.length} 个任务，其中 ${uploadingTasks.length} 个正在上传/预检中，${otherTasks.length} 个已完成/失败/已取消。\n正在上传的任务将被取消。`
       } else if (uploadingTasks.length > 0) {
-        confirmMessage = t('tasks.confirmClearAllUploading', {
-          count: uploadingTasks.length
-        }) || `确认清空所有上传任务？\n共有 ${uploadingTasks.length} 个正在上传/预检中的任务，清空将取消这些任务。`
+        confirmMessage =
+          t('tasks.confirmClearAllUploading', {
+            count: uploadingTasks.length
+          }) || `确认清空所有上传任务？\n共有 ${uploadingTasks.length} 个正在上传/预检中的任务，清空将取消这些任务。`
       } else {
-        confirmMessage = t('tasks.confirmClearAll', {
-          count: otherTasks.length
-        }) || `确认清空所有上传任务？\n共有 ${otherTasks.length} 个已完成/失败/已取消的任务将被清空。`
+        confirmMessage =
+          t('tasks.confirmClearAll', {
+            count: otherTasks.length
+          }) || `确认清空所有上传任务？\n共有 ${otherTasks.length} 个已完成/失败/已取消的任务将被清空。`
       }
 
       await proxy?.$modal.confirm(confirmMessage)
@@ -310,7 +340,7 @@ export function useUploadTasks() {
       })
 
       // 尝试删除后端任务（批量删除，忽略错误）
-      const deletePromises = allTasks.map(async task => {
+      const deletePromises = clearableTasks.map(async task => {
         if (task.precheckId) {
           try {
             await deleteUploadTask(task.precheckId)
@@ -321,14 +351,16 @@ export function useUploadTasks() {
       })
       await Promise.allSettled(deletePromises)
 
-      // 清空所有本地任务
-      uploadTaskManager.clearAllTasks()
-      proxy?.$modal.msgSuccess(t('tasks.clearAllSuccess', { count: allTasks.length }) || `已清空 ${allTasks.length} 个任务`)
+      // 仅清空可操作任务，保留进行中的外部任务
+      uploadTaskManager.deleteTasks(clearableTasks.map(task => task.id))
+      proxy?.$modal.msgSuccess(
+        t('tasks.clearAllSuccess', { count: clearableTasks.length }) || `已清空 ${clearableTasks.length} 个任务`
+      )
 
       // 重置分页并重新加载
       currentPage.value = 1
-      allUploadTasks.value = []
-      uploadTasks.value = []
+      allUploadTasks.value = uploadTaskManager.getAllTasks()
+      updatePaginatedTasks()
     } catch (error) {
       // 用户取消操作
     } finally {

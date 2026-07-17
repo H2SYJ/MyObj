@@ -409,13 +409,18 @@ export default {
     resumed: 'Resumed upload',
     clearAll: 'Clear All',
     noTasksToClear: 'No tasks to clear',
-    confirmClearAll: 'Confirm clear all upload tasks?\nThere are {count} completed/failed/cancelled tasks that will be cleared.',
-    confirmClearAllUploading: 'Confirm clear all upload tasks?\nThere are {count} uploading/prechecking tasks. Clearing will cancel these tasks.',
-    confirmClearAllWithUploading: 'Confirm clear all upload tasks?\nThere are {total} tasks in total, including {uploading} uploading/prechecking tasks and {other} completed/failed/cancelled tasks.\nUploading tasks will be cancelled.',
+    confirmClearAll:
+      'Confirm clear all upload tasks?\nThere are {count} completed/failed/cancelled tasks that will be cleared.',
+    confirmClearAllUploading:
+      'Confirm clear all upload tasks?\nThere are {count} uploading/prechecking tasks. Clearing will cancel these tasks.',
+    confirmClearAllWithUploading:
+      'Confirm clear all upload tasks?\nThere are {total} tasks in total, including {uploading} uploading/prechecking tasks and {other} completed/failed/cancelled tasks.\nUploading tasks will be cancelled.',
     clearAllSuccess: 'Cleared {count} tasks',
     totalDuration: 'Total Duration',
     averageSpeed: 'Average Speed',
     instantUpload: 'Instant Upload',
+    externalUpload: 'External Task',
+    externalTaskReadOnly: 'External upload is in progress and is read-only',
     confirmCancelDownload: 'Confirm cancel this download task?',
     confirmDeleteDownload: 'Confirm delete this task record?',
     pauseSuccess: 'Paused',

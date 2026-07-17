@@ -1,241 +1,204 @@
 import { uploadTaskManager, type UploadTask } from './uploadTaskManager'
-import { listUncompletedUploads } from '@/api/file'
+import { listUncompletedUploads, listUploadTasks, type UploadTaskItem } from '@/api/file'
 import logger from '@/plugins/logger'
 
-/**
- * 计算已上传大小（根据分片信息）
- * @param uploadedChunks 已上传分片数
- * @param totalChunks 总分片数
- * @param fileSize 文件总大小（字节）
- * @returns number 已上传大小（字节）
- */
+const TASK_PAGE_SIZE = 100
+
+export type BackendUploadTask = UploadTaskItem
+
+function clampProgress(progress: number): number {
+  if (!Number.isFinite(progress)) {
+    return 0
+  }
+  return Math.max(0, Math.min(100, Math.floor(progress)))
+}
+
 function calculateUploadedSize(uploadedChunks: number, totalChunks: number, fileSize: number): number {
   if (totalChunks <= 0) {
     return 0
   }
-  return Math.floor((uploadedChunks / totalChunks) * fileSize)
+  const uploadedSize = Math.floor((uploadedChunks / totalChunks) * fileSize)
+  return Math.max(0, Math.min(fileSize, uploadedSize))
 }
 
-/**
- * 映射后端状态到前端状态
- * @param backendStatus 后端状态字符串
- * @returns UploadTask['status'] 前端状态
- */
 function mapBackendStatusToFrontend(backendStatus: string): UploadTask['status'] {
   if (backendStatus === 'completed') {
     return 'completed'
-  } else if (backendStatus === 'failed' || backendStatus === 'aborted') {
+  }
+  if (backendStatus === 'failed' || backendStatus === 'aborted') {
     return 'failed'
-  } else if (backendStatus === 'uploading' || backendStatus === 'pending') {
-    return 'paused'
+  }
+  if (backendStatus === 'uploading' || backendStatus === 'pending') {
+    return 'uploading'
   }
   return 'paused'
 }
 
-export interface BackendUploadTask {
-  id: string
-  file_name: string
-  file_size: number
-  chunk_size: number
-  total_chunks: number
-  uploaded_chunks: number
-  progress: number
-  status: string
-  error_message?: string
-  path_id: string
-  create_time: string
-  update_time: string
-  expire_time: string
+function isTerminalStatus(status: UploadTask['status']): boolean {
+  return status === 'completed' || status === 'failed' || status === 'cancelled'
 }
 
-/**
- * 同步后端任务到前端任务管理器
- * @param backendTasks 后端任务列表
- * @returns 同步结果统计，包括创建数、更新数、跳过数
- */
 export function syncBackendTasksToFrontend(backendTasks: BackendUploadTask[]): {
   created: number
   updated: number
   skipped: number
+  removed: number
 } {
-  const frontendTasks = uploadTaskManager.getAllTasks()
-  let created = 0
-  let updated = 0
-  let skipped = 0
+  return uploadTaskManager.batchUpdate(() => {
+    let frontendTasks = uploadTaskManager.getAllTasks()
+    const backendTaskIds = new Set(backendTasks.map(task => task.id))
+    let created = 0
+    let updated = 0
+    let skipped = 0
 
-  for (const backendTask of backendTasks) {
-    if (uploadTaskManager.isPrecheckIdDeleted(backendTask.id)) {
-      skipped++
-      continue
-    }
-
-    // 先通过 precheckId 查找
-    let existingTask = frontendTasks.find(t => t.precheckId === backendTask.id)
-
-    // 如果没找到，通过文件名和文件大小匹配（避免预检失败时重复创建任务）
-    if (!existingTask) {
-      existingTask = frontendTasks.find(
-        t => t.file_name === backendTask.file_name && t.file_size === backendTask.file_size && !t.precheckId
-      )
-      // 如果找到匹配的任务，更新它的 precheckId
-      if (existingTask) {
-        uploadTaskManager.updateTask(existingTask.id, {
-          precheckId: backendTask.id
-        })
+    for (const backendTask of backendTasks) {
+      if (uploadTaskManager.isPrecheckIdDeleted(backendTask.id)) {
+        skipped++
+        continue
       }
-    }
 
-    if (!existingTask) {
-      const taskId = uploadTaskManager.createTask(backendTask.file_name, backendTask.file_size)
-
-      if (taskId) {
-        const uploadedSize = calculateUploadedSize(
-          backendTask.uploaded_chunks,
-          backendTask.total_chunks,
-          backendTask.file_size
+      let existingTask = frontendTasks.find(task => task.precheckId === backendTask.id)
+      if (!existingTask) {
+        existingTask = frontendTasks.find(
+          task =>
+            task.file_name === backendTask.file_name && task.file_size === backendTask.file_size && !task.precheckId
         )
+        if (existingTask) {
+          uploadTaskManager.updateTask(existingTask.id, { precheckId: backendTask.id })
+        }
+      }
 
-        const frontendStatus = mapBackendStatusToFrontend(backendTask.status)
+      const backendStatus = mapBackendStatusToFrontend(backendTask.status)
+      const backendProgress = backendStatus === 'completed' ? 100 : clampProgress(backendTask.progress)
+      const uploadedSize =
+        backendStatus === 'completed'
+          ? backendTask.file_size
+          : calculateUploadedSize(backendTask.uploaded_chunks, backendTask.total_chunks, backendTask.file_size)
 
-        const backendProgress = Math.floor(backendTask.progress)
+      if (!existingTask) {
+        const taskId = uploadTaskManager.createTask(backendTask.file_name, backendTask.file_size, backendStatus)
         uploadTaskManager.updateTask(taskId, {
           precheckId: backendTask.id,
           pathId: backendTask.path_id,
-          // 只有当后端进度大于等于前端进度时才更新，防止进度倒退
+          created_at: backendTask.create_time,
           progress: backendProgress,
           uploaded_size: uploadedSize,
-          status: frontendStatus,
-          error: backendTask.error_message
+          status: backendStatus,
+          speed: '0 KB/s',
+          error: backendTask.error_message,
+          isExternal: true
         })
-        uploadTaskManager.saveTasksToStorage()
         created++
-      }
-    } else {
-      const uploadedSize = calculateUploadedSize(
-        backendTask.uploaded_chunks,
-        backendTask.total_chunks,
-        backendTask.file_size
-      )
-
-      let statusUpdate: Partial<UploadTask> | undefined
-      if (backendTask.status === 'completed' && existingTask.status !== 'completed') {
-        statusUpdate = { status: 'completed', progress: 100, uploaded_size: existingTask.file_size }
-      } else if (
-        (backendTask.status === 'failed' || backendTask.status === 'aborted') &&
-        existingTask.status !== 'failed'
-      ) {
-        statusUpdate = { status: 'failed', error: backendTask.error_message }
+        frontendTasks = uploadTaskManager.getAllTasks()
+        continue
       }
 
-      const backendProgress = Math.floor(backendTask.progress)
-      const currentProgress = existingTask.progress || 0
-      
-      // 防止进度倒退的逻辑：
-      // 1. 如果任务正在预检中，不更新 progress（预检进度由前端控制）
-      // 2. 如果后端进度大于等于前端进度，则更新
-      // 3. 如果状态变更（如完成、失败），则允许更新进度
-      const shouldUpdateProgress = 
-        existingTask.status !== 'prechecking' && // 预检中不更新 progress
-        (backendProgress >= currentProgress || statusUpdate) // 后端进度更大或状态变更时更新
-      
-      uploadTaskManager.updateTask(existingTask.id, {
-        ...(shouldUpdateProgress ? { progress: backendProgress } : {}),
-        uploaded_size: uploadedSize,
-        ...statusUpdate
-      })
+      const updates: Partial<UploadTask> = {
+        pathId: backendTask.path_id,
+        error: backendTask.error_message
+      }
+
+      if (backendStatus === 'completed') {
+        updates.status = 'completed'
+        updates.progress = 100
+        updates.uploaded_size = existingTask.file_size
+        updates.speed = '0 KB/s'
+      } else if (backendStatus === 'failed') {
+        if (existingTask.status !== 'completed') {
+          updates.status = 'failed'
+          updates.progress = Math.max(existingTask.progress || 0, backendProgress)
+          updates.uploaded_size = uploadedSize
+          updates.speed = '0 KB/s'
+        }
+      } else if (!isTerminalStatus(existingTask.status)) {
+        if (existingTask.isExternal) {
+          updates.status = backendStatus
+          updates.speed = '0 KB/s'
+        }
+        if (existingTask.status !== 'prechecking' && backendProgress >= (existingTask.progress || 0)) {
+          updates.progress = backendProgress
+          updates.uploaded_size = uploadedSize
+        }
+      }
+
+      uploadTaskManager.updateTask(existingTask.id, updates)
       updated++
     }
-  }
 
-  return { created, updated, skipped }
+    const removed = uploadTaskManager.removeMissingExternalTasks(backendTaskIds)
+    return { created, updated, skipped, removed }
+  })
 }
 
-/**
- * 从后端加载并同步未完成的上传任务
- * @returns Promise<同步结果> 包含成功标志、创建数、更新数、跳过数和错误信息
- */
+async function loadAllBackendUploadTasks(): Promise<BackendUploadTask[]> {
+  const tasksById = new Map<string, BackendUploadTask>()
+  let page = 1
+  let latestTotal = 0
+
+  while (true) {
+    const response = await listUploadTasks(page, TASK_PAGE_SIZE)
+    if (response.code !== 200) {
+      throw new Error(`后端返回错误: code=${response.code}, message=${response.message || '未知错误'}`)
+    }
+
+    const data = response.data
+    if (!data || !Array.isArray(data.tasks) || !Number.isFinite(data.total) || data.total < 0) {
+      throw new Error('后端返回的上传任务分页数据格式错误')
+    }
+
+    latestTotal = Math.floor(data.total)
+    data.tasks.forEach(task => tasksById.set(task.id, task))
+
+    if (page * TASK_PAGE_SIZE >= latestTotal) {
+      break
+    }
+    if (data.tasks.length === 0) {
+      throw new Error('后端上传任务分页提前结束')
+    }
+    page++
+  }
+
+  if (tasksById.size < latestTotal) {
+    throw new Error('同步期间上传任务列表发生变化，请稍后重试')
+  }
+  return Array.from(tasksById.values())
+}
+
 export async function loadAndSyncBackendTasks(): Promise<{
   success: boolean
   created: number
   updated: number
   skipped: number
+  removed: number
   error?: string
 }> {
   try {
-    const response = await listUncompletedUploads()
-
-    if (response.code === 200) {
-      // 处理 data 为 null 或 undefined 的情况（视为空数组）
-      let backendTasks: BackendUploadTask[] = []
-
-      if (response.data !== null && response.data !== undefined) {
-        if (Array.isArray(response.data)) {
-          backendTasks = response.data as BackendUploadTask[]
-        } else {
-          logger.warn('后端返回数据格式错误: data 不是数组类型', response.data)
-          return {
-            success: false,
-            created: 0,
-            updated: 0,
-            skipped: 0,
-            error: '后端返回数据格式错误: data 不是数组类型'
-          }
-        }
-      }
-
-      const result = syncBackendTasksToFrontend(backendTasks)
-      return {
-        success: true,
-        ...result
-      }
-    }
-
-    logger.warn('后端返回数据格式错误: code 不是 200', response)
-    return {
-      success: false,
-      created: 0,
-      updated: 0,
-      skipped: 0,
-      error: `后端返回数据格式错误: code=${response.code}, message=${response.message || '未知错误'}`
-    }
+    const backendTasks = await loadAllBackendUploadTasks()
+    const result = syncBackendTasksToFrontend(backendTasks)
+    return { success: true, ...result }
   } catch (error: any) {
-    logger.warn('从后端加载未完成上传任务失败:', error)
+    logger.warn('从后端加载上传任务失败:', error)
     return {
       success: false,
       created: 0,
       updated: 0,
       skipped: 0,
+      removed: 0,
       error: error.message || '加载失败'
     }
   }
 }
 
 /**
- * 查找后端任务信息（用于恢复上传）
- * @param precheckId 预检ID
- * @returns Promise<BackendUploadTask | null> 后端任务信息，如果不存在则返回null
+ * 查询未完成任务仅用于断点恢复，不参与任务历史同步。
  */
 export async function findBackendTask(precheckId: string): Promise<BackendUploadTask | null> {
   try {
     const response = await listUncompletedUploads()
-
-    if (response.code === 200) {
-      // 处理 data 为 null 或 undefined 的情况（视为空数组）
-      let backendTasks: BackendUploadTask[] = []
-
-      if (response.data !== null && response.data !== undefined) {
-        if (Array.isArray(response.data)) {
-          backendTasks = response.data as BackendUploadTask[]
-        } else {
-          logger.warn('查找后端任务失败: data 不是数组类型', response.data)
-          return null
-        }
-      }
-
-      return backendTasks.find(t => t.id === precheckId) || null
+    if (response.code !== 200 || !Array.isArray(response.data)) {
+      return null
     }
-
-    return null
+    return response.data.find(task => task.id === precheckId) || null
   } catch (error: any) {
     logger.warn('查找后端任务失败:', error)
     return null

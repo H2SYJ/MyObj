@@ -1772,6 +1772,7 @@ func (f *FileService) updateUploadTask(ctx context.Context, precheckID, userID s
 
 	// 更新任务信息
 	task.UploadedChunks = uploadedChunks
+	task.TotalChunks = totalChunks
 	task.Status = status
 	task.ErrorMessage = errorMsg
 	if tempDir != "" {
@@ -2003,12 +2004,6 @@ func (f *FileService) GetUploadTaskList(req *request.UploadTaskListRequest, user
 	// 转换为响应结构体（移除敏感信息）
 	taskItems := make([]response.UploadTaskItem, 0, len(tasks))
 	for _, task := range tasks {
-		// 计算进度
-		progress := 0.0
-		if task.TotalChunks > 0 {
-			progress = float64(task.UploadedChunks) / float64(task.TotalChunks) * 100
-		}
-
 		taskItems = append(taskItems, response.UploadTaskItem{
 			ID:             task.ID,
 			FileName:       task.FileName,
@@ -2020,7 +2015,7 @@ func (f *FileService) GetUploadTaskList(req *request.UploadTaskListRequest, user
 			PathID:         task.PathID,
 			Status:         task.Status,
 			ErrorMessage:   task.ErrorMessage,
-			Progress:       progress,
+			Progress:       calculateUploadTaskProgress(task),
 			CreateTime:     task.CreateTime,
 			UpdateTime:     task.UpdateTime,
 			ExpireTime:     task.ExpireTime,
@@ -2036,4 +2031,22 @@ func (f *FileService) GetUploadTaskList(req *request.UploadTaskListRequest, user
 	}
 
 	return models.NewJsonResponse(200, "获取上传任务列表成功", responseData), nil
+}
+
+func calculateUploadTaskProgress(task *models.UploadTask) float64 {
+	if task.Status == "completed" {
+		return 100
+	}
+	if task.TotalChunks <= 0 {
+		return 0
+	}
+
+	progress := float64(task.UploadedChunks) / float64(task.TotalChunks) * 100
+	if progress < 0 {
+		return 0
+	}
+	if progress > 100 {
+		return 100
+	}
+	return progress
 }
