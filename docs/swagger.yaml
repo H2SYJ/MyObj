@@ -883,6 +883,55 @@ paths:
       summary: 设置文件公开状态
       tags:
       - 文件管理
+  /file/thumbnail/{fileId}:
+    put:
+      consumes:
+      - multipart/form-data
+      description: 修改当前用户文件的缩略图，仅支持 JPEG，最大1MB，宽高不超过1000像素
+      parameters:
+      - description: 用户文件ID
+        in: path
+        name: fileId
+        required: true
+        type: string
+      - description: JPEG缩略图（最大1MB，宽高不超过1000像素）
+        in: formData
+        name: thumbnail
+        required: true
+        type: file
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: 修改成功
+          schema:
+            allOf:
+            - $ref: '#/definitions/myobj_src_pkg_models.JsonResponse'
+            - properties:
+                data:
+                  type: object
+              type: object
+        "400":
+          description: 参数错误或缩略图无效
+          schema:
+            $ref: '#/definitions/myobj_src_pkg_models.JsonResponse'
+        "403":
+          description: 加密文件不支持缩略图
+          schema:
+            $ref: '#/definitions/myobj_src_pkg_models.JsonResponse'
+        "404":
+          description: 文件不存在或无权访问
+          schema:
+            $ref: '#/definitions/myobj_src_pkg_models.JsonResponse'
+        "500":
+          description: 修改失败
+          schema:
+            $ref: '#/definitions/myobj_src_pkg_models.JsonResponse'
+      security:
+      - BearerAuth: []
+      summary: 修改文件缩略图
+      tags:
+      - 文件管理
   /file/upload:
     post:
       consumes:

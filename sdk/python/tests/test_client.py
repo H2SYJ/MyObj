@@ -141,6 +141,42 @@ class MyObjClientTest(unittest.TestCase):
         self.assertEqual(session.calls[1]["timeout"], 30.0)
         self.assertIsNone(session.calls[2]["timeout"])
 
+    def test_update_thumbnail_uploads_jpeg(self) -> None:
+        session = FakeSession(
+            [
+                json_response(
+                    {
+                        "code": 200,
+                        "message": "修改缩略图成功",
+                        "data": {"file_id": "user-file-1", "has_thumbnail": True},
+                    }
+                )
+            ]
+        )
+        client = self.make_client(session)
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            thumbnail_path = Path(temp_dir) / "视频封面.jpg"
+            thumbnail_path.write_bytes(b"jpeg-content")
+            result = client.update_thumbnail("user-file-1", thumbnail_path)
+
+        self.assertTrue(result["data"]["has_thumbnail"])
+        call = session.calls[0]
+        self.assertEqual(call["method"], "PUT")
+        self.assertEqual(
+            call["url"],
+            "http://localhost:8080/api/file/thumbnail/user-file-1",
+        )
+        self.assertEqual(call["files"]["thumbnail"][0], "视频封面.jpg")
+        self.assertEqual(call["files"]["thumbnail"][2], "image/jpeg")
+        self.assertTrue(call["files"]["thumbnail"][1].closed)
+
+    def test_update_thumbnail_rejects_missing_file(self) -> None:
+        client = self.make_client(FakeSession([]))
+
+        with self.assertRaises(FileNotFoundError):
+            client.update_thumbnail("user-file-1", "不存在的缩略图.jpg")
+
     def test_resume_upload_disables_timeout_for_last_pending_chunk(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             file_path = Path(temp_dir) / "断点续传.txt"

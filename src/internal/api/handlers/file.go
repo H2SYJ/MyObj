@@ -68,6 +68,8 @@ func (f *FileHandler) Router(c *gin.RouterGroup) {
 		fileGroup.GET("/list", middleware.PowerVerify("file:preview"), f.GetFileList)
 		// 获取缩略图
 		fileGroup.GET("/thumbnail/:fileId", middleware.PowerVerify("file:preview"), f.GetThumbnail)
+		// 修改缩略图（业务逻辑会验证文件所有权）
+		fileGroup.PUT("/thumbnail/:fileId", f.UpdateThumbnail)
 		// 搜索当前用户文件
 		fileGroup.GET("/search/user", middleware.PowerVerify("file:preview"), f.SearchUserFiles)
 		// 搜索公开文件
@@ -260,6 +262,54 @@ func (f *FileHandler) GetThumbnail(c *gin.Context) {
 	}
 	// 发送缩略图响应
 	f.sendThumbnailResponse(c, fileInfo.ThumbnailImg)
+}
+
+// UpdateThumbnail godoc
+// @Summary 修改文件缩略图
+// @Description 修改当前用户文件的缩略图，仅支持 JPEG，最大1MB，宽高不超过1000像素
+// @Tags 文件管理
+// @Accept multipart/form-data
+// @Produce json
+// @Security BearerAuth
+// @Param fileId path string true "用户文件ID"
+// @Param thumbnail formData file true "JPEG缩略图（最大1MB，宽高不超过1000像素）"
+// @Success 200 {object} models.JsonResponse{data=object} "修改成功"
+// @Failure 400 {object} models.JsonResponse "参数错误或缩略图无效"
+// @Failure 403 {object} models.JsonResponse "加密文件不支持缩略图"
+// @Failure 404 {object} models.JsonResponse "文件不存在或无权访问"
+// @Failure 500 {object} models.JsonResponse "修改失败"
+// @Router /file/thumbnail/{fileId} [put]
+func (f *FileHandler) UpdateThumbnail(c *gin.Context) {
+	fileID := c.Param("fileId")
+	if fileID == "" {
+		c.JSON(200, models.NewJsonResponse(400, "文件ID不能为空", nil))
+		return
+	}
+
+	thumbnail, thumbnailHeader, err := c.Request.FormFile("thumbnail")
+	if err != nil {
+		if errors.Is(err, http.ErrMissingFile) {
+			c.JSON(200, models.NewJsonResponse(400, "缩略图不能为空", nil))
+			return
+		}
+		c.JSON(200, models.NewJsonResponse(400, "读取缩略图失败", err.Error()))
+		return
+	}
+	defer thumbnail.Close()
+
+	result, err := f.service.UpdateThumbnail(
+		c.Request.Context(),
+		fileID,
+		c.GetString("userID"),
+		thumbnail,
+		thumbnailHeader,
+	)
+	if err != nil {
+		logger.LOG.Error("修改缩略图失败", "error", err, "fileID", fileID)
+		c.JSON(200, models.NewJsonResponse(500, "修改缩略图失败", err.Error()))
+		return
+	}
+	c.JSON(200, result)
 }
 
 // MakeDir 创建目录

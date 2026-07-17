@@ -179,6 +179,17 @@ client.download_thumbnail(
 
 `download_file` 会先创建异步准备任务，等待文件合并或解密完成，再流式写入目标文件。下载期间先写入同目录下的 `.part` 文件，成功后再替换为最终文件。
 
+## 修改缩略图
+
+```python
+client.update_thumbnail(
+    "用户文件ID",
+    "D:/封面/视频封面.jpg",
+)
+```
+
+缩略图必须是 JPEG 图片，文件不超过 1MB，宽高均不超过 1000 像素。加密文件不支持修改缩略图。
+
 ## 打包下载
 
 ```python

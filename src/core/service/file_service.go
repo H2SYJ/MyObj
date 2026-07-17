@@ -28,8 +28,9 @@ import (
 )
 
 // 全局上传锁，用于防止同一文件的并发处理
-var uploadLocks sync.Map     // key: userID+fileName, value: *sync.Mutex
-var processingFiles sync.Map // key: userID+fileName, value: bool (标记文件是否正在处理)
+var uploadLocks sync.Map          // key: userID+fileName, value: *sync.Mutex
+var processingFiles sync.Map      // key: userID+fileName, value: bool (标记文件是否正在处理)
+var thumbnailUpdateLocks sync.Map // key: fileInfoID, value: *sync.Mutex
 
 // FileService 文件服务
 type FileService struct {
@@ -45,6 +46,130 @@ func NewFileService(factory *impl.RepositoryFactory, cacheLocal cache.Cache) *Fi
 }
 func (f *FileService) GetRepository() *impl.RepositoryFactory {
 	return f.factory
+}
+
+// UpdateThumbnail 校验所有权后替换文件缩略图。
+func (f *FileService) UpdateThumbnail(
+	ctx context.Context,
+	fileID string,
+	userID string,
+	thumbnail multipart.File,
+	header *multipart.FileHeader,
+) (*models.JsonResponse, error) {
+	if thumbnail == nil || header == nil {
+		return models.NewJsonResponse(400, "缩略图不能为空", nil), nil
+	}
+
+	userFile, err := f.factory.UserFiles().GetByUserIDAndUfID(ctx, userID, fileID)
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return models.NewJsonResponse(404, "文件不存在或无权访问", nil), nil
+		}
+		return nil, fmt.Errorf("查询用户文件失败: %w", err)
+	}
+
+	fileInfo, err := f.factory.FileInfo().GetByID(ctx, userFile.FileID)
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return models.NewJsonResponse(404, "文件不存在", nil), nil
+		}
+		return nil, fmt.Errorf("查询文件信息失败: %w", err)
+	}
+	if fileInfo.IsEnc {
+		return models.NewJsonResponse(403, "加密文件不支持修改缩略图", nil), nil
+	}
+
+	targetPath, err := thumbnailTargetPath(fileInfo)
+	if err != nil {
+		return nil, err
+	}
+
+	lockValue, _ := thumbnailUpdateLocks.LoadOrStore(fileInfo.ID, &sync.Mutex{})
+	lock := lockValue.(*sync.Mutex)
+	lock.Lock()
+	defer lock.Unlock()
+
+	tempDir, err := os.MkdirTemp(filepath.Dir(targetPath), ".thumbnail-update-*")
+	if err != nil {
+		return nil, fmt.Errorf("创建缩略图临时目录失败: %w", err)
+	}
+	defer os.RemoveAll(tempDir)
+
+	stagedPath, err := upload.SaveVideoThumbnail(thumbnail, header.Size, tempDir)
+	if err != nil {
+		return models.NewJsonResponse(400, "缩略图无效", err.Error()), nil
+	}
+
+	oldThumbnailPath := fileInfo.ThumbnailImg
+	if err := replaceThumbnailAndUpdate(
+		stagedPath,
+		targetPath,
+		func() error {
+			return f.factory.FileInfo().UpdateThumbnailPath(ctx, fileInfo.ID, targetPath)
+		},
+	); err != nil {
+		return nil, err
+	}
+
+	if oldThumbnailPath != "" && filepath.Clean(oldThumbnailPath) != filepath.Clean(targetPath) {
+		if err := os.Remove(oldThumbnailPath); err != nil && !os.IsNotExist(err) {
+			logger.LOG.Warn("清理旧缩略图失败", "path", oldThumbnailPath, "error", err)
+		}
+	}
+
+	logger.LOG.Info("修改缩略图成功", "fileID", fileID, "fileInfoID", fileInfo.ID, "userID", userID)
+	return models.NewJsonResponse(200, "修改缩略图成功", map[string]interface{}{
+		"file_id":       fileID,
+		"has_thumbnail": true,
+	}), nil
+}
+
+func thumbnailTargetPath(fileInfo *models.FileInfo) (string, error) {
+	if fileInfo.Path == "" {
+		return "", fmt.Errorf("文件存储路径为空")
+	}
+	if fileInfo.RandomName == "" {
+		return "", fmt.Errorf("文件随机存储名为空")
+	}
+	return filepath.Join(filepath.Dir(fileInfo.Path), fileInfo.RandomName+".jpg"), nil
+}
+
+// replaceThumbnailAndUpdate 先替换磁盘文件，再更新数据库；数据库失败时恢复旧文件。
+func replaceThumbnailAndUpdate(stagedPath, targetPath string, updatePath func() error) error {
+	backupPath := stagedPath + ".previous"
+	hadTarget := false
+	if _, err := os.Stat(targetPath); err == nil {
+		if err := os.Rename(targetPath, backupPath); err != nil {
+			return fmt.Errorf("备份旧缩略图失败: %w", err)
+		}
+		hadTarget = true
+	} else if !os.IsNotExist(err) {
+		return fmt.Errorf("检查旧缩略图失败: %w", err)
+	}
+
+	if err := os.Rename(stagedPath, targetPath); err != nil {
+		if hadTarget {
+			_ = os.Rename(backupPath, targetPath)
+		}
+		return fmt.Errorf("保存新缩略图失败: %w", err)
+	}
+
+	if err := updatePath(); err != nil {
+		removeErr := os.Remove(targetPath)
+		var restoreErr error
+		if hadTarget {
+			restoreErr = os.Rename(backupPath, targetPath)
+		}
+		if removeErr != nil && !os.IsNotExist(removeErr) {
+			return fmt.Errorf("更新缩略图路径失败: %w；删除新缩略图失败: %v", err, removeErr)
+		}
+		if restoreErr != nil {
+			return fmt.Errorf("更新缩略图路径失败: %w；恢复旧缩略图失败: %v", err, restoreErr)
+		}
+		return fmt.Errorf("更新缩略图路径失败: %w", err)
+	}
+
+	return nil
 }
 
 // Precheck 文件预检查

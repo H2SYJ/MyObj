@@ -478,6 +478,27 @@ class MyObjClient:
             json={"file_id": file_id, "public": public},
         )
 
+    def update_thumbnail(
+        self, file_id: str, thumbnail_path: PathLike
+    ) -> dict[str, Any]:
+        """使用 JPEG 图片修改文件缩略图。"""
+
+        thumbnail = Path(thumbnail_path)
+        if not thumbnail.is_file():
+            raise FileNotFoundError(f"缩略图不存在: {thumbnail}")
+        with thumbnail.open("rb") as thumbnail_stream:
+            return self._request_json(
+                "PUT",
+                f"/file/thumbnail/{file_id}",
+                files={
+                    "thumbnail": (
+                        thumbnail.name,
+                        thumbnail_stream,
+                        "image/jpeg",
+                    )
+                },
+            )
+
     # 上传
 
     @staticmethod

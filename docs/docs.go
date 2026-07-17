@@ -855,6 +855,86 @@ const docTemplate = `{
                 }
             }
         },
+        "/file/thumbnail/{fileId}": {
+            "put": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "修改当前用户文件的缩略图，仅支持 JPEG，最大1MB，宽高不超过1000像素",
+                "consumes": [
+                    "multipart/form-data"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "文件管理"
+                ],
+                "summary": "修改文件缩略图",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "用户文件ID",
+                        "name": "fileId",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "file",
+                        "description": "JPEG缩略图（最大1MB，宽高不超过1000像素）",
+                        "name": "thumbnail",
+                        "in": "formData",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "修改成功",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/myobj_src_pkg_models.JsonResponse"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "type": "object"
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    },
+                    "400": {
+                        "description": "参数错误或缩略图无效",
+                        "schema": {
+                            "$ref": "#/definitions/myobj_src_pkg_models.JsonResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "加密文件不支持缩略图",
+                        "schema": {
+                            "$ref": "#/definitions/myobj_src_pkg_models.JsonResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "文件不存在或无权访问",
+                        "schema": {
+                            "$ref": "#/definitions/myobj_src_pkg_models.JsonResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "修改失败",
+                        "schema": {
+                            "$ref": "#/definitions/myobj_src_pkg_models.JsonResponse"
+                        }
+                    }
+                }
+            }
+        },
         "/file/upload": {
             "post": {
                 "security": [
