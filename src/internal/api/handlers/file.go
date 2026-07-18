@@ -64,6 +64,7 @@ func (f *FileHandler) Router(c *gin.RouterGroup) {
 		fileGroup.POST("/upload/clean-expired", middleware.PowerVerify("file:upload"), f.CleanExpiredUploads)
 		// 文件上传接口
 		fileGroup.POST("/upload", middleware.PowerVerify("file:upload"), f.UploadFile)
+		fileGroup.POST("/upload/finalize/retry", middleware.PowerVerify("file:upload"), f.RetryUploadFinalize)
 		// 获取文件列表
 		fileGroup.GET("/list", middleware.PowerVerify("file:preview"), f.GetFileList)
 		// 获取缩略图
@@ -539,6 +540,25 @@ func (f *FileHandler) UploadFile(c *gin.Context) {
 		return
 	}
 
+	c.JSON(200, result)
+}
+
+// RetryUploadFinalize 重新提交失败的后台文件处理任务。
+func (f *FileHandler) RetryUploadFinalize(c *gin.Context) {
+	req := new(request.RetryUploadFinalizeRequest)
+	if err := c.ShouldBindJSON(req); err != nil {
+		c.JSON(200, models.NewJsonResponse(400, "参数错误", err.Error()))
+		return
+	}
+	result, err := f.service.RetryUploadFinalize(req, c.GetString("userID"))
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			c.JSON(200, models.NewJsonResponse(404, "上传任务不存在", nil))
+			return
+		}
+		c.JSON(200, models.NewJsonResponse(500, "重新处理失败", err.Error()))
+		return
+	}
 	c.JSON(200, result)
 }
 

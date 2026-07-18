@@ -537,6 +537,9 @@ class MyObjClient:
         thumbnail_path: Optional[PathLike] = None,
         progress: Optional[ProgressCallback] = None,
         show_progress: bool = True,
+        wait_for_completion: bool = True,
+        finalize_timeout: Optional[float] = None,
+        finalize_poll_interval: float = 1.0,
     ) -> dict[str, Any]:
         """预检并上传文件，支持秒传、分片上传和断点续传。"""
 
@@ -545,6 +548,10 @@ class MyObjClient:
             raise FileNotFoundError(f"文件不存在: {source_path}")
         if encrypted and not file_password:
             raise ValueError("加密上传必须提供 file_password")
+        if finalize_timeout is not None and finalize_timeout <= 0:
+            raise ValueError("finalize_timeout 必须大于0")
+        if finalize_poll_interval <= 0:
+            raise ValueError("finalize_poll_interval 必须大于0")
 
         chunk_size = self.DEFAULT_CHUNK_SIZE
         file_size = source_path.stat().st_size
@@ -640,6 +647,7 @@ class MyObjClient:
                         "chunk_md5": chunk_md5,
                         "is_enc": "true" if encrypted else "false",
                         "file_password": file_password if encrypted else "",
+                        "async_finalize": "true",
                     }
                     files: dict[str, Any] = {
                         "file": (
@@ -666,16 +674,57 @@ class MyObjClient:
                             "/file/upload",
                             data=form,
                             files=files,
-                            # 补齐最后一个待上传分片后，服务端会同步合并并处理文件，
-                            # 该过程耗时取决于文件大小，因此不设置读取超时。
-                            timeout=None if pending_chunks == 1 else self.timeout,
+                            timeout=self.timeout,
                         )
                         pending_chunks -= 1
 
                     uploaded_bytes += len(chunk)
                     report_progress(uploaded_bytes)
 
+            response_data = last_response.get("data")
+            if (
+                wait_for_completion
+                and isinstance(response_data, Mapping)
+                and response_data.get("status") == "processing"
+            ):
+                return self._wait_upload_finalize(
+                    precheck_id,
+                    timeout=finalize_timeout,
+                    poll_interval=finalize_poll_interval,
+                )
             return last_response
+
+    def _wait_upload_finalize(
+        self,
+        precheck_id: str,
+        *,
+        timeout: Optional[float],
+        poll_interval: float,
+    ) -> dict[str, Any]:
+        deadline = time.monotonic() + timeout if timeout is not None else None
+        while True:
+            progress_response = self.get_upload_progress(precheck_id)
+            progress_data = progress_response.get("data")
+            if not isinstance(progress_data, Mapping):
+                raise MyObjHTTPError("服务器未返回文件处理进度")
+            status = str(progress_data.get("status") or "")
+            if status == "completed":
+                file_id = str(progress_data.get("file_id") or "")
+                return {
+                    "code": 200,
+                    "message": "上传成功",
+                    "data": {
+                        "id": file_id,
+                        "file_id": file_id,
+                        "is_complete": True,
+                    },
+                }
+            if status in {"failed", "aborted"}:
+                message = str(progress_data.get("error_message") or "服务器处理文件失败")
+                raise MyObjHTTPError(message)
+            if deadline is not None and time.monotonic() >= deadline:
+                raise TimeoutError("等待服务器处理文件超时")
+            time.sleep(poll_interval)
 
     def get_upload_progress(self, precheck_id: str) -> dict[str, Any]:
         return self._request_json(

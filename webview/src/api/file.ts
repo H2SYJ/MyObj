@@ -182,6 +182,11 @@ export interface UploadProgressResponse {
   progress: number // 进度百分比 (0-100)
   md5: string[] // 已上传分片的MD5列表
   is_complete: boolean // 是否已完成
+  status: 'pending' | 'uploading' | 'processing' | 'completed' | 'failed' | 'aborted'
+  stage?: 'queued' | 'validating' | 'storing' | 'encrypting' | 'committing' | 'completed'
+  error_message?: string
+  file_id?: string
+  is_enc: boolean
 }
 
 /**
@@ -202,6 +207,7 @@ export interface uploadParams {
   chunk_md5: string
   is_enc: boolean
   file_password: string
+  async_finalize?: boolean
 }
 
 /**
@@ -218,6 +224,7 @@ export const uploadFile = (
   formData.append('total_chunks', data.total_chunks.toString())
   formData.append('chunk_md5', data.chunk_md5)
   formData.append('is_enc', data.is_enc.toString())
+  formData.append('async_finalize', (data.async_finalize ?? true).toString())
   if (data.is_enc && data.file_password) {
     formData.append('file_password', data.file_password)
   }
@@ -273,6 +280,9 @@ export interface UploadTaskItem {
   uploaded_chunks: number
   progress: number
   status: string
+  processing_stage?: string
+  is_enc: boolean
+  result_file_id?: string
   error_message?: string
   path_id: string
   create_time: string
@@ -316,6 +326,13 @@ export interface DeleteUploadTaskRequest {
 export const deleteUploadTask = (taskId: string) => {
   return post<ApiResponse>(API_ENDPOINTS.FILE.DELETE_UPLOAD_TASK, {
     task_id: taskId
+  })
+}
+
+export const retryUploadFinalize = (precheckId: string, filePassword?: string) => {
+  return post<ApiResponse<{ task_id: string; status: string }>>(API_ENDPOINTS.FILE.FINALIZE_RETRY, {
+    precheck_id: precheckId,
+    file_password: filePassword || ''
   })
 }
 

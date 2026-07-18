@@ -2,6 +2,7 @@ package upload
 
 import (
 	"context"
+	"encoding/hex"
 	"fmt"
 	"io"
 	"myobj/src/config"
@@ -21,6 +22,7 @@ import (
 
 	"github.com/gabriel-vasile/mimetype"
 	"github.com/google/uuid"
+	"github.com/zeebo/blake3"
 	"gorm.io/gorm"
 )
 
@@ -56,6 +58,10 @@ type FileUploadData struct {
 	DiskID string `json:"disk_id"`
 	// 文件加密密码（明文）
 	FilePassword string `json:"file_password"`
+	// 处理失败时保留临时分片，供后台任务重试。
+	PreserveTempOnError bool `json:"preserve_temp_on_error"`
+	// StageCallback 用于异步任务记录处理阶段，不参与持久化。
+	StageCallback func(stage string) `json:"-"`
 }
 
 // ProcessUploadedFile 处理已上传的文件
@@ -78,17 +84,27 @@ func ProcessUploadedFile(data *FileUploadData, repoFactory *impl.RepositoryFacto
 
 	// 确保无论成功失败都清理临时文件
 	defer func() {
-		cleanupTempFiles(data)
+		if recovered := recover(); recovered != nil {
+			if !data.PreserveTempOnError {
+				cleanupTempFiles(data)
+			}
+			panic(recovered)
+		}
+		if err == nil || !data.PreserveTempOnError {
+			cleanupTempFiles(data)
+		}
 	}()
 
 	// 1. 合并分片（如果是分片上传）
 	mergedFilePath := data.TempFilePath
+	var mergedFullHash string
 	if data.IsChunk {
-		mergedPath, err := mergeChunks(data)
+		mergedPath, fullHash, err := mergeChunks(data)
 		if err != nil {
 			return "", fmt.Errorf("合并分片失败: %w", err)
 		}
 		mergedFilePath = mergedPath
+		mergedFullHash = fullHash
 	}
 
 	// 2. 检测文件MIME类型
@@ -106,14 +122,16 @@ func ProcessUploadedFile(data *FileUploadData, repoFactory *impl.RepositoryFacto
 	resultChan := make(chan asyncResult, 2)
 	var wg sync.WaitGroup
 
-	// 3.1 异步计算全量hash
-	wg.Add(1)
-	go func() {
-		defer wg.Done()
-		hasher := hash.NewFastBlake3Hasher()
-		fullHash, _, err := hasher.ComputeFileHash(mergedFilePath)
-		resultChan <- asyncResult{fullHash: fullHash, err: err}
-	}()
+	// 3.1 分片合并时已经顺便计算全量哈希；直传文件仍在这里计算。
+	if mergedFullHash == "" {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			hasher := hash.NewFastBlake3Hasher()
+			fullHash, _, err := hasher.ComputeFileHash(mergedFilePath)
+			resultChan <- asyncResult{fullHash: fullHash, err: err}
+		}()
+	}
 
 	// 3.2 异步生成缩略图（如果需要）
 	var needThumbnail bool
@@ -144,7 +162,7 @@ func ProcessUploadedFile(data *FileUploadData, repoFactory *impl.RepositoryFacto
 	}()
 
 	// 收集结果
-	var fullHash, tempThumbnailPath string
+	fullHash, tempThumbnailPath := mergedFullHash, ""
 	for result := range resultChan {
 		if result.err != nil {
 			return "", fmt.Errorf("异步处理失败: %w", result.err)
@@ -191,6 +209,7 @@ func ProcessUploadedFile(data *FileUploadData, repoFactory *impl.RepositoryFacto
 	var finalFilePath string
 	var fileEncHash string
 	if data.IsEnc {
+		reportUploadStage(data, "encrypting")
 		// 验证用户是否提供了加密密码
 		if data.FilePassword == "" {
 			return "", fmt.Errorf("加密文件必须提供密码")
@@ -249,8 +268,12 @@ func ProcessUploadedFile(data *FileUploadData, repoFactory *impl.RepositoryFacto
 		actualFileSize = srcInfo.Size() // 使用实际文件大小
 		logger.LOG.Debug("准备复制文件", "源文件", finalFilePath, "目标文件", mainFilePath, "源文件大小", srcInfo.Size())
 
-		if err := copyFile(finalFilePath, mainFilePath); err != nil {
-			return "", fmt.Errorf("存储文件失败: %w", err)
+		// 临时目录和最终目录都位于预检选中的同一磁盘，重命名可避免再次复制整个文件。
+		if err := os.Rename(finalFilePath, mainFilePath); err != nil {
+			logger.LOG.Warn("同盘移动文件失败，回退到流式复制", "error", err)
+			if copyErr := copyFile(finalFilePath, mainFilePath); copyErr != nil {
+				return "", fmt.Errorf("存储文件失败: %w", copyErr)
+			}
 		}
 
 		// 验证复制后的文件大小
@@ -340,6 +363,7 @@ func ProcessUploadedFile(data *FileUploadData, repoFactory *impl.RepositoryFacto
 	}
 
 	// 开启数据库事务，确保所有数据库操作的原子性
+	reportUploadStage(data, "committing")
 	err = repoFactory.DB().Transaction(func(tx *gorm.DB) error {
 		// 创建基于事务的仓储工厂
 		txFactory := repoFactory.WithTx(tx)
@@ -393,33 +417,39 @@ func ProcessUploadedFile(data *FileUploadData, repoFactory *impl.RepositoryFacto
 }
 
 // mergeChunks 合并分片文件
-func mergeChunks(data *FileUploadData) (string, error) {
+func mergeChunks(data *FileUploadData) (string, string, error) {
 	// 获取临时目录（应该是磁盘temp目录下的文件名子目录）
 	tempDir := filepath.Dir(data.TempFilePath)
 	mergedPath := filepath.Join(tempDir, "merged_"+filepath.Base(data.FileName))
 
 	mergedFile, err := os.Create(mergedPath)
 	if err != nil {
-		return "", fmt.Errorf("创建合并文件失败: %w", err)
+		return "", "", fmt.Errorf("创建合并文件失败: %w", err)
 	}
 	defer mergedFile.Close()
+	hasher := blake3.New()
+	writer := io.MultiWriter(mergedFile, hasher)
+	buffer := make([]byte, 8*1024*1024)
 
 	// 按索引顺序合并分片
 	for i := 0; i < data.ChunkCount; i++ {
 		chunkPath := filepath.Join(tempDir, fmt.Sprintf("%d.chunk.data", i))
 		chunkFile, err := os.Open(chunkPath)
 		if err != nil {
-			return "", fmt.Errorf("打开分片文件失败 [%d]: %w", i, err)
+			return "", "", fmt.Errorf("打开分片文件失败 [%d]: %w", i, err)
 		}
 
-		if _, err := io.Copy(mergedFile, chunkFile); err != nil {
+		if _, err := io.CopyBuffer(writer, chunkFile, buffer); err != nil {
 			chunkFile.Close()
-			return "", fmt.Errorf("合并分片失败 [%d]: %w", i, err)
+			return "", "", fmt.Errorf("合并分片失败 [%d]: %w", i, err)
 		}
 		chunkFile.Close()
 	}
 
-	return mergedPath, nil
+	if err := mergedFile.Sync(); err != nil {
+		return "", "", fmt.Errorf("同步合并文件失败: %w", err)
+	}
+	return mergedPath, hex.EncodeToString(hasher.Sum(nil)), nil
 }
 
 // detectMimeType 检测文件MIME类型
@@ -498,6 +528,9 @@ func SelectBestDisk(ctx context.Context, repoFactory *impl.RepositoryFactory, fi
 // splitAndStoreFile 分片存储大文件
 func splitAndStoreFile(filePath, storageDir, virtualFileName, fileID string, chunkSizeGB int) ([]*models.FileChunk, string, error) {
 	chunkSize := int64(chunkSizeGB) * 1024 * 1024 * 1024 // GB转字节
+	if chunkSize <= 0 {
+		return nil, "", fmt.Errorf("大文件存储分片大小必须大于0")
+	}
 
 	file, err := os.Open(filePath)
 	if err != nil {
@@ -507,28 +540,30 @@ func splitAndStoreFile(filePath, storageDir, virtualFileName, fileID string, chu
 
 	var chunks []*models.FileChunk
 	var chunkIndex uint32 = 0
-	buffer := make([]byte, chunkSize)
+	buffer := make([]byte, 8*1024*1024)
 
 	for {
-		n, err := file.Read(buffer)
-		if err != nil && err != io.EOF {
-			return nil, "", fmt.Errorf("读取文件失败: %w", err)
-		}
-		if n == 0 {
-			break
-		}
-
-		// 分片文件路径
 		chunkFileName := fmt.Sprintf("%s_%d.data", virtualFileName, chunkIndex)
 		chunkPath := filepath.Join(storageDir, chunkFileName)
-
-		// 写入分片
-		if err := os.WriteFile(chunkPath, buffer[:n], 0644); err != nil {
-			return nil, "", fmt.Errorf("写入分片失败: %w", err)
+		chunkFile, err := os.Create(chunkPath)
+		if err != nil {
+			return nil, "", fmt.Errorf("创建存储分片失败: %w", err)
 		}
-
-		// 计算分片hash
-		chunkHash := hash.ComputeBytes(buffer[:n])
+		hasher := blake3.New()
+		n, copyErr := io.CopyBuffer(io.MultiWriter(chunkFile, hasher), io.LimitReader(file, chunkSize), buffer)
+		if syncErr := chunkFile.Sync(); syncErr != nil && copyErr == nil {
+			copyErr = syncErr
+		}
+		if closeErr := chunkFile.Close(); closeErr != nil && copyErr == nil {
+			copyErr = closeErr
+		}
+		if copyErr != nil {
+			return nil, "", fmt.Errorf("写入存储分片失败: %w", copyErr)
+		}
+		if n == 0 {
+			_ = os.Remove(chunkPath)
+			break
+		}
 
 		// 记录分片信息
 		chunk := &models.FileChunk{
@@ -536,7 +571,7 @@ func splitAndStoreFile(filePath, storageDir, virtualFileName, fileID string, chu
 			FileID:     fileID,
 			ChunkPath:  chunkPath,
 			ChunkSize:  uint64(n),
-			ChunkHash:  chunkHash,
+			ChunkHash:  hex.EncodeToString(hasher.Sum(nil)),
 			ChunkIndex: chunkIndex,
 		}
 		chunks = append(chunks, chunk)
@@ -550,6 +585,12 @@ func splitAndStoreFile(filePath, storageDir, virtualFileName, fileID string, chu
 	}
 
 	return chunks, mainPath, nil
+}
+
+func reportUploadStage(data *FileUploadData, stage string) {
+	if data.StageCallback != nil {
+		data.StageCallback(stage)
+	}
 }
 
 // copyFile 复制文件
@@ -602,6 +643,18 @@ func cleanupTempFiles(data *FileUploadData) {
 
 	// 清理整个临时目录（包含所有分片、合并文件、加密临时文件等）
 	cleanupDirWithRetry(tempDir, 5)
+}
+
+// CleanupTaskTempDir 清理上传任务临时目录，并拒绝删除 temp 目录之外的路径。
+func CleanupTaskTempDir(tempDir string) error {
+	if tempDir == "" {
+		return nil
+	}
+	cleanPath := filepath.Clean(tempDir)
+	if filepath.Base(cleanPath) == "." || !strings.EqualFold(filepath.Base(filepath.Dir(cleanPath)), "temp") {
+		return fmt.Errorf("拒绝清理非法上传临时目录: %s", tempDir)
+	}
+	return os.RemoveAll(cleanPath)
 }
 
 // FileHashInfo 文件hash信息JSON结构

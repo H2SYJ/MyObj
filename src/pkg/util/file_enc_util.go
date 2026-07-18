@@ -167,27 +167,7 @@ func (fc *FileCrypto) selectEncryptionMethod(fileSize int64) (EncryptionMethod, 
 		return Buffered, nil
 	}
 
-	// 获取系统可用内存
-	totalMemory, availMemory, err := fc.GetSystemMemory()
-	if err != nil {
-		logger.LOG.Debug("获取系统内存失败，使用流式处理", "error", err)
-		return Streaming, nil
-	}
-
-	// 使用可用内存的30%作为阈值
-	memoryThreshold := int64(float64(availMemory) * MaxMemoryRatio)
-	logger.LOG.Debug("系统内存信息",
-		"总计MB", totalMemory/(1024*1024),
-		"可用MB", availMemory/(1024*1024),
-		"阈值MB", memoryThreshold/(1024*1024),
-		"文件大小MB", fileSize/(1024*1024))
-
-	// 文件大小在100MB到1GB之间，且可用内存充足，使用内存映射
-	if fileSize <= LargeFileLimit && fileSize <= memoryThreshold {
-		return MemoryMapped, nil
-	}
-
-	// 其他情况使用流式处理
+	// 大文件上传统一使用固定缓冲区流式加密，避免最终处理阶段再次申请整文件内存。
 	return Streaming, nil
 }
 
@@ -205,21 +185,7 @@ func (fc *FileCrypto) selectDecryptionMethod(fileSize int64) (EncryptionMethod, 
 		return Buffered, nil
 	}
 
-	// 获取系统可用内存
-	_, availMemory, err := fc.GetSystemMemory()
-	if err != nil {
-		logger.LOG.Debug("获取系统内存失败，使用流式处理", "error", err)
-		return Streaming, nil
-	}
-
-	memoryThreshold := int64(float64(availMemory) * MaxMemoryRatio)
-
-	// 文件大小在100MB到1GB之间，且可用内存充足，使用内存映射
-	if originalSize <= LargeFileLimit && originalSize <= memoryThreshold {
-		return MemoryMapped, nil
-	}
-
-	// 其他情况使用流式处理
+	// 大文件统一使用流式解密，避免预览或下载时再次申请整文件内存。
 	return Streaming, nil
 }
 

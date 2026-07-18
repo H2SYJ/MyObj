@@ -2,6 +2,7 @@ package impl
 
 import (
 	"context"
+	"myobj/src/pkg/custom_type"
 	"myobj/src/pkg/models"
 	"myobj/src/pkg/repository"
 	"time"
@@ -46,7 +47,7 @@ func (r *uploadTaskRepository) GetUncompletedByUserID(ctx context.Context, userI
 	var tasks []*models.UploadTask
 	now := time.Now()
 	err := r.db.WithContext(ctx).
-		Where("user_id = ? AND status IN (?) AND expire_time > ?", userID, []string{"pending", "uploading"}, now).
+		Where("user_id = ? AND status IN (?) AND expire_time > ?", userID, []string{"pending", "uploading", "processing"}, now).
 		Order("create_time DESC").Find(&tasks).Error
 	return tasks, err
 }
@@ -65,7 +66,7 @@ func (r *uploadTaskRepository) Delete(ctx context.Context, id string) error {
 func (r *uploadTaskRepository) DeleteExpired(ctx context.Context) (int64, error) {
 	now := time.Now()
 	result := r.db.WithContext(ctx).
-		Where("expire_time < ? AND status IN (?)", now, []string{"pending", "uploading", "aborted"}).
+		Where("expire_time < ? AND status IN (?)", now, []string{"pending", "uploading", "failed", "aborted"}).
 		Delete(&models.UploadTask{})
 	return result.RowsAffected, result.Error
 }
@@ -74,7 +75,7 @@ func (r *uploadTaskRepository) DeleteExpired(ctx context.Context) (int64, error)
 func (r *uploadTaskRepository) DeleteExpiredByUserID(ctx context.Context, userID string) (int64, error) {
 	now := time.Now()
 	result := r.db.WithContext(ctx).
-		Where("user_id = ? AND expire_time < ? AND status IN (?)", userID, now, []string{"pending", "uploading", "aborted"}).
+		Where("user_id = ? AND expire_time < ? AND status IN (?)", userID, now, []string{"pending", "uploading", "failed", "aborted"}).
 		Delete(&models.UploadTask{})
 	return result.RowsAffected, result.Error
 }
@@ -84,7 +85,16 @@ func (r *uploadTaskRepository) GetExpiredByUserID(ctx context.Context, userID st
 	var tasks []*models.UploadTask
 	now := time.Now()
 	err := r.db.WithContext(ctx).
-		Where("user_id = ? AND expire_time < ? AND status IN (?)", userID, now, []string{"pending", "uploading", "aborted"}).
+		Where("user_id = ? AND expire_time < ? AND status IN (?)", userID, now, []string{"pending", "uploading", "failed", "aborted"}).
+		Order("expire_time ASC").Find(&tasks).Error
+	return tasks, err
+}
+
+func (r *uploadTaskRepository) ListExpired(ctx context.Context) ([]*models.UploadTask, error) {
+	var tasks []*models.UploadTask
+	now := time.Now()
+	err := r.db.WithContext(ctx).
+		Where("expire_time < ? AND status IN (?)", now, []string{"pending", "uploading", "failed", "aborted"}).
 		Order("expire_time ASC").Find(&tasks).Error
 	return tasks, err
 }
@@ -109,4 +119,24 @@ func (r *uploadTaskRepository) CountByUserID(ctx context.Context, userID string)
 		Where("user_id = ?", userID).
 		Count(&count).Error
 	return count, err
+}
+
+// ListByStatus 查询指定状态的上传任务，供后台处理器恢复任务。
+func (r *uploadTaskRepository) ListByStatus(ctx context.Context, status string) ([]*models.UploadTask, error) {
+	var tasks []*models.UploadTask
+	err := r.db.WithContext(ctx).Where("status = ?", status).Order("update_time ASC").Find(&tasks).Error
+	return tasks, err
+}
+
+// ClaimProcessing 原子地把任务切换为后台处理状态，避免最后几个并发分片重复入队。
+func (r *uploadTaskRepository) ClaimProcessing(ctx context.Context, id string, allowedStatuses []string) (bool, error) {
+	result := r.db.WithContext(ctx).Model(&models.UploadTask{}).
+		Where("id = ? AND status IN ?", id, allowedStatuses).
+		Updates(map[string]interface{}{
+			"status":           "processing",
+			"processing_stage": "queued",
+			"error_message":    "",
+			"update_time":      custom_type.Now(),
+		})
+	return result.RowsAffected == 1, result.Error
 }

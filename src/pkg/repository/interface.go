@@ -215,12 +215,15 @@ type UploadTaskRepository interface {
 	GetByUserID(ctx context.Context, userID string) ([]*models.UploadTask, error)
 	GetUncompletedByUserID(ctx context.Context, userID string) ([]*models.UploadTask, error)
 	GetExpiredByUserID(ctx context.Context, userID string) ([]*models.UploadTask, error) // 获取过期任务
+	ListExpired(ctx context.Context) ([]*models.UploadTask, error)
 	Update(ctx context.Context, task *models.UploadTask) error
 	Delete(ctx context.Context, id string) error
 	DeleteExpired(ctx context.Context) (int64, error)
 	DeleteExpiredByUserID(ctx context.Context, userID string) (int64, error)
 	ListByUserID(ctx context.Context, userID string, offset, limit int) ([]*models.UploadTask, error)
 	CountByUserID(ctx context.Context, userID string) (int64, error) // 统计用户上传任务总数
+	ListByStatus(ctx context.Context, status string) ([]*models.UploadTask, error)
+	ClaimProcessing(ctx context.Context, id string, allowedStatuses []string) (bool, error)
 }
 
 // UploadChunkRepository 上传分片信息仓储接口

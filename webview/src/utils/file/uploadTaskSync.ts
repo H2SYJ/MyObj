@@ -4,6 +4,19 @@ import logger from '@/plugins/logger'
 
 const TASK_PAGE_SIZE = 100
 
+const PROCESSING_STAGE_TEXT: Record<string, string> = {
+  queued: '等待服务器处理...',
+  validating: '正在校验上传分片...',
+  storing: '正在合并并存储文件...',
+  encrypting: '正在加密并存储文件...',
+  committing: '正在提交文件信息...'
+}
+
+function processingStageText(stage?: string): string | undefined {
+  if (!stage) return undefined
+  return PROCESSING_STAGE_TEXT[stage] || '服务器正在处理文件...'
+}
+
 export type BackendUploadTask = UploadTaskItem
 
 function clampProgress(progress: number): number {
@@ -30,6 +43,9 @@ function mapBackendStatusToFrontend(backendStatus: string): UploadTask['status']
   }
   if (backendStatus === 'uploading' || backendStatus === 'pending') {
     return 'uploading'
+  }
+  if (backendStatus === 'processing') {
+    return 'processing'
   }
   return 'paused'
 }
@@ -73,7 +89,9 @@ export function syncBackendTasksToFrontend(backendTasks: BackendUploadTask[]): {
       const uploadedSize =
         backendStatus === 'completed'
           ? backendTask.file_size
-          : calculateUploadedSize(backendTask.uploaded_chunks, backendTask.total_chunks, backendTask.file_size)
+          : backendStatus === 'processing'
+            ? backendTask.file_size
+            : calculateUploadedSize(backendTask.uploaded_chunks, backendTask.total_chunks, backendTask.file_size)
 
       if (!existingTask) {
         const taskId = uploadTaskManager.createTask(backendTask.file_name, backendTask.file_size, backendStatus)
@@ -86,6 +104,8 @@ export function syncBackendTasksToFrontend(backendTasks: BackendUploadTask[]): {
           status: backendStatus,
           speed: '0 KB/s',
           error: backendTask.error_message,
+          currentStep: processingStageText(backendTask.processing_stage),
+          isEncrypted: backendTask.is_enc,
           isExternal: true
         })
         created++
@@ -95,7 +115,9 @@ export function syncBackendTasksToFrontend(backendTasks: BackendUploadTask[]): {
 
       const updates: Partial<UploadTask> = {
         pathId: backendTask.path_id,
-        error: backendTask.error_message
+        error: backendTask.error_message,
+        currentStep: processingStageText(backendTask.processing_stage),
+        isEncrypted: backendTask.is_enc
       }
 
       if (backendStatus === 'completed') {
@@ -110,6 +132,11 @@ export function syncBackendTasksToFrontend(backendTasks: BackendUploadTask[]): {
           updates.uploaded_size = uploadedSize
           updates.speed = '0 KB/s'
         }
+      } else if (backendStatus === 'processing') {
+        updates.status = 'processing'
+        updates.progress = backendProgress
+        updates.uploaded_size = backendTask.file_size
+        updates.speed = '0 KB/s'
       } else if (!isTerminalStatus(existingTask.status)) {
         if (existingTask.isExternal) {
           updates.status = backendStatus

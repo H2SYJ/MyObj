@@ -165,9 +165,8 @@ func setupGracefulShutdown(cacheLocal cache.Cache) {
 				}
 			}
 		}
-		cacheLocal.Clear()
 		cacheLocal.Stop()
-		logger.LOG.Info("缓存清理完成")
+		logger.LOG.Info("缓存连接已关闭")
 		logger.LOG.Info("========== MyObj 服务器已停止 ==========")
 		os.Exit(0)
 	}()

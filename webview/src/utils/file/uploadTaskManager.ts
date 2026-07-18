@@ -8,7 +8,7 @@ export interface UploadTask {
   file_size: number
   uploaded_size: number
   progress: number
-  status: 'prechecking' | 'pending' | 'uploading' | 'paused' | 'completed' | 'failed' | 'cancelled'
+  status: 'prechecking' | 'pending' | 'uploading' | 'processing' | 'paused' | 'completed' | 'failed' | 'cancelled'
   speed: string
   created_at: string
   error?: string
@@ -29,6 +29,7 @@ export interface UploadTask {
   averageSpeed?: number // 平均速度（字节/秒）
   isInstantUpload?: boolean // 是否秒传
   isExternal?: boolean // 是否为当前浏览器之外创建的上传任务
+  isEncrypted?: boolean // 是否为加密上传
 }
 
 class UploadTaskManager {
@@ -103,9 +104,9 @@ class UploadTaskManager {
       return
     }
 
-    // 3. 根据实际 uploadedSize 重新计算进度，确保进度准确
-    const calculatedProgress = task.file_size > 0 ? Math.floor((uploadedSize / task.file_size) * 100) : 0
-    progress = Math.max(0, Math.min(100, calculatedProgress))
+    // 3. 网络上传占总进度的0%～90%，其余进度留给服务器处理阶段。
+    const calculatedProgress = task.file_size > 0 ? Math.floor((uploadedSize / task.file_size) * 90) : 0
+    progress = Math.max(0, Math.min(90, calculatedProgress))
 
     // 4. 防止进度倒退（除非是 prechecking 状态）
     if (task.status !== 'prechecking' && task.progress !== undefined && progress < task.progress) {
@@ -117,7 +118,7 @@ class UploadTaskManager {
     if (uploadedSize > task.file_size) {
       logger.warn(`上传大小超过文件总大小，已限制为文件大小: ${uploadedSize} > ${task.file_size}`)
       uploadedSize = task.file_size
-      progress = 100
+      progress = 90
     }
 
     // 6. 更新任务状态
@@ -191,6 +192,20 @@ class UploadTaskManager {
       this.saveTasksToStorage()
       this.notifyListeners()
     }
+  }
+
+  markProcessing(taskId: string, progress: number = 90, currentStep: string = '服务器正在处理文件...') {
+    const task = this.tasks.get(taskId)
+    if (!task || task.status === 'cancelled' || task.status === 'failed') {
+      return
+    }
+    task.status = 'processing'
+    task.progress = Math.max(90, Math.min(99, Math.floor(progress)))
+    task.uploaded_size = task.file_size
+    task.speed = '0 KB/s'
+    task.currentStep = currentStep
+    this.saveTasksToStorage()
+    this.notifyListeners()
   }
 
   /**
@@ -572,6 +587,7 @@ class UploadTaskManager {
             'prechecking',
             'pending',
             'uploading',
+            'processing',
             'paused',
             'completed',
             'failed',
@@ -591,6 +607,8 @@ class UploadTaskManager {
             task.status = task.isExternal ? 'uploading' : 'paused'
             task.speed = '0 KB/s'
           } else if (task.status === 'paused') {
+            task.speed = '0 KB/s'
+          } else if (task.status === 'processing') {
             task.speed = '0 KB/s'
           }
 

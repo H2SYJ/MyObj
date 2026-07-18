@@ -1,5 +1,5 @@
 import SparkMD5 from 'spark-md5'
-import { uploadPrecheck, uploadFile } from '@/api/file'
+import { getUploadProgress, uploadPrecheck, uploadFile } from '@/api/file'
 import { UPLOAD_CONFIG } from '@/config/api'
 import type { ApiResponse } from '@/types'
 import logger from '@/plugins/logger'
@@ -19,6 +19,58 @@ export const DEFAULT_UPLOAD_CONFIG: UploadConfig = {
   maxConcurrentChunks: 3,
   maxFileSize: UPLOAD_CONFIG.MAX_FILE_SIZE || 10 * 1024 * 1024 * 1024,
   maxConcurrentFiles: 2
+}
+
+const FINALIZE_STAGE_TEXT: Record<string, string> = {
+  queued: '等待服务器处理...',
+  validating: '正在校验上传分片...',
+  storing: '正在合并并存储文件...',
+  encrypting: '正在加密并存储文件...',
+  committing: '正在提交文件信息...'
+}
+
+const waitForUploadFinalization = async (
+  precheckId: string,
+  taskId: string | null | undefined,
+  fileName: string,
+  onProgress?: (progress: number, fileName: string) => void
+) => {
+  let consecutiveFailures = 0
+  while (true) {
+    let response: Awaited<ReturnType<typeof getUploadProgress>>
+    try {
+      response = await getUploadProgress(precheckId)
+      consecutiveFailures = 0
+    } catch (error) {
+      consecutiveFailures++
+      if (consecutiveFailures >= 5) throw error
+      logger.warn('查询文件处理进度失败，稍后重试', { precheckId, consecutiveFailures })
+      await new Promise(resolve => setTimeout(resolve, 3000))
+      continue
+    }
+    const progress = response.data
+    if (!progress) {
+      throw new Error('服务器未返回文件处理进度')
+    }
+    if (progress.status === 'completed') {
+      if (taskId) uploadTaskManager.completeTask(taskId)
+      onProgress?.(100, fileName)
+      return progress
+    }
+    if (progress.status === 'failed' || progress.status === 'aborted') {
+      throw new Error(progress.error_message || '服务器处理文件失败')
+    }
+    const processingProgress = Math.max(90, Math.min(99, Math.floor(progress.progress || 90)))
+    if (taskId) {
+      uploadTaskManager.markProcessing(
+        taskId,
+        processingProgress,
+        FINALIZE_STAGE_TEXT[progress.stage || 'queued'] || '服务器正在处理文件...'
+      )
+    }
+    onProgress?.(processingProgress, fileName)
+    await new Promise(resolve => setTimeout(resolve, 1000))
+  }
 }
 
 export interface UploadParams {
@@ -497,6 +549,7 @@ export const uploadSingleFile = async (params: UploadParams): Promise<ApiRespons
         chunkSignature: fileMD5,
         filesMd5: filesMD5,
         pathId,
+        isEncrypted: is_enc,
         status: 'pending', // 确保状态为 pending，准备上传
         currentStep: i18n.global.t('upload.readyToUpload') || '准备上传...'
       })
@@ -547,7 +600,8 @@ export const uploadSingleFile = async (params: UploadParams): Promise<ApiRespons
         total_chunks: 1,
         chunk_md5: fileMD5,
         is_enc: is_enc,
-        file_password: file_password
+        file_password: file_password,
+        async_finalize: true
       }
 
       const uploadResponse = await uploadFile(uploadParams, (_percent, loaded, _total) => {
@@ -558,7 +612,9 @@ export const uploadSingleFile = async (params: UploadParams): Promise<ApiRespons
       })
 
       if (uploadResponse.code === 200) {
-        if (taskId) {
+        if (uploadResponse.data?.status === 'processing') {
+          await waitForUploadFinalization(precheckId, taskId, file.name, onProgress)
+        } else if (taskId) {
           uploadTaskManager.completeTask(taskId)
         }
         onProgress?.(100, file.name)
@@ -638,7 +694,8 @@ export const uploadSingleFile = async (params: UploadParams): Promise<ApiRespons
                   total_chunks: totalChunks,
                   chunk_md5: chunkMD5,
                   is_enc: is_enc,
-                  file_password: file_password
+                  file_password: file_password,
+                  async_finalize: true
                 },
                 (_percent, loaded, _total) => {
                   if (taskId) {
@@ -687,8 +744,11 @@ export const uploadSingleFile = async (params: UploadParams): Promise<ApiRespons
 
               uploadedChunks.add(chunkIndex)
 
-              const uploadProgress = Math.floor(10 + (uploadedChunks.size / totalChunks) * 90)
-              const uploadedSize = Math.floor((file.size * uploadProgress) / 100)
+              const uploadProgress = Math.floor((uploadedChunks.size / totalChunks) * 90)
+              const uploadedSize = Array.from(uploadedChunks).reduce((sum, uploadedChunkIndex) => {
+                const chunkStart = uploadedChunkIndex * uploadConfig.chunkSize
+                return sum + Math.max(0, Math.min(uploadConfig.chunkSize, file.size - chunkStart))
+              }, 0)
               if (taskId) {
                 uploadTaskManager.updateProgress(taskId, uploadProgress, uploadedSize)
               }
@@ -728,10 +788,7 @@ export const uploadSingleFile = async (params: UploadParams): Promise<ApiRespons
         throw new Error(errorMessage)
       }
 
-      if (taskId) {
-        uploadTaskManager.completeTask(taskId)
-      }
-      onProgress?.(100, file.name)
+      await waitForUploadFinalization(precheckId, taskId, file.name, onProgress)
       onSuccess?.(file.name)
     }
   } catch (error: any) {

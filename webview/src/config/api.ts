@@ -45,6 +45,7 @@ export const API_ENDPOINTS = {
     EXPIRED: '/file/upload/expired', // 查询过期的上传任务列表
     DELETE_UPLOAD_TASK: '/file/upload/delete', // 删除上传任务
     RENEW_TASK: '/file/upload/renew', // 延期过期任务（恢复任务）
+    FINALIZE_RETRY: '/file/upload/finalize/retry', // 重新处理失败的上传任务
     CLEAN_EXPIRED: '/file/upload/clean-expired', // 清理过期的上传任务
     // 分片上传
     CHUNK_UPLOAD: '/file/chunk/upload',

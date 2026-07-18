@@ -36,7 +36,7 @@ func (r *RedisCache) Get(key string) (any, error) {
 	val, err := r.red.Get(context.Background(), key).Result()
 	if err != nil {
 		if err == redis.Nil {
-			return nil, fmt.Errorf("key %s not found", key)
+			return nil, fmt.Errorf("%w: %s", ErrKeyNotFound, key)
 		}
 		return nil, err
 	}
@@ -55,7 +55,4 @@ func (r *RedisCache) Stop() {
 		logger.LOG.Error("关闭缓存连接失败", "error", err)
 		return
 	}
-}
-func (r *RedisCache) Clear() {
-	r.red.FlushDB(context.Background())
 }

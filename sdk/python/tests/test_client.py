@@ -139,7 +139,8 @@ class MyObjClientTest(unittest.TestCase):
         self.assertEqual(session.calls[1]["data"]["chunk_index"], "0")
         self.assertEqual(session.calls[2]["data"]["chunk_index"], "1")
         self.assertEqual(session.calls[1]["timeout"], 30.0)
-        self.assertIsNone(session.calls[2]["timeout"])
+        self.assertEqual(session.calls[2]["timeout"], 30.0)
+        self.assertEqual(session.calls[2]["data"]["async_finalize"], "true")
 
     def test_update_thumbnail_uploads_jpeg(self) -> None:
         session = FakeSession(
@@ -177,7 +178,7 @@ class MyObjClientTest(unittest.TestCase):
         with self.assertRaises(FileNotFoundError):
             client.update_thumbnail("user-file-1", "不存在的缩略图.jpg")
 
-    def test_resume_upload_disables_timeout_for_last_pending_chunk(self) -> None:
+    def test_resume_upload_uses_normal_timeout_for_last_pending_chunk(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             file_path = Path(temp_dir) / "断点续传.txt"
             file_path.write_bytes(b"a" * MyObjClient.DEFAULT_CHUNK_SIZE + b"b")
@@ -211,7 +212,47 @@ class MyObjClientTest(unittest.TestCase):
             )
 
         self.assertEqual(session.calls[1]["data"]["chunk_index"], "0")
-        self.assertIsNone(session.calls[1]["timeout"])
+        self.assertEqual(session.calls[1]["timeout"], 30.0)
+
+    def test_upload_polls_until_background_processing_completes(self) -> None:
+        session = FakeSession(
+            [
+                json_response(
+                    {"code": 201, "message": "继续上传", "data": "precheck-1"}
+                ),
+                json_response(
+                    {
+                        "code": 200,
+                        "message": "文件正在后台处理",
+                        "data": {"task_id": "precheck-1", "status": "processing"},
+                    }
+                ),
+                json_response(
+                    {
+                        "code": 200,
+                        "message": "查询成功",
+                        "data": {"status": "processing", "stage": "storing"},
+                    }
+                ),
+                json_response(
+                    {
+                        "code": 200,
+                        "message": "查询成功",
+                        "data": {"status": "completed", "file_id": "file-1"},
+                    }
+                ),
+            ]
+        )
+        client = self.make_client(session)
+
+        with tempfile.TemporaryDirectory() as temp_dir, patch("time.sleep"):
+            file_path = Path(temp_dir) / "异步.txt"
+            file_path.write_text("内容", encoding="utf-8")
+            result = client.upload_file(file_path, "root", show_progress=False)
+
+        self.assertEqual(result["data"]["id"], "file-1")
+        self.assertEqual(session.calls[2]["params"]["precheck_id"], "precheck-1")
+        self.assertEqual(session.calls[3]["params"]["precheck_id"], "precheck-1")
 
     def test_upload_rejects_removed_chunk_size_argument(self) -> None:
         client = self.make_client(FakeSession([]))

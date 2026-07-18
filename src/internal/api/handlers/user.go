@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"errors"
+	"myobj/src/config"
 	"myobj/src/core/domain/request"
 	"myobj/src/core/domain/response"
 	"myobj/src/core/service"
@@ -82,7 +83,8 @@ func (u *UserHandler) Login(c *gin.Context) {
 		return
 	}
 	data := login.Data.(response.UserLoginResponse)
-	c.SetCookie("Authorization", data.Token, 7*24*3600, "/", auth.GetCookieDomain(c.Request.Host), false, true)
+	ttlSeconds := config.CONFIG.Auth.JwtExpire * 60 * 60
+	c.SetCookie("Authorization", data.Token, ttlSeconds, "/", auth.GetCookieDomain(c.Request.Host), false, true)
 	c.JSON(200, login)
 }
 

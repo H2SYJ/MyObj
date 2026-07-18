@@ -64,7 +64,7 @@ func (c *LocalCache) Get(key string) (any, error) {
 	c.lock.RUnlock()
 
 	if !ok {
-		return nil, fmt.Errorf("key %s not found", key)
+		return nil, fmt.Errorf("%w: %s", ErrKeyNotFound, key)
 	}
 
 	// 惰性删除：检查是否过期
@@ -72,7 +72,7 @@ func (c *LocalCache) Get(key string) (any, error) {
 		c.lock.Lock()
 		delete(c.data, key)
 		c.lock.Unlock()
-		return nil, fmt.Errorf("key %s expired", key)
+		return nil, fmt.Errorf("%w: %s", ErrKeyExpired, key)
 	}
 
 	return data.data, nil
@@ -156,12 +156,4 @@ func (c *LocalCache) Size() int {
 	c.lock.RLock()
 	defer c.lock.RUnlock()
 	return len(c.data)
-}
-
-// Clear 清空所有缓存
-func (c *LocalCache) Clear() {
-	c.lock.Lock()
-	defer c.lock.Unlock()
-	c.data = make(map[string]LocalCacheData)
-	c.nextExpire = time.Time{}
 }

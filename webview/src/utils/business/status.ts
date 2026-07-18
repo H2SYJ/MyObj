@@ -28,6 +28,7 @@ export const getUploadStatusType = (status: string): 'info' | 'primary' | 'warni
     prechecking: 'info', // 预检中
     pending: 'info',
     uploading: 'primary',
+    processing: 'warning',
     paused: 'warning',
     completed: 'success',
     failed: 'danger',
@@ -46,6 +47,7 @@ export const getUploadStatusText = (status: string): string => {
     prechecking: '预检中',
     pending: '等待中',
     uploading: '上传中',
+    processing: '服务器处理中',
     paused: '已暂停',
     completed: '已完成',
     failed: '失败',

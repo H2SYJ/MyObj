@@ -6,6 +6,7 @@ import (
 	"myobj/src/internal/repository/impl"
 	"myobj/src/pkg/logger"
 	"myobj/src/pkg/models"
+	"myobj/src/pkg/upload"
 	"os"
 	"path/filepath"
 	"strings"
@@ -197,21 +198,21 @@ func (t *RecycledTask) deletePhysicalFile(fileInfo *models.FileInfo) error {
 
 	// 如果是分片文件，删除分片目录
 	if fileInfo.IsChunk && fileInfo.Path != "" {
-		// 文件路径格式: {DataPath}/data/{\u539f文件名不带后缀}/{\u865a拟文件名}.data
-		// 分片目录为: {DataPath}/data/{\u539f文件名不带后缀}/{\u865a拟文件名}
+		// 文件路径格式: {DataPath}/data/{原文件名不带后缀}/{虚拟文件名}.data
+		// 分片目录为: {DataPath}/data/{原文件名不带后缀}/{虚拟文件名}
 		chunkDir := strings.TrimSuffix(fileInfo.Path, ".data")
 		if err := t.deleteDirectory(chunkDir); err != nil {
 			logger.LOG.Warn("删除分片目录失败", "path", chunkDir, "error", err)
 		}
 		// 删除父目录（如果为空）
-		// 路径格式: {DataPath}/data/{\u539f文件名不带后缀}
+		// 路径格式: {DataPath}/data/{原文件名不带后缀}
 		parentDir := filepath.Dir(fileInfo.Path)
 		if err := t.deleteDirectoryIfEmpty(parentDir); err != nil {
 			logger.LOG.Warn("删除父目录失败", "path", parentDir, "error", err)
 		}
 	} else if fileInfo.Path != "" {
 		// 对于非分片文件，删除 .data 文件所在的文件夹（如果为空）
-		// 路径格式: {DataPath}/data/{\u539f文件名不带后缀}/{\u865a拟文件名}.data
+		// 路径格式: {DataPath}/data/{原文件名不带后缀}/{虚拟文件名}.data
 		parentDir := filepath.Dir(fileInfo.Path)
 		if err := t.deleteDirectoryIfEmpty(parentDir); err != nil {
 			logger.LOG.Warn("删除文件夹失败", "path", parentDir, "error", err)
@@ -331,6 +332,15 @@ func NewUploadTask(factory *impl.RepositoryFactory) *UploadTask {
 func (t *UploadTask) CleanupExpiredTasks() error {
 	ctx := context.Background()
 	logger.LOG.Info("开始执行上传任务清理任务")
+	tasks, err := t.factory.UploadTask().ListExpired(ctx)
+	if err != nil {
+		return fmt.Errorf("查询过期上传任务失败: %w", err)
+	}
+	for _, uploadTask := range tasks {
+		if err := upload.CleanupTaskTempDir(uploadTask.TempDir); err != nil {
+			return fmt.Errorf("清理过期上传临时目录失败: %w", err)
+		}
+	}
 
 	count, err := t.factory.UploadTask().DeleteExpired(ctx)
 	if err != nil {

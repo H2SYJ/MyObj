@@ -7,6 +7,7 @@ import (
 	"myobj/src/internal/repository/impl"
 	"myobj/src/pkg/logger"
 	"myobj/src/pkg/models"
+	"sync"
 	"testing"
 
 	"github.com/glebarez/sqlite"
@@ -54,6 +55,52 @@ func TestUpdateUploadTaskSynchronizesTotalChunks(t *testing.T) {
 	}
 }
 
+func TestClaimUploadTaskProcessingOnlySucceedsOnce(t *testing.T) {
+	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	sqlDB, err := db.DB()
+	if err != nil {
+		t.Fatal(err)
+	}
+	sqlDB.SetMaxOpenConns(1)
+	if err := db.AutoMigrate(&models.UploadTask{}); err != nil {
+		t.Fatal(err)
+	}
+	factory := impl.NewRepositoryFactory(db)
+	task := &models.UploadTask{ID: "task-claim", UserID: "user-1", FileName: "大文件.bin", FileSize: 10, ChunkSize: 5, TotalChunks: 2, UploadedChunks: 2, Status: "uploading"}
+	if err := factory.UploadTask().Create(context.Background(), task); err != nil {
+		t.Fatal(err)
+	}
+
+	results := make(chan bool, 2)
+	var waitGroup sync.WaitGroup
+	for index := 0; index < 2; index++ {
+		waitGroup.Add(1)
+		go func() {
+			defer waitGroup.Done()
+			claimed, claimErr := factory.UploadTask().ClaimProcessing(context.Background(), task.ID, []string{"uploading"})
+			if claimErr != nil {
+				t.Errorf("抢占后台任务失败: %v", claimErr)
+				return
+			}
+			results <- claimed
+		}()
+	}
+	waitGroup.Wait()
+	close(results)
+	claimedCount := 0
+	for claimed := range results {
+		if claimed {
+			claimedCount++
+		}
+	}
+	if claimedCount != 1 {
+		t.Fatalf("并发抢占应只有一次成功，实际成功%d次", claimedCount)
+	}
+}
+
 func TestCalculateUploadTaskProgress(t *testing.T) {
 	tests := []struct {
 		name string
@@ -66,14 +113,19 @@ func TestCalculateUploadTaskProgress(t *testing.T) {
 			want: 100,
 		},
 		{
-			name: "普通进度按分片计算",
+			name: "分片上传阶段最多占百分之九十",
 			task: models.UploadTask{Status: "uploading", UploadedChunks: 1, TotalChunks: 4},
-			want: 25,
+			want: 22.5,
 		},
 		{
-			name: "异常进度限制为百分之百",
+			name: "上传阶段异常进度限制为百分之九十",
 			task: models.UploadTask{Status: "uploading", UploadedChunks: 5, TotalChunks: 2},
-			want: 100,
+			want: 90,
+		},
+		{
+			name: "后台提交阶段显示百分之九十九",
+			task: models.UploadTask{Status: "processing", ProcessingStage: "committing", UploadedChunks: 2, TotalChunks: 2},
+			want: 99,
 		},
 		{
 			name: "负进度限制为零",

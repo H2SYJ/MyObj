@@ -26,8 +26,20 @@ type UploadTask struct {
 	PathID string `gorm:"column:path_id;type:text" json:"path_id"`
 	// 临时目录路径
 	TempDir string `gorm:"column:temp_dir;type:text" json:"temp_dir"`
-	// 任务状态（pending/uploading/completed/failed/aborted）
+	// 预检阶段选中的磁盘ID
+	DiskID string `gorm:"column:disk_id;type:text" json:"disk_id"`
+	// 是否为加密上传。加密密码不会持久化。
+	IsEnc bool `gorm:"column:is_enc;type:boolean;default:false" json:"is_enc"`
+	// 秒传校验需要的前三个分片哈希
+	FirstChunkHash  string `gorm:"column:first_chunk_hash;type:text" json:"first_chunk_hash"`
+	SecondChunkHash string `gorm:"column:second_chunk_hash;type:text" json:"second_chunk_hash"`
+	ThirdChunkHash  string `gorm:"column:third_chunk_hash;type:text" json:"third_chunk_hash"`
+	// 任务状态（pending/uploading/processing/completed/failed/aborted）
 	Status string `gorm:"column:status;type:text;default:'pending'" json:"status"`
+	// 后台处理阶段（queued/validating/storing/encrypting/committing）
+	ProcessingStage string `gorm:"column:processing_stage;type:text" json:"processing_stage"`
+	// 后台处理完成后生成的文件ID
+	ResultFileID string `gorm:"column:result_file_id;type:text" json:"result_file_id"`
 	// 错误信息
 	ErrorMessage string `gorm:"column:error_message;type:text" json:"error_message"`
 	// 创建时间
@@ -41,4 +53,3 @@ type UploadTask struct {
 func (UploadTask) TableName() string {
 	return "upload_task"
 }
-

@@ -6,6 +6,17 @@ interface RequestConfig extends RequestInit {
   params?: Record<string, any>
 }
 
+const SESSION_INVALID_REASONS = new Set(['session_missing', 'session_invalid', 'session_expired', 'session_revoked'])
+
+const shouldClearSession = (data: any): boolean => SESSION_INVALID_REASONS.has(data?.data?.reason)
+
+const redirectToLoginForInvalidSession = (data: any) => {
+  if (!shouldClearSession(data)) return false
+  cache.local.remove('token')
+  window.location.href = '/login'
+  return true
+}
+
 // 请求拦截器 - 添加token
 const requestInterceptor = (config: RequestConfig): RequestConfig => {
   const token = cache.local.get('token')
@@ -31,10 +42,8 @@ const responseInterceptor = async <T = any>(response: Response): Promise<T> => {
   if (!response.ok) {
     // 处理 HTTP 错误
     if (response.status === 401) {
-      // 401: 未授权，需要登录
-      cache.local.remove('token')
-      window.location.href = '/login'
-      throw new Error(data.message || '登录已过期，请重新登录')
+      redirectToLoginForInvalidSession(data)
+      throw new Error(data.message || '身份认证失败')
     }
     if (response.status === 403) {
       // 403: 禁止访问，已登录但无权限
@@ -47,10 +56,8 @@ const responseInterceptor = async <T = any>(response: Response): Promise<T> => {
   if (data.code && data.code !== 200) {
     // 业务错误
     if (data.code === 401) {
-      // 401: 未授权，需要登录
-      cache.local.remove('token')
-      window.location.href = '/login'
-      throw new Error(data.message || '登录已过期，请重新登录')
+      redirectToLoginForInvalidSession(data)
+      throw new Error(data.message || '身份认证失败')
     }
     if (data.code === 403) {
       // 403: 禁止访问，已登录但无权限
@@ -165,10 +172,8 @@ export const upload = <T = any>(
           // 检查业务状态码
           if (response.code && response.code !== 200) {
             if (response.code === 401) {
-              // 401: 未授权，需要登录
-              cache.local.remove('token')
-              window.location.href = '/login'
-              reject(new Error(response.message || '登录已过期，请重新登录'))
+              redirectToLoginForInvalidSession(response)
+              reject(new Error(response.message || '身份认证失败'))
               return
             }
             if (response.code === 403) {
@@ -186,9 +191,14 @@ export const upload = <T = any>(
       } else {
         // 处理 HTTP 状态码错误
         if (xhr.status === 401) {
-          cache.local.remove('token')
-          window.location.href = '/login'
-          reject(new Error('登录已过期，请重新登录'))
+          let authError: any = {}
+          try {
+            authError = JSON.parse(xhr.responseText)
+          } catch (_error) {
+            // 非JSON响应不能确认会话失效，因此不清理本地登录态。
+          }
+          redirectToLoginForInvalidSession(authError)
+          reject(new Error(authError.message || '身份认证失败'))
           return
         }
         if (xhr.status === 403) {
@@ -243,9 +253,14 @@ export const download = async (url: string, filename: string): Promise<void> => 
     if (!response.ok) {
       // 处理 HTTP 状态码错误
       if (response.status === 401) {
-        cache.local.remove('token')
-        window.location.href = '/login'
-        throw new Error('登录已过期，请重新登录')
+        let authError: any = {}
+        try {
+          authError = await response.json()
+        } catch (_error) {
+          // 保留本地登录态，避免代理或临时故障造成误退出。
+        }
+        redirectToLoginForInvalidSession(authError)
+        throw new Error(authError.message || '身份认证失败')
       }
       if (response.status === 403) {
         throw new Error('权限不足')

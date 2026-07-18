@@ -76,6 +76,8 @@ type FileUploadRequest struct {
 	IsEnc bool `form:"is_enc"`
 	// 文件加密密码（加密文件必须）
 	FilePassword string `form:"file_password"`
+	// 是否在最后一个分片落盘后异步处理文件
+	AsyncFinalize bool `form:"async_finalize"`
 }
 
 // VideoPlayPrecheckRequest 视频播放预检请求
@@ -102,6 +104,12 @@ type PublicFileListRequest struct {
 type UploadProgressRequest struct {
 	// 预检ID
 	PrecheckID string `form:"precheck_id" binding:"required"`
+}
+
+// RetryUploadFinalizeRequest 重新提交失败的文件处理任务
+type RetryUploadFinalizeRequest struct {
+	PrecheckID   string `json:"precheck_id" binding:"required"`
+	FilePassword string `json:"file_password"`
 }
 
 // DeleteUploadTaskRequest 删除上传任务请求

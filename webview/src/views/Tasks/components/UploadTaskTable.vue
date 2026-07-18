@@ -53,6 +53,9 @@
               <span v-if="row.status === 'prechecking' && row.currentStep" class="current-step">
                 {{ row.currentStep }}
               </span>
+              <span v-if="row.status === 'processing' && row.currentStep" class="current-step">
+                {{ row.currentStep }}
+              </span>
             </div>
           </template>
         </el-table-column>
@@ -73,6 +76,9 @@
               <span class="progress-info">
                 <template v-if="row.status === 'prechecking'">
                   {{ t('tasks.prechecking') }} - {{ row.precheckProgress || 0 }}%
+                </template>
+                <template v-else-if="row.status === 'processing'">
+                  {{ row.currentStep || t('tasks.processing') }}
                 </template>
                 <template v-else>
                   {{ formatSize(row.uploaded_size) }} / {{ formatSize(row.file_size) }} · {{ row.speed || '0 KB/s' }}
@@ -102,6 +108,15 @@
 
         <el-table-column :label="t('tasks.operation')" width="180" fixed="right" class-name="mobile-actions-column">
           <template #default="{ row }">
+            <el-button
+              v-if="row.status === 'failed'"
+              link
+              icon="RefreshRight"
+              type="primary"
+              @click="$emit('retry', row.id)"
+            >
+              {{ t('tasks.retryFinalize') }}
+            </el-button>
             <el-button
               v-if="!row.isExternal && row.status === 'uploading'"
               link
@@ -143,7 +158,7 @@
               icon="Delete"
               type="danger"
               @click="$emit('delete', row.id)"
-              :disabled="row.status === 'uploading'"
+              :disabled="row.status === 'uploading' || row.status === 'processing'"
             >
               {{ t('tasks.delete') }}
             </el-button>
@@ -183,6 +198,15 @@
           </div>
           <div class="task-actions">
             <el-button
+              v-if="row.status === 'failed'"
+              link
+              type="primary"
+              @click.stop="$emit('retry', row.id)"
+              class="action-btn"
+            >
+              <el-icon><RefreshRight /></el-icon>
+            </el-button>
+            <el-button
               v-if="!row.isExternal && row.status === 'uploading'"
               link
               type="warning"
@@ -218,7 +242,7 @@
               link
               type="danger"
               @click.stop="$emit('delete', row.id)"
-              :disabled="row.status === 'uploading'"
+              :disabled="row.status === 'uploading' || row.status === 'processing'"
               class="action-btn"
             >
               <el-icon><Delete /></el-icon>
@@ -301,6 +325,7 @@
     resume: [taskId: string]
     cancel: [taskId: string]
     delete: [taskId: string]
+    retry: [taskId: string]
     'view-expired': []
     'clear-all': []
     pagination: [{ page: number; limit: number }]

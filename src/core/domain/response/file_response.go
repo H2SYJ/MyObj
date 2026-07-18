@@ -109,14 +109,19 @@ type FilePrecheckResponse struct {
 
 // UploadProgressResponse 上传进度响应结构体
 type UploadProgressResponse struct {
-	PrecheckID string   `json:"precheck_id"`
-	FileName   string   `json:"file_name"`
-	FileSize   int64    `json:"file_size"`
-	Uploaded   int      `json:"uploaded"`    // 已上传分片数
-	Total      int      `json:"total"`       // 总分片数
-	Progress   float64  `json:"progress"`    // 进度百分比 (0-100)
-	Md5        []string `json:"md5"`         // 已上传分片的MD5列表
-	IsComplete bool     `json:"is_complete"` // 是否已完成
+	PrecheckID   string   `json:"precheck_id"`
+	FileName     string   `json:"file_name"`
+	FileSize     int64    `json:"file_size"`
+	Uploaded     int      `json:"uploaded"`    // 已上传分片数
+	Total        int      `json:"total"`       // 总分片数
+	Progress     float64  `json:"progress"`    // 进度百分比 (0-100)
+	Md5          []string `json:"md5"`         // 已上传分片的MD5列表
+	IsComplete   bool     `json:"is_complete"` // 是否已完成
+	Status       string   `json:"status"`
+	Stage        string   `json:"stage"`
+	ErrorMessage string   `json:"error_message,omitempty"`
+	FileID       string   `json:"file_id,omitempty"`
+	IsEnc        bool     `json:"is_enc"`
 }
 
 // VideoPlayTokenResponse 视频播放 Token 响应
@@ -189,8 +194,14 @@ type UploadTaskItem struct {
 	ChunkSignature string `json:"chunk_signature"`
 	// 路径ID
 	PathID string `json:"path_id"`
-	// 任务状态（pending/uploading/completed/failed/aborted）
+	// 任务状态（pending/uploading/processing/completed/failed/aborted）
 	Status string `json:"status"`
+	// 后台处理阶段
+	ProcessingStage string `json:"processing_stage"`
+	// 是否为加密文件
+	IsEnc bool `json:"is_enc"`
+	// 处理完成后的文件ID
+	ResultFileID string `json:"result_file_id,omitempty"`
 	// 错误信息
 	ErrorMessage string `json:"error_message"`
 	// 上传进度（0-100）

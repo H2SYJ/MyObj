@@ -48,8 +48,20 @@ func InitDataBase() {
 	if migratedDisks > 0 {
 		logger.LOG.Info("磁盘容量单位迁移完成", "count", migratedDisks)
 	}
+	if err := migrateUploadTaskSchema(databasePool); err != nil {
+		logger.LOG.Error("迁移上传任务表失败", "error", err)
+		panic(fmt.Sprintf("迁移上传任务表失败: %v", err))
+	}
 
 	logger.LOG.Info("[数据库] 数据库连接池初始化成功 ✓")
+}
+
+// migrateUploadTaskSchema 为异步文件处理补齐字段。AutoMigrate 只增加缺失列，兼容 SQLite 和 MySQL。
+func migrateUploadTaskSchema(db *gorm.DB) error {
+	if !db.Migrator().HasTable(&models.UploadTask{}) {
+		return nil
+	}
+	return db.AutoMigrate(&models.UploadTask{})
 }
 
 // migrateLegacyDiskSizes 将旧版本按GB保存的磁盘容量转换为字节。

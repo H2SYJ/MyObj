@@ -7,6 +7,7 @@ import (
 	"myobj/src/config"
 	"myobj/src/internal/repository/database"
 	"myobj/src/internal/repository/impl"
+	"myobj/src/pkg/auth"
 	"myobj/src/pkg/cache"
 	"myobj/src/pkg/logger"
 	"myobj/src/pkg/models"
@@ -614,13 +615,11 @@ func kickUserAction(c *cli.Context) error {
 		return nil
 	}
 
-	// 清除缓存中与该用户相关的JWT tokens
-	// 由于缓存中key是token本身，我们需要清除所有缓存（或使用特定前缀）
-	// 这里采用简单策略：清除所有缓存
-	cacheStore.Clear()
+	if err := auth.NewSessionStore(cacheStore).RevokeUser(user.ID); err != nil {
+		return fmt.Errorf("撤销用户登录会话失败: %w", err)
+	}
 
 	pterm.Success.Printf("用户 '%s' (ID: %s) 的所有登录会话已被清除\n", username, user.ID)
-	pterm.Info.Println("注意：为确保完全清除，已清空所有缓存")
 	return nil
 }
 

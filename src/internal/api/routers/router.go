@@ -109,6 +109,7 @@ func Execute(cacheLocal cache.Cache) {
 
 	factory := impl.NewRepositoryFactory(database.GetDB())
 	serverFactory := service.NewServiceFactory(factory, cacheLocal)
+	serverFactory.FileService().StartFinalizeManager()
 	// 启动回收站定时清理任务
 	recycledTask := task.NewRecycledTask(factory)
 	recycledTask.StartScheduledCleanup(30, 24*time.Hour)

@@ -14,6 +14,7 @@
           @resume="resumeUpload"
           @cancel="cancelUpload"
           @delete="deleteUpload"
+          @retry="retryFinalize"
           @view-expired="showExpiredDialog = true"
           @clear-all="clearAllUploadTasks"
           @pagination="handleUploadPagination"
@@ -81,6 +82,7 @@
     resumeUpload,
     cancelUpload,
     deleteUpload,
+    retryFinalize,
     clearAllUploadTasks,
     handlePagination: handleUploadPagination
   } = useUploadTasks()

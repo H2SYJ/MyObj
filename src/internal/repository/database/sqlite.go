@@ -3,6 +3,7 @@ package database
 import (
 	"myobj/src/config"
 	"myobj/src/pkg/logger"
+	"strings"
 
 	"github.com/glebarez/sqlite"
 	"gorm.io/gorm"
@@ -14,6 +15,11 @@ type SQLite struct {
 
 func (sql *SQLite) InitDatabase() {
 	host := config.CONFIG.Database.Host
+	separator := "?"
+	if strings.Contains(host, "?") {
+		separator = "&"
+	}
+	host += separator + "_pragma=busy_timeout(5000)&_pragma=journal_mode(WAL)&_pragma=synchronous(NORMAL)"
 	db, err := gorm.Open(sqlite.Open(host), &gorm.Config{
 		Logger: &GormSlogAdapter{
 			level: logLevel(config.CONFIG.Log.Level),
@@ -22,6 +28,17 @@ func (sql *SQLite) InitDatabase() {
 	if err != nil {
 		logger.LOG.Error("failed to connect database", "err", err)
 		panic("failed to connect database")
+	}
+	sqlDB, dbErr := db.DB()
+	if dbErr != nil {
+		logger.LOG.Error("failed to configure sqlite connection pool", "err", dbErr)
+		panic("failed to configure sqlite connection pool")
+	}
+	if config.CONFIG.Database.MaxOpen > 0 {
+		sqlDB.SetMaxOpenConns(config.CONFIG.Database.MaxOpen)
+	}
+	if config.CONFIG.Database.MaxIdle > 0 {
+		sqlDB.SetMaxIdleConns(config.CONFIG.Database.MaxIdle)
 	}
 	sql.database = db
 }

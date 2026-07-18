@@ -1,6 +1,6 @@
 import { uploadTaskManager } from '@/utils/file/uploadTaskManager'
 import { loadAndSyncBackendTasks, findBackendTask } from '@/utils/file/uploadTaskSync'
-import { deleteUploadTask, getUploadProgress, listExpiredUploads } from '@/api/file'
+import { deleteUploadTask, getUploadProgress, listExpiredUploads, retryUploadFinalize } from '@/api/file'
 import { formatFileSizeForDisplay } from '@/utils'
 import { isUploadTaskActive, openFileDialog, uploadSingleFile } from '@/utils/file/upload'
 import { useI18n } from '@/composables'
@@ -271,6 +271,32 @@ export function useUploadTasks() {
     }
   }
 
+  const retryFinalize = async (taskId: string) => {
+    const task = uploadTaskManager.getTask(taskId)
+    if (!task || task.status !== 'failed') {
+      proxy?.$modal.msgWarning(t('tasks.onlyFailedCanRetry'))
+      return
+    }
+    try {
+      let password = ''
+      if (task.isEncrypted) {
+        const promptResult = await proxy?.$modal.prompt(t('tasks.retryPassword'))
+        password = promptResult?.value || ''
+        if (!password) {
+          proxy?.$modal.msgWarning(t('tasks.passwordRequired'))
+          return
+        }
+      }
+      await retryUploadFinalize(task.precheckId || taskId, password)
+      uploadTaskManager.markProcessing(taskId, 90, t('tasks.processing'))
+      proxy?.$modal.msgSuccess(t('tasks.retryFinalizeSuccess'))
+      await loadUploadTasks(false)
+    } catch (error: any) {
+      if (error === 'cancel' || error?.message === 'cancel') return
+      proxy?.$modal.msgError(t('tasks.retryFinalizeFailed', { error: error?.message || String(error) }))
+    }
+  }
+
   // 获取过期任务数量
   const expiredTaskCount = ref(0)
   const getExpiredTaskCount = async () => {
@@ -383,6 +409,7 @@ export function useUploadTasks() {
     resumeUpload,
     cancelUpload,
     deleteUpload,
+    retryFinalize,
     cleanExpiredUploads,
     clearAllUploadTasks,
     handlePagination
