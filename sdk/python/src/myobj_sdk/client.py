@@ -537,11 +537,11 @@ class MyObjClient:
         thumbnail_path: Optional[PathLike] = None,
         progress: Optional[ProgressCallback] = None,
         show_progress: bool = True,
-        wait_for_completion: bool = True,
+        wait_for_completion: bool = False,
         finalize_timeout: Optional[float] = None,
         finalize_poll_interval: float = 1.0,
     ) -> dict[str, Any]:
-        """预检并上传文件，支持秒传、分片上传和断点续传。"""
+        """预检并上传文件，默认在分片上传完成后立即返回后台处理状态。"""
 
         source_path = Path(file_path)
         if not source_path.is_file():

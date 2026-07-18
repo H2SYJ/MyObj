@@ -123,7 +123,18 @@ result = client.upload_file(
 print(result["message"])
 ```
 
-固定按 5MB 分片，并在终端显示上传进度条。SDK 会计算整文件和分片 MD5，支持服务端秒传及根据预检结果跳过已上传分片。开启 DEBUG 日志时，上传期间的控制台日志会完整输出，进度条会在日志输出后自动恢复。
+固定按 5MB 分片，并在终端显示上传进度条。SDK 会计算整文件和分片 MD5，支持服务端秒传及根据预检结果跳过已上传分片。默认在所有分片上传完成后立即返回；当服务端仍在处理时，返回结果中的 `data.status` 为 `processing`。开启 DEBUG 日志时，上传期间的控制台日志会完整输出，进度条会在日志输出后自动恢复。
+
+需要等待服务端完成校验、存储和加密并返回最终文件结果时，显式开启等待：
+
+```python
+result = client.upload_file(
+    "D:/资料/报告.pdf",
+    path_id="目标目录ID",
+    wait_for_completion=True,
+    finalize_timeout=600,
+)
+```
 
 不需要终端进度条时可以关闭：
 

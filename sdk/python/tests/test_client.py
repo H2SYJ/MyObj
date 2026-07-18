@@ -248,11 +248,44 @@ class MyObjClientTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temp_dir, patch("time.sleep"):
             file_path = Path(temp_dir) / "异步.txt"
             file_path.write_text("内容", encoding="utf-8")
-            result = client.upload_file(file_path, "root", show_progress=False)
+            result = client.upload_file(
+                file_path,
+                "root",
+                show_progress=False,
+                wait_for_completion=True,
+            )
 
         self.assertEqual(result["data"]["id"], "file-1")
         self.assertEqual(session.calls[2]["params"]["precheck_id"], "precheck-1")
         self.assertEqual(session.calls[3]["params"]["precheck_id"], "precheck-1")
+
+    def test_upload_does_not_wait_for_background_processing_by_default(self) -> None:
+        processing_response = {
+            "code": 200,
+            "message": "文件正在后台处理",
+            "data": {
+                "task_id": "precheck-1",
+                "status": "processing",
+                "is_complete": False,
+            },
+        }
+        session = FakeSession(
+            [
+                json_response(
+                    {"code": 201, "message": "继续上传", "data": "precheck-1"}
+                ),
+                json_response(processing_response),
+            ]
+        )
+        client = self.make_client(session)
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            file_path = Path(temp_dir) / "异步返回.txt"
+            file_path.write_text("内容", encoding="utf-8")
+            result = client.upload_file(file_path, "root", show_progress=False)
+
+        self.assertEqual(result, processing_response)
+        self.assertEqual(len(session.calls), 2)
 
     def test_upload_rejects_removed_chunk_size_argument(self) -> None:
         client = self.make_client(FakeSession([]))
