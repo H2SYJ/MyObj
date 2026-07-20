@@ -135,8 +135,11 @@ type AdminGetSystemConfigRequest struct{}
 
 // AdminUpdateSystemConfigRequest 更新系统配置请求
 type AdminUpdateSystemConfigRequest struct {
-	AllowRegister bool `json:"allow_register"`
-	WebdavEnabled bool `json:"webdav_enabled"`
+	AllowRegister                             bool     `json:"allow_register"`
+	WebdavEnabled                             bool     `json:"webdav_enabled"`
+	OfflineDownloadProxy                      *string  `json:"offline_download_proxy"`
+	OfflineDownloadSpeedLimitMBPerSec         *float64 `json:"offline_download_speed_limit_mb_per_sec"`
+	OfflineDownloadBTUploadSpeedLimitMBPerSec *float64 `json:"offline_download_bt_upload_speed_limit_mb_per_sec"`
 }
 
 // PackageCreateRequest 创建打包下载请求

@@ -19,13 +19,14 @@ type ServerFactory struct {
 }
 
 func NewServiceFactory(factory *impl.RepositoryFactory, cacheLocal cache.Cache) *ServerFactory {
+	networkPolicy := initializeDownloadNetworkPolicy(factory)
 	return &ServerFactory{
 		userService:     NewUserService(factory, cacheLocal),
 		fileService:     NewFileService(factory, cacheLocal),
 		shareService:    NewSharesService(factory, cacheLocal),
-		downloadService: NewDownloadService(factory),
+		downloadService: NewDownloadService(factory, networkPolicy),
 		recycledService: NewRecycledService(factory, cacheLocal),
-		adminService:    NewAdminService(factory),
+		adminService:    NewAdminService(factory, networkPolicy),
 	}
 }
 

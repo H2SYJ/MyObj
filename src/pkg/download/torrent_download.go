@@ -43,10 +43,12 @@ type FailedFile struct {
 
 // TorrentDownloadOptions 下载配置选项
 type TorrentDownloadOptions struct {
-	MaxConcurrentPeers int  // 最大并发peer连接数，0表示使用默认值
-	DownloadRateMbps   int  // 下载速率限制(Mbps)，0表示不限速
-	UploadRateMbps     int  // 上传速率限制(Mbps)，0表示不限速
-	EnableEncryption   bool // 是否加密存储文件
+	MaxConcurrentPeers int           // 最大并发peer连接数，0表示使用默认值
+	DownloadRateMbps   int           // 兼容旧调用的单客户端下载限速(Mbps)，0表示不限速
+	UploadRateMbps     int           // 兼容旧调用的单客户端上传限速(Mbps)，0表示不限速
+	DownloadLimiter    *rate.Limiter // 跨HTTP与BT任务共享的下载限流器
+	UploadLimiter      *rate.Limiter // 所有BT会话共享的上传限流器
+	EnableEncryption   bool          // 是否加密存储文件
 }
 
 // DownloadTorrent 下载磁力链或种子文件
@@ -106,12 +108,13 @@ func DownloadTorrent(
 	}
 
 	// 配置速率限制（使用 golang.org/x/time/rate 包）
-	if opts.DownloadRateMbps > 0 {
+	applySharedTorrentLimiters(cfg, opts.DownloadLimiter, opts.UploadLimiter)
+	if opts.DownloadLimiter == nil && opts.DownloadRateMbps > 0 {
 		// rate.Limiter 的单位是 bytes/second
 		limit := rate.Limit(int64(opts.DownloadRateMbps) * 1024 * 1024 / 8)
 		cfg.DownloadRateLimiter = rate.NewLimiter(limit, int(limit))
 	}
-	if opts.UploadRateMbps > 0 {
+	if opts.UploadLimiter == nil && opts.UploadRateMbps > 0 {
 		limit := rate.Limit(int64(opts.UploadRateMbps) * 1024 * 1024 / 8)
 		cfg.UploadRateLimiter = rate.NewLimiter(limit, int(limit))
 	}
@@ -438,6 +441,11 @@ type ParseTorrentResult struct {
 //   - result: 解析结果
 //   - err: 错误信息
 func ParseTorrent(content string, timeout int) (*ParseTorrentResult, error) {
+	return ParseTorrentWithLimiters(content, timeout, nil, nil)
+}
+
+// ParseTorrentWithLimiters 使用共享限流器解析种子或磁力链。
+func ParseTorrentWithLimiters(content string, timeout int, downloadLimiter, uploadLimiter *rate.Limiter) (*ParseTorrentResult, error) {
 	if timeout <= 0 {
 		timeout = 120 // 默认120秒超时
 	}
@@ -461,6 +469,7 @@ func ParseTorrent(content string, timeout int) (*ParseTorrentResult, error) {
 	cfg.DisableUTP = false
 	cfg.ListenPort = 0 // 系统自动分配端口,避免多用户冲突
 	cfg.Debug = false  // 禁用调试日志
+	applySharedTorrentLimiters(cfg, downloadLimiter, uploadLimiter)
 
 	// 创建torrent客户端
 	client, err := torrent.NewClient(cfg)
@@ -601,17 +610,19 @@ func ParseTorrent(content string, timeout int) (*ParseTorrentResult, error) {
 
 // TorrentSingleFileDownloadOptions 单文件下载配置
 type TorrentSingleFileDownloadOptions struct {
-	MaxConcurrentPeers int    // 最大并发peer连接数
-	DownloadRateMbps   int    // 下载速率限制(Mbps)
-	UploadRateMbps     int    // 上传速率限制(Mbps)
-	EnableEncryption   bool   // 是否加密存储
-	VirtualPath        string // 虚拟路径
-	TorrentName        string // 种子名称
-	InfoHash           string // InfoHash
-	FilePassword       string // 文件密码（加密存储时必需）
-	RunToken           string // 当前执行令牌
-	ReservedSize       int64  // 已预留的用户空间
-	SessionID          string // 共享批次临时目录标识
+	MaxConcurrentPeers int           // 最大并发peer连接数
+	DownloadRateMbps   int           // 下载速率限制(Mbps)
+	UploadRateMbps     int           // 上传速率限制(Mbps)
+	EnableEncryption   bool          // 是否加密存储
+	VirtualPath        string        // 虚拟路径
+	TorrentName        string        // 种子名称
+	InfoHash           string        // InfoHash
+	FilePassword       string        // 文件密码（加密存储时必需）
+	RunToken           string        // 当前执行令牌
+	ReservedSize       int64         // 已预留的用户空间
+	SessionID          string        // 共享批次临时目录标识
+	DownloadLimiter    *rate.Limiter // 跨HTTP与BT任务共享的下载限流器
+	UploadLimiter      *rate.Limiter // 所有BT会话共享的上传限流器
 }
 
 // DownloadTorrentSingleFile 下载种子中的单个文件

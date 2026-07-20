@@ -41,19 +41,22 @@ type AdminDiskListResponse struct {
 
 // AdminSystemConfigResponse 系统配置响应
 type AdminSystemConfigResponse struct {
-	AllowRegister bool   `json:"allow_register"`
-	WebdavEnabled bool   `json:"webdav_enabled"`
-	Version       string `json:"version"`
-	TotalUsers    int64  `json:"total_users"`
-	TotalFiles    int64  `json:"total_files"`
-	Uptime        string `json:"uptime,omitempty"`
+	AllowRegister                             bool    `json:"allow_register"`
+	WebdavEnabled                             bool    `json:"webdav_enabled"`
+	OfflineDownloadProxy                      string  `json:"offline_download_proxy"`
+	OfflineDownloadSpeedLimitMBPerSec         float64 `json:"offline_download_speed_limit_mb_per_sec"`
+	OfflineDownloadBTUploadSpeedLimitMBPerSec float64 `json:"offline_download_bt_upload_speed_limit_mb_per_sec"`
+	Version                                   string  `json:"version"`
+	TotalUsers                                int64   `json:"total_users"`
+	TotalFiles                                int64   `json:"total_files"`
+	Uptime                                    string  `json:"uptime,omitempty"`
 }
 
 // PackageCreateResponse 创建打包下载响应
 type PackageCreateResponse struct {
 	PackageID   string `json:"package_id"`
 	PackageName string `json:"package_name"`
-	Status      string `json:"status"` // creating, ready, failed
+	Status      string `json:"status"`   // creating, ready, failed
 	Progress    int    `json:"progress"` // 0-100
 	TotalSize   int64  `json:"total_size"`
 }
@@ -61,10 +64,9 @@ type PackageCreateResponse struct {
 // PackageProgressResponse 打包进度响应
 type PackageProgressResponse struct {
 	PackageID   string `json:"package_id"`
-	Status      string `json:"status"` // creating, ready, failed
+	Status      string `json:"status"`   // creating, ready, failed
 	Progress    int    `json:"progress"` // 0-100
 	TotalSize   int64  `json:"total_size"`
 	CreatedSize int64  `json:"created_size"`
 	ErrorMsg    string `json:"error_msg,omitempty"`
 }
-

@@ -53,11 +53,12 @@ func acquireTorrentSession(content, sessionTempDir, sessionID string, opts *Torr
 	if opts.MaxConcurrentPeers > 0 {
 		cfg.EstablishedConnsPerTorrent = opts.MaxConcurrentPeers
 	}
-	if opts.DownloadRateMbps > 0 {
+	applySharedTorrentLimiters(cfg, opts.DownloadLimiter, opts.UploadLimiter)
+	if opts.DownloadLimiter == nil && opts.DownloadRateMbps > 0 {
 		limit := rate.Limit(int64(opts.DownloadRateMbps) * 1024 * 1024 / 8)
 		cfg.DownloadRateLimiter = rate.NewLimiter(limit, int(limit))
 	}
-	if opts.UploadRateMbps > 0 {
+	if opts.UploadLimiter == nil && opts.UploadRateMbps > 0 {
 		limit := rate.Limit(int64(opts.UploadRateMbps) * 1024 * 1024 / 8)
 		cfg.UploadRateLimiter = rate.NewLimiter(limit, int(limit))
 	}

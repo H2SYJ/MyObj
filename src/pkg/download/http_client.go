@@ -3,12 +3,15 @@ package download
 import (
 	"context"
 	"fmt"
+	"io"
 	"net"
 	"net/http"
 	"net/netip"
 	"net/url"
 	"strings"
 	"time"
+
+	"golang.org/x/time/rate"
 )
 
 var blockedPublicPrefixes = []netip.Prefix{
@@ -78,38 +81,97 @@ func isPublicDownloadIP(ip net.IP) bool {
 	return true
 }
 
-func newPublicHTTPClient(timeoutSeconds int) *http.Client {
-	if timeoutSeconds <= 0 {
-		timeoutSeconds = 300
-	}
+func newPublicHTTPClient(proxyAddress string, limiter *rate.Limiter) (*http.Client, error) {
 	dialer := &net.Dialer{Timeout: 15 * time.Second, KeepAlive: 30 * time.Second}
 	transport := http.DefaultTransport.(*http.Transport).Clone()
 	transport.ResponseHeaderTimeout = 30 * time.Second
-	transport.DialContext = func(ctx context.Context, network, address string) (net.Conn, error) {
-		host, port, err := net.SplitHostPort(address)
-		if err != nil {
-			return nil, fmt.Errorf("解析目标地址失败: %w", err)
-		}
-		addresses, err := net.DefaultResolver.LookupIPAddr(ctx, host)
-		if err != nil {
-			return nil, fmt.Errorf("解析目标地址失败: %w", err)
-		}
-		for _, item := range addresses {
-			if !isPublicDownloadIP(item.IP) {
-				continue
+	proxyAddress, err := NormalizeProxyURL(proxyAddress)
+	if err != nil {
+		return nil, err
+	}
+	if proxyAddress == "" {
+		transport.DialContext = func(ctx context.Context, network, address string) (net.Conn, error) {
+			host, port, splitErr := net.SplitHostPort(address)
+			if splitErr != nil {
+				return nil, fmt.Errorf("解析目标地址失败: %w", splitErr)
 			}
-			return dialer.DialContext(ctx, network, net.JoinHostPort(item.IP.String(), port))
+			addresses, lookupErr := net.DefaultResolver.LookupIPAddr(ctx, host)
+			if lookupErr != nil {
+				return nil, fmt.Errorf("解析目标地址失败: %w", lookupErr)
+			}
+			for _, item := range addresses {
+				if !isPublicDownloadIP(item.IP) {
+					continue
+				}
+				return dialer.DialContext(ctx, network, net.JoinHostPort(item.IP.String(), port))
+			}
+			return nil, fmt.Errorf("目标地址没有可用公网IP")
 		}
-		return nil, fmt.Errorf("目标地址没有可用公网IP")
+	} else {
+		proxyURL, parseErr := url.Parse(proxyAddress)
+		if parseErr != nil {
+			return nil, fmt.Errorf("解析代理地址失败: %w", parseErr)
+		}
+		transport.Proxy = http.ProxyURL(proxyURL)
+		// 代理可以部署在本机或内网，目标地址已在请求及重定向阶段单独校验。
+		transport.DialContext = dialer.DialContext
+	}
+
+	var roundTripper http.RoundTripper = transport
+	if limiter != nil {
+		roundTripper = &rateLimitedRoundTripper{base: transport, limiter: limiter}
 	}
 	return &http.Client{
-		Transport: transport,
-		Timeout:   time.Duration(timeoutSeconds) * time.Second,
+		Transport: roundTripper,
 		CheckRedirect: func(req *http.Request, via []*http.Request) error {
 			if len(via) >= 10 {
 				return fmt.Errorf("重定向次数过多")
 			}
 			return ValidatePublicHTTPURL(req.URL.String())
 		},
+	}, nil
+}
+
+type rateLimitedRoundTripper struct {
+	base    http.RoundTripper
+	limiter *rate.Limiter
+}
+
+func (t *rateLimitedRoundTripper) RoundTrip(req *http.Request) (*http.Response, error) {
+	resp, err := t.base.RoundTrip(req)
+	if err != nil {
+		return nil, err
 	}
+	if resp.Body != nil {
+		resp.Body = &rateLimitedReadCloser{
+			ReadCloser: resp.Body,
+			ctx:        req.Context(),
+			limiter:    t.limiter,
+		}
+	}
+	return resp, nil
+}
+
+type rateLimitedReadCloser struct {
+	io.ReadCloser
+	ctx     context.Context
+	limiter *rate.Limiter
+}
+
+func (r *rateLimitedReadCloser) Read(buffer []byte) (int, error) {
+	if r.limiter == nil || r.limiter.Limit() == rate.Inf {
+		return r.ReadCloser.Read(buffer)
+	}
+	burst := r.limiter.Burst()
+	if burst > 0 && len(buffer) > burst {
+		buffer = buffer[:burst]
+	}
+	n, err := r.ReadCloser.Read(buffer)
+	if n == 0 {
+		return n, err
+	}
+	if waitErr := r.limiter.WaitN(r.ctx, n); waitErr != nil {
+		return n, waitErr
+	}
+	return n, err
 }

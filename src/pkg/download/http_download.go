@@ -19,6 +19,8 @@ import (
 	"sync"
 	"sync/atomic"
 	"time"
+
+	"golang.org/x/time/rate"
 )
 
 var errRangeUnsupported = errors.New("服务器不支持可靠Range下载")
@@ -40,6 +42,8 @@ type HTTPDownloadOptions struct {
 	FilePassword     string                     // 加密文件密码（加密存储必备）
 	RunToken         string                     // 当前执行令牌
 	Client           *http.Client               // 测试或受控场景注入的HTTP客户端
+	ProxyURL         string                     // HTTP直链下载代理地址，空字符串表示直连
+	DownloadLimiter  *rate.Limiter              // 跨HTTP与BT任务共享的下载限流器
 	ReservedSize     int64                      // 已预留的用户空间
 	ReserveSpace     func(int64) (int64, error) // 根据远端大小预留用户空间
 }
@@ -237,7 +241,11 @@ func DownloadHTTPWithContext(
 		if err := ValidatePublicHTTPURL(url); err != nil {
 			return nil, err
 		}
-		client = newPublicHTTPClient(opts.Timeout)
+		var clientErr error
+		client, clientErr = newPublicHTTPClient(opts.ProxyURL, opts.DownloadLimiter)
+		if clientErr != nil {
+			return nil, clientErr
+		}
 	}
 
 	// 1. 获取文件信息
@@ -371,10 +379,19 @@ type FileInfoResult struct {
 
 // GetFileInfo 获取文件信息（文件名和大小）
 func GetFileInfo(url string, timeout int) (*FileInfoResult, bool, error) {
-	if err := ValidatePublicHTTPURL(url); err != nil {
+	return GetFileInfoWithNetworkPolicy(url, timeout, "", nil)
+}
+
+// GetFileInfoWithNetworkPolicy 使用指定代理和共享限流器获取远端文件信息。
+func GetFileInfoWithNetworkPolicy(rawURL string, _ int, proxyURL string, limiter *rate.Limiter) (*FileInfoResult, bool, error) {
+	if err := ValidatePublicHTTPURL(rawURL); err != nil {
 		return nil, false, err
 	}
-	return GetFileInfoWithClient(context.Background(), url, newPublicHTTPClient(timeout))
+	client, err := newPublicHTTPClient(proxyURL, limiter)
+	if err != nil {
+		return nil, false, err
+	}
+	return GetFileInfoWithClient(context.Background(), rawURL, client)
 }
 
 // GetFileInfoWithClient 获取远端文件元数据；HEAD不可用时回退到Range GET探测。

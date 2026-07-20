@@ -21,12 +21,19 @@ import (
 
 // DownloadService 下载服务
 type DownloadService struct {
-	factory *impl.RepositoryFactory
-	tempDir string // 临时目录
-	manager *DownloadManager
+	factory       *impl.RepositoryFactory
+	tempDir       string // 临时目录
+	manager       *DownloadManager
+	networkPolicy *download.NetworkPolicy
 }
 
-func NewDownloadService(factory *impl.RepositoryFactory) *DownloadService {
+func NewDownloadService(factory *impl.RepositoryFactory, policies ...*download.NetworkPolicy) *DownloadService {
+	networkPolicy := download.NewNetworkPolicy()
+	if len(policies) > 0 && policies[0] != nil {
+		networkPolicy = policies[0]
+	} else {
+		networkPolicy = initializeDownloadNetworkPolicy(factory)
+	}
 	// 选择最大磁盘创建临时目录
 	tempDir := "./obj_temp/downloads" // 默认值
 
@@ -48,10 +55,11 @@ func NewDownloadService(factory *impl.RepositoryFactory) *DownloadService {
 	}
 
 	service := &DownloadService{
-		factory: factory,
-		tempDir: tempDir,
+		factory:       factory,
+		tempDir:       tempDir,
+		networkPolicy: networkPolicy,
 	}
-	service.manager = NewDownloadManager(factory, tempDir)
+	service.manager = NewDownloadManager(factory, tempDir, networkPolicy)
 	service.manager.Start()
 	return service
 }
@@ -87,7 +95,8 @@ func (d *DownloadService) CreateOfflineDownload(req *request.CreateOfflineDownlo
 	}
 
 	// 3. 获取文件信息并检查用户空间
-	fileInfo, supportRange, err := download.GetFileInfo(req.URL, 300)
+	fileInfo, supportRange, err := download.GetFileInfoWithNetworkPolicy(req.URL, 300,
+		d.networkPolicy.ProxyURL(), d.networkPolicy.DownloadLimiter())
 	if err != nil {
 		// 无法获取文件大小时，仍然允许创建任务（可能是动态内容）
 		logger.LOG.Warn("无法获取文件信息，跳过空间检查", "url", req.URL, "error", err)
@@ -574,7 +583,8 @@ func (d *DownloadService) CreateLocalFileDownload(req *request.CreateLocalFileDo
 // ParseTorrent 解析种子/磁力链
 func (d *DownloadService) ParseTorrent(req *request.ParseTorrentRequest) (*models.JsonResponse, error) {
 	// 调用解析功能（超时120秒）
-	result, err := download.ParseTorrent(req.Content, 120)
+	result, err := download.ParseTorrentWithLimiters(req.Content, 120,
+		d.networkPolicy.DownloadLimiter(), d.networkPolicy.BTUploadLimiter())
 	if err != nil {
 		logger.LOG.Error("解析种子失败", "error", err)
 		return nil, fmt.Errorf("解析失败: %w", err)
@@ -620,7 +630,8 @@ func (d *DownloadService) StartTorrentDownload(req *request.StartTorrentDownload
 	}
 
 	// 2. 解析种子获取元数据
-	parseResult, err := download.ParseTorrent(req.Content, 120)
+	parseResult, err := download.ParseTorrentWithLimiters(req.Content, 120,
+		d.networkPolicy.DownloadLimiter(), d.networkPolicy.BTUploadLimiter())
 	if err != nil {
 		logger.LOG.Error("解析种子失败", "error", err)
 		return nil, fmt.Errorf("解析种子失败: %w", err)

@@ -155,6 +155,9 @@ export interface ScannedDiskInfo {
 export interface SystemConfig {
   allow_register: boolean
   webdav_enabled: boolean
+  offline_download_proxy: string
+  offline_download_speed_limit_mb_per_sec: number
+  offline_download_bt_upload_speed_limit_mb_per_sec: number
   version: string
   total_users: number
   total_files: number
@@ -164,6 +167,9 @@ export interface SystemConfig {
 export interface UpdateSystemConfigRequest {
   allow_register?: boolean
   webdav_enabled?: boolean
+  offline_download_proxy?: string
+  offline_download_speed_limit_mb_per_sec?: number
+  offline_download_bt_upload_speed_limit_mb_per_sec?: number
   [key: string]: any
 }
 

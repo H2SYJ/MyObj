@@ -25,10 +25,11 @@ const downloadLeaseDuration = 45 * time.Second
 
 // DownloadManager 使用数据库任务记录驱动单机可靠下载调度。
 type DownloadManager struct {
-	factory  *impl.RepositoryFactory
-	tempDir  string
-	config   config.Download
-	workerID string
+	factory       *impl.RepositoryFactory
+	tempDir       string
+	config        config.Download
+	workerID      string
+	networkPolicy *download.NetworkPolicy
 
 	notify chan struct{}
 	stop   chan struct{}
@@ -41,7 +42,7 @@ type DownloadManager struct {
 	torrentSem    chan struct{}
 }
 
-func NewDownloadManager(factory *impl.RepositoryFactory, tempDir string) *DownloadManager {
+func NewDownloadManager(factory *impl.RepositoryFactory, tempDir string, policies ...*download.NetworkPolicy) *DownloadManager {
 	downloadConfig := config.Download{
 		MaxActiveTasks:            4,
 		MaxActiveTasksPerUser:     2,
@@ -54,11 +55,16 @@ func NewDownloadManager(factory *impl.RepositoryFactory, tempDir string) *Downlo
 		downloadConfig = config.CONFIG.Download
 	}
 	hostname, _ := os.Hostname()
+	networkPolicy := download.NewNetworkPolicy()
+	if len(policies) > 0 && policies[0] != nil {
+		networkPolicy = policies[0]
+	}
 	return &DownloadManager{
 		factory:       factory,
 		tempDir:       tempDir,
 		config:        downloadConfig,
 		workerID:      fmt.Sprintf("%s-%s", hostname, uuid.NewString()),
+		networkPolicy: networkPolicy,
 		notify:        make(chan struct{}, 1),
 		stop:          make(chan struct{}),
 		active:        make(map[string]context.CancelFunc),
@@ -213,6 +219,8 @@ func (m *DownloadManager) runTask(ctx context.Context, task *models.DownloadTask
 			RunToken:           task.RunToken,
 			ReservedSize:       task.ReservedSize,
 			SessionID:          task.BatchID,
+			DownloadLimiter:    m.networkPolicy.DownloadLimiter(),
+			UploadLimiter:      m.networkPolicy.BTUploadLimiter(),
 		}
 		fileID, err = download.DownloadTorrentSingleFile(ctx, task.ID, task.URL, task.FileIndex, task.UserID, m.tempDir, m.factory, opts)
 	} else {
@@ -226,6 +234,8 @@ func (m *DownloadManager) runTask(ctx context.Context, task *models.DownloadTask
 			FilePassword:     filePassword,
 			RunToken:         task.RunToken,
 			ReservedSize:     task.ReservedSize,
+			ProxyURL:         m.networkPolicy.ProxyURL(),
+			DownloadLimiter:  m.networkPolicy.DownloadLimiter(),
 			ReserveSpace: func(size int64) (int64, error) {
 				reserved, reserveErr := m.ensureReservation(task, size)
 				if reserveErr == nil {

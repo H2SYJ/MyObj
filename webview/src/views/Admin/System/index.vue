@@ -19,6 +19,46 @@
           <div class="form-tip">{{ t('admin.system.enableWebDAVTip') }}</div>
         </el-form-item>
 
+        <el-form-item :label="t('admin.system.offlineDownloadProxy')">
+          <el-input
+            v-model="configData.offline_download_proxy"
+            type="password"
+            show-password
+            clearable
+            autocomplete="new-password"
+            :placeholder="t('admin.system.offlineDownloadProxyPlaceholder')"
+          />
+          <div class="form-tip">{{ t('admin.system.offlineDownloadProxyTip') }}</div>
+        </el-form-item>
+
+        <el-form-item :label="t('admin.system.offlineDownloadSpeedLimit')">
+          <div class="input-with-unit">
+            <el-input-number
+              v-model="configData.offline_download_speed_limit_mb_per_sec"
+              :min="0"
+              :precision="2"
+              :step="0.1"
+              controls-position="right"
+            />
+            <span class="input-unit">MB/s</span>
+          </div>
+          <div class="form-tip">{{ t('admin.system.offlineDownloadSpeedLimitTip') }}</div>
+        </el-form-item>
+
+        <el-form-item :label="t('admin.system.offlineDownloadBTUploadSpeedLimit')">
+          <div class="input-with-unit">
+            <el-input-number
+              v-model="configData.offline_download_bt_upload_speed_limit_mb_per_sec"
+              :min="0"
+              :precision="2"
+              :step="0.1"
+              controls-position="right"
+            />
+            <span class="input-unit">MB/s</span>
+          </div>
+          <div class="form-tip">{{ t('admin.system.offlineDownloadBTUploadSpeedLimitTip') }}</div>
+        </el-form-item>
+
         <el-form-item class="button-form-item">
           <el-button type="primary" :loading="saving" @click="handleSave">{{ t('admin.system.saveConfig') }}</el-button>
           <el-button @click="loadConfig">{{ t('admin.system.reset') }}</el-button>
@@ -65,6 +105,9 @@
   const configData = reactive<SystemConfig>({
     allow_register: true,
     webdav_enabled: true,
+    offline_download_proxy: '',
+    offline_download_speed_limit_mb_per_sec: 0,
+    offline_download_bt_upload_speed_limit_mb_per_sec: 0,
     version: '',
     total_users: 0,
     total_files: 0
@@ -111,7 +154,10 @@
     try {
       const res = await updateSystemConfig({
         allow_register: configData.allow_register,
-        webdav_enabled: configData.webdav_enabled
+        webdav_enabled: configData.webdav_enabled,
+        offline_download_proxy: configData.offline_download_proxy.trim(),
+        offline_download_speed_limit_mb_per_sec: configData.offline_download_speed_limit_mb_per_sec,
+        offline_download_bt_upload_speed_limit_mb_per_sec: configData.offline_download_bt_upload_speed_limit_mb_per_sec
       })
       if (res.code === 200) {
         proxy?.$modal.msgSuccess(t('admin.system.configSaveSuccess'))
@@ -159,6 +205,20 @@
     color: var(--el-text-color-secondary);
     margin-top: 8px;
     margin-left: 0;
+  }
+
+  .input-unit {
+    color: var(--el-text-color-secondary);
+  }
+
+  .input-with-unit {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+
+  .config-card :deep(.el-input) {
+    max-width: 520px;
   }
 
   /* Switch 样式优化 */

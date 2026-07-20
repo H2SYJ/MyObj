@@ -9,21 +9,29 @@ import (
 	"myobj/src/core/domain/response"
 	"myobj/src/internal/repository/impl"
 	"myobj/src/pkg/custom_type"
+	"myobj/src/pkg/download"
 	"myobj/src/pkg/logger"
 	"myobj/src/pkg/models"
 	"myobj/src/pkg/util"
+	"strconv"
 
 	"github.com/google/uuid"
 	"gorm.io/gorm"
 )
 
 type AdminService struct {
-	factory *impl.RepositoryFactory
+	factory       *impl.RepositoryFactory
+	networkPolicy *download.NetworkPolicy
 }
 
-func NewAdminService(factory *impl.RepositoryFactory) *AdminService {
+func NewAdminService(factory *impl.RepositoryFactory, policies ...*download.NetworkPolicy) *AdminService {
+	networkPolicy := download.NewNetworkPolicy()
+	if len(policies) > 0 && policies[0] != nil {
+		networkPolicy = policies[0]
+	}
 	return &AdminService{
-		factory: factory,
+		factory:       factory,
+		networkPolicy: networkPolicy,
 	}
 }
 
@@ -772,17 +780,24 @@ func (a *AdminService) AdminGetSystemConfig() (*models.JsonResponse, error) {
 	// 获取配置
 	allowRegister, _ := a.factory.SysConfig().GetByKey(ctx, "allow_register")
 	webdavEnabled, _ := a.factory.SysConfig().GetByKey(ctx, "webdav_enabled")
+	networkSettings, err := loadDownloadNetworkSettings(ctx, a.factory, nil, nil, nil)
+	if err != nil {
+		return nil, err
+	}
 
 	// 获取统计信息
 	totalUsers, _ := a.factory.User().Count(ctx)
 	totalFiles, _ := a.factory.FileInfo().Count(ctx)
 	config := response.AdminSystemConfigResponse{
-		AllowRegister: allowRegister != nil && allowRegister.Value == "true",
-		WebdavEnabled: webdavEnabled != nil && webdavEnabled.Value == "true",
-		Version:       "1.0.0", // TODO: 从配置或构建信息获取
-		TotalUsers:    totalUsers,
-		TotalFiles:    totalFiles,
-		Uptime:        custom_type.GetSystemRuntime().String(),
+		AllowRegister:                             allowRegister != nil && allowRegister.Value == "true",
+		WebdavEnabled:                             webdavEnabled != nil && webdavEnabled.Value == "true",
+		OfflineDownloadProxy:                      networkSettings.ProxyURL,
+		OfflineDownloadSpeedLimitMBPerSec:         networkSettings.DownloadSpeedLimitMBPerSec,
+		OfflineDownloadBTUploadSpeedLimitMBPerSec: networkSettings.BTUploadSpeedLimitMBPerSec,
+		Version:    "1.0.0", // TODO: 从配置或构建信息获取
+		TotalUsers: totalUsers,
+		TotalFiles: totalFiles,
+		Uptime:     custom_type.GetSystemRuntime().String(),
 	}
 
 	return models.NewJsonResponse(200, "查询成功", config), nil
@@ -791,57 +806,47 @@ func (a *AdminService) AdminGetSystemConfig() (*models.JsonResponse, error) {
 // AdminUpdateSystemConfig 更新系统配置
 func (a *AdminService) AdminUpdateSystemConfig(req *request.AdminUpdateSystemConfigRequest) (*models.JsonResponse, error) {
 	ctx := context.Background()
+	networkSettings, err := loadDownloadNetworkSettings(ctx, a.factory, req.OfflineDownloadProxy,
+		req.OfflineDownloadSpeedLimitMBPerSec, req.OfflineDownloadBTUploadSpeedLimitMBPerSec)
+	if err != nil {
+		return nil, err
+	}
 
-	configs := make([]*models.SysConfig, 0)
+	values := map[string]string{
+		"allow_register": boolString(req.AllowRegister),
+		"webdav_enabled": boolString(req.WebdavEnabled),
+	}
+	if req.OfflineDownloadProxy != nil {
+		values[download.OfflineDownloadProxyConfigKey] = networkSettings.ProxyURL
+	}
+	if req.OfflineDownloadSpeedLimitMBPerSec != nil {
+		values[download.OfflineDownloadSpeedLimitConfigKey] = strconv.FormatFloat(networkSettings.DownloadSpeedLimitMBPerSec, 'f', -1, 64)
+	}
+	if req.OfflineDownloadBTUploadSpeedLimitMBPerSec != nil {
+		values[download.OfflineDownloadBTUploadSpeedLimitConfigKey] = strconv.FormatFloat(networkSettings.BTUploadSpeedLimitMBPerSec, 'f', -1, 64)
+	}
 
-	if req.AllowRegister {
-		config, _ := a.factory.SysConfig().GetByKey(ctx, "allow_register")
-		if config == nil {
-			config = &models.SysConfig{Key: "allow_register", Value: "true"}
-		} else {
-			config.Value = "true"
-		}
-		configs = append(configs, config)
-	} else {
-		config, _ := a.factory.SysConfig().GetByKey(ctx, "allow_register")
-		if config == nil {
-			config = &models.SysConfig{Key: "allow_register", Value: "false"}
-		} else {
-			config.Value = "false"
+	configs := make([]*models.SysConfig, 0, len(values))
+	for key, value := range values {
+		config, configErr := systemConfigForValue(ctx, a.factory, key, value)
+		if configErr != nil {
+			return nil, configErr
 		}
 		configs = append(configs, config)
 	}
-
-	if req.WebdavEnabled {
-		config, _ := a.factory.SysConfig().GetByKey(ctx, "webdav_enabled")
-		if config == nil {
-			config = &models.SysConfig{Key: "webdav_enabled", Value: "true"}
-		} else {
-			config.Value = "true"
-		}
-		configs = append(configs, config)
-	} else {
-		config, _ := a.factory.SysConfig().GetByKey(ctx, "webdav_enabled")
-		if config == nil {
-			config = &models.SysConfig{Key: "webdav_enabled", Value: "false"}
-		} else {
-			config.Value = "false"
-		}
-		configs = append(configs, config)
+	if err := a.factory.SysConfig().BatchUpdate(ctx, configs); err != nil {
+		return nil, fmt.Errorf("保存系统配置失败: %w", err)
 	}
-
-	// 批量更新
-	for _, cfg := range configs {
-		if cfg.ID == 0 {
-			if err := a.factory.SysConfig().Create(ctx, cfg); err != nil {
-				logger.LOG.Error("创建配置失败", "key", cfg.Key, "error", err)
-			}
-		} else {
-			if err := a.factory.SysConfig().Update(ctx, cfg); err != nil {
-				logger.LOG.Error("更新配置失败", "key", cfg.Key, "error", err)
-			}
-		}
+	if err := a.networkPolicy.Apply(networkSettings); err != nil {
+		return nil, err
 	}
 
 	return a.AdminGetSystemConfig()
+}
+
+func boolString(value bool) string {
+	if value {
+		return "true"
+	}
+	return "false"
 }
