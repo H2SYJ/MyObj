@@ -29,7 +29,7 @@ func (sql *Mysql) InitDatabase() {
 	}
 	sqlDB, err := db.DB()
 	if err != nil {
-		logger.LOG.Error("Failed to get database instance", err)
+		logger.LOG.Error("Failed to get database instance", "error", err)
 	}
 	// 设置连接池参数
 	sqlDB.SetMaxOpenConns(dbConfig.MaxOpen)                                     // 最大连接数

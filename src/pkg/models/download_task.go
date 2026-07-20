@@ -2,6 +2,7 @@ package models
 
 import (
 	"myobj/src/pkg/custom_type"
+	"time"
 )
 
 // DownloadTask 下载任务表
@@ -9,7 +10,7 @@ type DownloadTask struct {
 	// 任务 ID
 	ID string `gorm:"column:id;type:text;primaryKey"`
 	// 用户 ID
-	UserID string `gorm:"column:user_id;type:text;index"`
+	UserID string `gorm:"column:user_id;type:text;index;index:idx_download_user_type_state_create,priority:1"`
 	// 文件 ID
 	FileID string `gorm:"column:file_id;type:text"`
 	// 文件名
@@ -23,7 +24,7 @@ type DownloadTask struct {
 	// 下载速度 (字节/秒)
 	Speed int64 `gorm:"column:speed;type:integer;default:0"`
 	// 任务类型
-	Type int `gorm:"column:type;type:integer;not null"`
+	Type int `gorm:"column:type;type:integer;not null;index:idx_download_user_type_state_create,priority:2;index:idx_download_schedule,priority:2"`
 	// 下载URL
 	URL string `gorm:"column:url;type:text"`
 	// 下载路径
@@ -31,7 +32,7 @@ type DownloadTask struct {
 	// 虚拟路径
 	VirtualPath string `gorm:"column:virtual_path;type:text"`
 	// 任务状态
-	State int `gorm:"column:state;type:integer"`
+	State int `gorm:"column:state;type:integer;index:idx_download_user_type_state_create,priority:3;index:idx_download_schedule,priority:1"`
 	// 错误信息
 	ErrorMsg string `gorm:"column:error_msg;type:text"`
 	// 目标临时目录
@@ -46,8 +47,22 @@ type DownloadTask struct {
 	FileIndex int `gorm:"column:file_index;type:integer"`
 	// 种子名称（BT/磁力链任务）
 	TorrentName string `gorm:"column:torrent_name;type:text"`
+	// 批次ID，同一种子选择的多个文件共用一个批次
+	BatchID string `gorm:"column:batch_id;type:varchar(64);index:idx_download_batch_id"`
+	// 本次执行令牌，用于阻止旧goroutine覆盖新状态
+	RunToken string `gorm:"column:run_token;type:varchar(64);index:idx_download_run_token"`
+	// 当前工作进程ID
+	WorkerID string `gorm:"column:worker_id;type:varchar(128)"`
+	// 当前任务租约到期时间
+	LeaseExpiresAt *time.Time `gorm:"column:lease_expires_at;type:datetime;index:idx_download_lease_expires"`
+	// 已重试次数
+	RetryCount int `gorm:"column:retry_count;type:integer;default:0"`
+	// 下次允许重试时间
+	NextRetryAt *time.Time `gorm:"column:next_retry_at;type:datetime;index:idx_download_next_retry;index:idx_download_schedule,priority:3"`
+	// 已预留的用户空间
+	ReservedSize int64 `gorm:"column:reserved_size;type:bigint;default:0"`
 	// 创建时间
-	CreateTime custom_type.JsonTime `gorm:"column:create_time;type:datetime"`
+	CreateTime custom_type.JsonTime `gorm:"column:create_time;type:datetime;index:idx_download_user_type_state_create,priority:4;index:idx_download_schedule,priority:4"`
 	// 更新时间
 	UpdateTime custom_type.JsonTime `gorm:"column:update_time;type:datetime"`
 	// 完成时间

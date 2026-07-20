@@ -18,6 +18,8 @@ export interface OfflineDownloadTask {
   state_text: string
   virtual_path: string
   support_range: boolean
+  enable_encryption: boolean
+  requires_password: boolean
   error_msg: string
   file_id: string
   create_time: string
@@ -44,7 +46,13 @@ export interface DownloadTaskListResponse {
 /**
  * 获取下载任务列表
  */
-export const getDownloadTaskList = (params: { page: number; pageSize: number; state?: number; type?: number }) => {
+export const getDownloadTaskList = (params: {
+  page: number
+  pageSize: number
+  state?: number
+  type?: number
+  types?: string
+}) => {
   const filteredParams = filterParams(params)
   return get<ApiResponse<DownloadTaskListResponse>>(API_ENDPOINTS.DOWNLOAD.LIST, filteredParams)
 }
@@ -66,8 +74,11 @@ export const pauseDownload = (taskId: string) => {
 /**
  * 恢复下载任务
  */
-export const resumeDownload = (taskId: string) => {
-  return post<ApiResponse>(API_ENDPOINTS.DOWNLOAD.RESUME, { task_id: taskId })
+export const resumeDownload = (taskId: string, filePassword?: string) => {
+  return post<ApiResponse>(API_ENDPOINTS.DOWNLOAD.RESUME, {
+    task_id: taskId,
+    file_password: filePassword
+  })
 }
 
 /**

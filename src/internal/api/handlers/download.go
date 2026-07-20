@@ -96,6 +96,10 @@ func (h *DownloadHandler) GetTaskList(c *gin.Context) {
 		c.JSON(200, models.NewJsonResponse(400, "参数错误", err.Error()))
 		return
 	}
+	if c.Query("type") != "" && c.Query("types") != "" {
+		c.JSON(200, models.NewJsonResponse(400, "参数错误", "type和types不能同时传递"))
+		return
+	}
 
 	// 默认查询所有状态
 	if req.State == 0 && c.Query("state") == "" {
@@ -357,7 +361,7 @@ func serveFileWithOptions(c *gin.Context, file *os.File, fileSize int64, opts *s
 			logContext = make(map[string]interface{})
 		}
 		logContext["range"] = rangeHeader
-		logger.LOG.Info("Range请求完成", logContext)
+		logger.LOG.Info("Range请求完成", "context", logContext)
 	} else {
 		// 完整文件请求
 		c.Header("Content-Length", strconv.FormatInt(fileSize, 10))
@@ -376,7 +380,7 @@ func serveFileWithOptions(c *gin.Context, file *os.File, fileSize int64, opts *s
 		}
 		logContext["fileName"] = opts.FileName
 		logContext["fileSize"] = fileSize
-		logger.LOG.Info("完整文件传输完成", logContext)
+		logger.LOG.Info("完整文件传输完成", "context", logContext)
 
 		// 执行完成回调
 		if opts.OnComplete != nil {

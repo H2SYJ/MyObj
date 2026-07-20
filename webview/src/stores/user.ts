@@ -117,20 +117,20 @@ export const useUserStore = defineStore(StoreId.User, () => {
       logger.error('设置用户信息失败: 缺少 id 字段', { info })
       return
     }
-    
+
     // 如果缺少 group_id，尝试从缓存中恢复
     if (info.group_id === undefined || info.group_id === null) {
-      const cachedInfo = cache.local.getJSON<UserInfo>('userInfo')
+      const cachedInfo = cache.local.getJSON('userInfo') as UserInfo | null
       if (cachedInfo && cachedInfo.group_id !== undefined && cachedInfo.group_id !== null) {
-        logger.warn('后端返回的用户信息缺少 group_id，从缓存恢复', { 
+        logger.warn('后端返回的用户信息缺少 group_id，从缓存恢复', {
           cachedGroupId: cachedInfo.group_id,
-          newInfo: info 
+          newInfo: info
         })
         info.group_id = cachedInfo.group_id
       } else if (userInfo.value && userInfo.value.group_id !== undefined && userInfo.value.group_id !== null) {
-        logger.warn('后端返回的用户信息缺少 group_id，从当前状态恢复', { 
+        logger.warn('后端返回的用户信息缺少 group_id，从当前状态恢复', {
           currentGroupId: userInfo.value.group_id,
-          newInfo: info 
+          newInfo: info
         })
         info.group_id = userInfo.value.group_id
       } else {

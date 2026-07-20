@@ -3,6 +3,7 @@ package repository
 import (
 	"context"
 	"myobj/src/pkg/models"
+	"time"
 )
 
 // UserRepository 用户仓储接口
@@ -191,6 +192,20 @@ type DownloadTaskRepository interface {
 	ListByStateAndType(ctx context.Context, userID string, state int, taskType int, offset, limit int) ([]*models.DownloadTask, error)
 	// CountByStateAndType 统计指定状态和类型的任务数量
 	CountByStateAndType(ctx context.Context, userID string, state int, taskType int) (int64, error)
+	// ListByFilters 按状态和多个类型查询任务。
+	ListByFilters(ctx context.Context, userID string, state *int, taskTypes []int, offset, limit int) ([]*models.DownloadTask, error)
+	// CountByFilters 统计按状态和多个类型过滤后的任务数量。
+	CountByFilters(ctx context.Context, userID string, state *int, taskTypes []int) (int64, error)
+	// ListRunnable 查询当前可认领的离线下载任务。
+	ListRunnable(ctx context.Context, now time.Time, limit int) ([]*models.DownloadTask, error)
+	// Claim 将排队任务原子认领为下载中。
+	Claim(ctx context.Context, id, workerID, runToken string, leaseExpiresAt time.Time) (bool, error)
+	// Transition 按允许的原状态原子切换任务状态。
+	Transition(ctx context.Context, id string, allowedStates []int, newState int, updates map[string]interface{}) (bool, error)
+	// UpdateIfRunToken 仅允许当前执行令牌更新任务。
+	UpdateIfRunToken(ctx context.Context, id, runToken string, updates map[string]interface{}) (bool, error)
+	// Heartbeat 延长当前任务租约。
+	Heartbeat(ctx context.Context, id, runToken string, leaseExpiresAt time.Time) (bool, error)
 }
 
 // SysConfigRepository 系统配置仓储接口

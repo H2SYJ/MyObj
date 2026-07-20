@@ -13,7 +13,8 @@ export const getTaskStatusType = (state: number): 'info' | 'primary' | 'warning'
     1: 'primary', // 进行中（下载中/上传中）
     2: 'warning', // 已暂停
     3: 'success', // 已完成
-    4: 'danger' // 失败
+    4: 'danger', // 失败
+    5: 'info' // 已取消
   }
   return typeMap[state] || 'info'
 }

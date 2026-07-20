@@ -448,6 +448,8 @@ export default {
     createDownload: 'Create Download',
     createDownloadSuccess: 'Download task created successfully',
     createDownloadFailed: 'Download task creation failed',
+    resumePasswordPrompt: 'Enter the file password to resume this encrypted download',
+    passwordRequired: 'File password is required',
     downloadList: 'Download List',
     noDownloads: 'No download tasks',
     taskCount: '{count} tasks',

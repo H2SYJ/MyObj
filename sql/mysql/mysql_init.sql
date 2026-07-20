@@ -242,12 +242,25 @@ CREATE TABLE `download_task` (
     `info_hash` TEXT DEFAULT NULL COMMENT '种子InfoHash（BT/磁力链任务）',
     `file_index` INT DEFAULT NULL COMMENT '种子内文件索引（BT/磁力链任务）',
     `torrent_name` TEXT DEFAULT NULL COMMENT '种子名称（BT/磁力链任务）',
+	`batch_id` VARCHAR(64) DEFAULT NULL COMMENT '下载批次ID',
+	`run_token` VARCHAR(64) DEFAULT NULL COMMENT '本次执行令牌',
+	`worker_id` VARCHAR(128) DEFAULT NULL COMMENT '当前工作进程ID',
+	`lease_expires_at` DATETIME DEFAULT NULL COMMENT '任务租约到期时间',
+	`retry_count` INT DEFAULT 0 COMMENT '已重试次数',
+	`next_retry_at` DATETIME DEFAULT NULL COMMENT '下次允许重试时间',
+	`reserved_size` BIGINT DEFAULT 0 COMMENT '已预留用户空间',
     `create_time` DATETIME DEFAULT NULL COMMENT '创建时间',
     `update_time` DATETIME DEFAULT NULL COMMENT '更新时间',
     `finish_time` DATETIME DEFAULT NULL COMMENT '完成时间',
     PRIMARY KEY (`id`),
     KEY `idx_user_id` (`user_id`),
-    KEY `idx_info_hash` (`info_hash`(255))
+    KEY `idx_info_hash` (`info_hash`(255)),
+	KEY `idx_download_batch_id` (`batch_id`),
+	KEY `idx_download_run_token` (`run_token`),
+	KEY `idx_download_lease_expires` (`lease_expires_at`),
+	KEY `idx_download_next_retry` (`next_retry_at`),
+	KEY `idx_download_user_type_state_create` (`user_id`, `type`, `state`, `create_time`),
+	KEY `idx_download_schedule` (`state`, `type`, `next_retry_at`, `create_time`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='下载任务表';
 
 -- ================================

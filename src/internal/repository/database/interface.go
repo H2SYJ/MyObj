@@ -52,8 +52,46 @@ func InitDataBase() {
 		logger.LOG.Error("迁移上传任务表失败", "error", err)
 		panic(fmt.Sprintf("迁移上传任务表失败: %v", err))
 	}
+	if err := migrateDownloadTaskSchema(databasePool); err != nil {
+		logger.LOG.Error("迁移下载任务表失败", "error", err)
+		panic(fmt.Sprintf("迁移下载任务表失败: %v", err))
+	}
 
 	logger.LOG.Info("[数据库] 数据库连接池初始化成功 ✓")
+}
+
+// migrateDownloadTaskSchema 为可靠下载调度补齐字段和索引。
+func migrateDownloadTaskSchema(db *gorm.DB) error {
+	if !db.Migrator().HasTable(&models.DownloadTask{}) {
+		return nil
+	}
+	columns := []string{
+		"BatchID", "RunToken", "WorkerID", "LeaseExpiresAt",
+		"RetryCount", "NextRetryAt", "ReservedSize",
+	}
+	for _, column := range columns {
+		if !db.Migrator().HasColumn(&models.DownloadTask{}, column) {
+			if err := db.Migrator().AddColumn(&models.DownloadTask{}, column); err != nil {
+				return fmt.Errorf("新增下载任务字段%s失败: %w", column, err)
+			}
+		}
+	}
+	indexes := []string{
+		"idx_download_batch_id",
+		"idx_download_run_token",
+		"idx_download_lease_expires",
+		"idx_download_next_retry",
+		"idx_download_user_type_state_create",
+		"idx_download_schedule",
+	}
+	for _, index := range indexes {
+		if !db.Migrator().HasIndex(&models.DownloadTask{}, index) {
+			if err := db.Migrator().CreateIndex(&models.DownloadTask{}, index); err != nil {
+				return fmt.Errorf("新增下载任务索引%s失败: %w", index, err)
+			}
+		}
+	}
+	return nil
 }
 
 // migrateUploadTaskSchema 为异步文件处理补齐字段。AutoMigrate 只增加缺失列，兼容 SQLite 和 MySQL。

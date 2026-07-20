@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"myobj/src/internal/repository/impl"
 	"myobj/src/pkg/custom_type"
-	"myobj/src/pkg/enum"
 	"myobj/src/pkg/logger"
 	"myobj/src/pkg/models"
 	"myobj/src/pkg/upload"
@@ -610,6 +609,9 @@ type TorrentSingleFileDownloadOptions struct {
 	TorrentName        string // 种子名称
 	InfoHash           string // InfoHash
 	FilePassword       string // 文件密码（加密存储时必需）
+	RunToken           string // 当前执行令牌
+	ReservedSize       int64  // 已预留的用户空间
+	SessionID          string // 共享批次临时目录标识
 }
 
 // DownloadTorrentSingleFile 下载种子中的单个文件
@@ -661,107 +663,23 @@ func DownloadTorrentSingleFile(
 		}
 	}
 
-	// 使用taskID作为临时目录名，支持断点续传
-	sessionTempDir := filepath.Join(tempDir, fmt.Sprintf("torrent_%s", taskID))
+	// 同一批次复用临时目录和已下载数据，未提供批次时使用taskID。
+	sessionID := opts.SessionID
+	if sessionID == "" {
+		sessionID = taskID
+	}
+	sessionTempDir := filepath.Join(tempDir, fmt.Sprintf("torrent_%s", sessionID))
 	if err := os.MkdirAll(sessionTempDir, 0755); err != nil {
 		return "", fmt.Errorf("创建临时目录失败: %w", err)
 	}
 
 	// 注意：不在这里使用defer清理，由删除任务时手动清理
 
-	// 配置torrent客户端（优化DHT和Tracker配置）
-	cfg := torrent.NewDefaultClientConfig()
-	cfg.DataDir = sessionTempDir
-	cfg.NoUpload = false
-	cfg.Seed = false
-	cfg.NoDHT = false      // 启用DHT
-	cfg.DisableIPv6 = true // 禁用IPv6（国内网络环境优化）
-	cfg.DisableTCP = false
-	cfg.DisableUTP = false
-	cfg.ListenPort = 0 // 系统自动分配端口,避免多用户冲突
-	cfg.Debug = false  // 禁用调试日志
-
-	// 优化并发下载性能
-	cfg.EstablishedConnsPerTorrent = 200 // 增加并发连接数
-	cfg.HalfOpenConnsPerTorrent = 50     // 半开连接数
-	cfg.TorrentPeersHighWater = 200      // peer池上限
-	cfg.TorrentPeersLowWater = 50        // peer池下限
-
-	// 配置并发连接数（如果用户指定）
-	if opts.MaxConcurrentPeers > 0 {
-		cfg.EstablishedConnsPerTorrent = opts.MaxConcurrentPeers
-	}
-
-	// 配置速率限制
-	if opts.DownloadRateMbps > 0 {
-		limit := rate.Limit(int64(opts.DownloadRateMbps) * 1024 * 1024 / 8)
-		cfg.DownloadRateLimiter = rate.NewLimiter(limit, int(limit))
-	}
-	if opts.UploadRateMbps > 0 {
-		limit := rate.Limit(int64(opts.UploadRateMbps) * 1024 * 1024 / 8)
-		cfg.UploadRateLimiter = rate.NewLimiter(limit, int(limit))
-	}
-
-	// 创建torrent客户端
-	client, err := torrent.NewClient(cfg)
+	_, t, closeSession, err := acquireTorrentSession(content, sessionTempDir, opts.SessionID, opts)
 	if err != nil {
-		return "", fmt.Errorf("创建torrent客户端失败: %w", err)
+		return "", err
 	}
-	defer client.Close()
-
-	// 添加公共DHT节点(使用IP地址,国内可用)
-	client.AddDhtNodes([]string{
-		"87.98.162.88:6881",   // router.bittorrent.com
-		"82.221.103.244:6881", // router.utorrent.com
-		"87.98.162.88:6969",   // 备用节点
-		"91.121.145.85:6881",  // dht.transmissionbt.com
-		"67.215.246.10:6881",  // dht.libtorrent.org
-		"176.9.47.217:6881",   // 欧洲节点
-		"176.9.47.217:6969",   // 欧洲节点备用
-	})
-
-	// 判断是磁力链还是种子文件
-	var t *torrent.Torrent
-	if strings.HasPrefix(content, "magnet:") {
-		// 磁力链接
-		t, err = client.AddMagnet(content)
-		if err != nil {
-			return "", fmt.Errorf("添加磁力链接失败: %w", err)
-		}
-		logger.LOG.Info("添加磁力链接成功", "taskID", taskID)
-
-		// 添加公共Tracker服务器(加速解析)
-		t.AddTrackers([][]string{
-			{
-				"udp://tracker.opentrackr.org:1337/announce",
-				"udp://9.rarbg.com:2810/announce",
-				"udp://opentracker.i2p.rocks:6969/announce",
-				"https://opentracker.i2p.rocks:443/announce",
-				"udp://tracker.openbittorrent.com:6969/announce",
-				"udp://tracker.torrent.eu.org:451/announce",
-				"udp://open.stealth.si:80/announce",
-				"udp://exodus.desync.com:6969/announce",
-				"http://tracker.opentrackr.org:1337/announce",
-			},
-		})
-	} else {
-		// Base64编码的种子文件
-		torrentData, err := base64.StdEncoding.DecodeString(content)
-		if err != nil {
-			return "", fmt.Errorf("Base64解码失败: %w", err)
-		}
-
-		torrentPath := filepath.Join(sessionTempDir, "temp.torrent")
-		if err := os.WriteFile(torrentPath, torrentData, 0644); err != nil {
-			return "", fmt.Errorf("保存种子文件失败: %w", err)
-		}
-
-		t, err = client.AddTorrentFromFile(torrentPath)
-		if err != nil {
-			return "", fmt.Errorf("添加种子文件失败: %w", err)
-		}
-		logger.LOG.Info("添加种子文件成功", "taskID", taskID)
-	}
+	defer closeSession()
 
 	// 等待获取种子元数据
 	logger.LOG.Info("等待获取种子元数据...", "taskID", taskID)
@@ -769,9 +687,9 @@ func DownloadTorrentSingleFile(
 	case <-t.GotInfo():
 		logger.LOG.Info("种子元数据获取成功", "taskID", taskID)
 	case <-ctx.Done():
-		// 暂停时不返回错误，直接退出
 		logger.LOG.Info("任务已暂停，等待恢复", "taskID", taskID)
-		return "", nil
+		CloseTorrentSession(opts.SessionID)
+		return "", ctx.Err()
 	case <-time.After(2 * time.Minute):
 		return "", fmt.Errorf("获取种子元数据超时")
 	}
@@ -814,19 +732,15 @@ func DownloadTorrentSingleFile(
 		logger.LOG.Info("开始下载多文件种子中的指定文件", "taskID", taskID, "fileName", fileName, "fileIndex", fileIndex)
 	}
 
-	// 获取下载任务
-	task, err := repoFactory.DownloadTask().GetByID(ctx, taskID)
+	updated, err := repoFactory.DownloadTask().UpdateIfRunToken(ctx, taskID, opts.RunToken, map[string]interface{}{
+		"file_name": fileName,
+		"file_size": fileSize,
+	})
 	if err != nil {
-		return "", fmt.Errorf("获取下载任务失败: %w", err)
-	}
-
-	// 更新任务信息和状态为"下载中"
-	task.FileName = fileName
-	task.FileSize = fileSize
-	task.State = enum.DownloadTaskStateDownloading.Value() // 设置为下载中
-	task.UpdateTime = custom_type.Now()
-	if err := repoFactory.DownloadTask().Update(ctx, task); err != nil {
 		logger.LOG.Warn("更新任务信息失败", "taskID", taskID, "error", err)
+	}
+	if !updated {
+		return "", context.Canceled
 	}
 
 	// 等待下载完成，带进度监控
@@ -852,9 +766,9 @@ func DownloadTorrentSingleFile(
 	for {
 		select {
 		case <-ctx.Done():
-			// 暂停时不返回错误，直接退出
 			logger.LOG.Info("任务已暂停，等待恢复", "taskID", taskID)
-			return "", nil
+			targetFile.SetPriority(torrent.PiecePriorityNone)
+			return "", ctx.Err()
 		case <-ticker.C:
 			// 获取当前文件的完成字节数
 			completed := targetFile.BytesCompleted()
@@ -869,13 +783,13 @@ func DownloadTorrentSingleFile(
 				speed = int64(float64(completed-lastCompleted) / elapsed)
 			}
 
-			// 更新数据库
-			task.DownloadedSize = completed
-			task.Progress = progress
-			task.Speed = speed
-			task.UpdateTime = custom_type.Now()
-			if err := repoFactory.DownloadTask().Update(ctx, task); err != nil {
-				logger.LOG.Error("更新下载任务进度失败", "taskID", taskID, "error", err)
+			_, updateErr := repoFactory.DownloadTask().UpdateIfRunToken(ctx, taskID, opts.RunToken, map[string]interface{}{
+				"downloaded_size": completed,
+				"progress":        progress,
+				"speed":           speed,
+			})
+			if updateErr != nil {
+				logger.LOG.Error("更新下载任务进度失败", "taskID", taskID, "error", updateErr)
 			}
 
 			lastCompleted = completed
@@ -963,14 +877,16 @@ DownloadComplete:
 
 	// 准备上传数据
 	uploadData := &upload.FileUploadData{
-		TempFilePath: downloadedPath,
-		FileName:     fileName,
-		FileSize:     fileStat.Size(),
-		VirtualPath:  fileVirtualPath,
-		UserID:       userID,
-		IsEnc:        opts.EnableEncryption,
-		IsChunk:      false,
-		FilePassword: opts.FilePassword,
+		TempFilePath:          downloadedPath,
+		FileName:              fileName,
+		FileSize:              fileStat.Size(),
+		VirtualPath:           fileVirtualPath,
+		UserID:                userID,
+		IsEnc:                 opts.EnableEncryption,
+		IsChunk:               false,
+		FilePassword:          opts.FilePassword,
+		ReservedSize:          opts.ReservedSize,
+		PreserveTempOnSuccess: opts.SessionID != "",
 	}
 
 	// 调用上传处理

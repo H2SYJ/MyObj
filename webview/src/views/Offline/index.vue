@@ -5,7 +5,7 @@
       <div class="page-header">
         <div class="header-left">
           <h2>{{ t('offline.title') }}</h2>
-          <el-tag type="info">{{ t('offline.taskCount', { count: taskList.length }) }}</el-tag>
+          <el-tag type="info">{{ t('offline.taskCount', { count: taskTotal }) }}</el-tag>
         </div>
         <div class="header-right">
           <el-button type="primary" icon="Plus" @click="showDownloadDialog = true">{{
@@ -47,7 +47,7 @@
             <div class="progress-cell">
               <el-progress
                 :percentage="row.progress"
-                :status="row.state === 3 ? 'success' : row.state === 4 ? 'exception' : undefined"
+                :status="row.state === 3 ? 'success' : row.state === 4 || row.state === 5 ? 'exception' : undefined"
               />
               <span class="progress-text">{{ formatSize(row.downloaded_size) }} / {{ formatSize(row.file_size) }}</span>
             </div>
@@ -94,7 +94,7 @@
                 link
                 icon="VideoPlay"
                 type="primary"
-                @click="resumeTask(row.id)"
+                @click="resumeTask(row)"
                 size="small"
               >
                 {{ t('tasks.resume') }}
@@ -110,7 +110,7 @@
                 {{ t('tasks.cancel') }}
               </el-button>
               <el-button
-                v-if="row.state === 3 || row.state === 4"
+                v-if="row.state === 3 || row.state === 4 || row.state === 5"
                 link
                 icon="Delete"
                 type="danger"
@@ -150,7 +150,7 @@
               <el-button v-if="row.state === 1" link type="warning" @click.stop="pauseTask(row.id)" class="action-btn">
                 <el-icon><VideoPause /></el-icon>
               </el-button>
-              <el-button v-if="row.state === 2" link type="primary" @click.stop="resumeTask(row.id)" class="action-btn">
+              <el-button v-if="row.state === 2" link type="primary" @click.stop="resumeTask(row)" class="action-btn">
                 <el-icon><VideoPlay /></el-icon>
               </el-button>
               <el-button
@@ -163,7 +163,7 @@
                 <el-icon><Close /></el-icon>
               </el-button>
               <el-button
-                v-if="row.state === 3 || row.state === 4"
+                v-if="row.state === 3 || row.state === 4 || row.state === 5"
                 link
                 type="danger"
                 @click.stop="deleteTask(row.id)"
@@ -176,7 +176,7 @@
           <div class="task-progress-wrapper">
             <el-progress
               :percentage="row.progress"
-              :status="row.state === 3 ? 'success' : row.state === 4 ? 'exception' : undefined"
+              :status="row.state === 3 ? 'success' : row.state === 4 || row.state === 5 ? 'exception' : undefined"
               :stroke-width="6"
               text-inside
               class="task-progress"
@@ -186,6 +186,17 @@
       </div>
 
       <el-empty v-if="taskList.length === 0 && !loading" :description="t('offline.noDownloads')" />
+      <el-pagination
+        v-if="taskTotal > taskPageSize"
+        v-model:current-page="taskPage"
+        v-model:page-size="taskPageSize"
+        :total="taskTotal"
+        :page-sizes="[20, 50, 100]"
+        layout="total, sizes, prev, pager, next"
+        class="task-pagination"
+        @current-change="loadTaskList"
+        @size-change="handleTaskPageSizeChange"
+      />
     </el-card>
 
     <!-- 统一下载对话框 -->
@@ -471,6 +482,9 @@
   const loading = ref(false)
   const creating = ref(false)
   const taskList = ref<OfflineDownloadTask[]>([])
+  const taskPage = ref(1)
+  const taskPageSize = ref(20)
+  const taskTotal = ref(0)
   const showDownloadDialog = ref(false) // 统一的下载对话框
   let refreshTimer: number | null = null // 支持 setTimeout 和 setInterval
   const loadingTree = ref(false)
@@ -594,13 +608,14 @@
       // 或者可以分别查询 type=0,1,2,3,4,5,6，但这样需要多次请求
       // 为了简化，暂时保持前端过滤，但可以优化为后端支持范围查询
       const res = await getDownloadTaskList({
-        page: 1,
-        pageSize: 100,
-        state: -1 // 查询所有状态
+        page: taskPage.value,
+        pageSize: taskPageSize.value,
+        state: -1,
+        types: '0,4,5'
       })
       if (res.code === 200 && res.data) {
-        // 过滤掉网盘下载任务（type=7），只显示离线下载（type=0-6）
-        const newTasks = (res.data.tasks || []).filter((task: any) => task.type !== 7)
+        const newTasks = res.data.tasks || []
+        taskTotal.value = res.data.total || 0
 
         // 确保数据更新（即使值相同，也要触发响应式更新）
         // 通过创建新数组来触发 Vue 的响应式更新
@@ -642,6 +657,11 @@
       // 刷新后重新启动智能刷新
       startSmartRefresh()
     })
+  }
+
+  const handleTaskPageSizeChange = () => {
+    taskPage.value = 1
+    loadTaskList()
   }
 
   // 构建文件夹树结构
@@ -770,9 +790,18 @@
   }
 
   // 恢复任务
-  const resumeTask = async (taskId: string) => {
+  const resumeTask = async (task: OfflineDownloadTask) => {
     try {
-      await resumeDownload(taskId)
+      let filePassword: string | undefined
+      if (task.requires_password) {
+        const promptResult: any = await proxy?.$modal.prompt(t('offline.resumePasswordPrompt'))
+        filePassword = promptResult?.value
+        if (!filePassword) {
+          proxy?.$modal.msgWarning(t('offline.passwordRequired'))
+          return
+        }
+      }
+      await resumeDownload(task.id, filePassword)
       proxy?.$modal.msgSuccess(t('tasks.resumeSuccess'))
       loadTaskList()
     } catch (error: any) {

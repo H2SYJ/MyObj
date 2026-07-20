@@ -22,9 +22,9 @@ func GinLogger() gin.HandlerFunc {
 			}
 			mes := fmt.Sprintf("method: %s path:%s status:%v latency:%v", c.Request.Method, path, c.Writer.Status(), since)
 			if len(c.Errors) > 0 {
-				slog.ErrorContext(c.Request.Context(), c.Errors.String(), attrs)
+				slog.LogAttrs(c.Request.Context(), slog.LevelError, c.Errors.String(), attrs...)
 			} else {
-				slog.InfoContext(c.Request.Context(), mes, attrs)
+				slog.LogAttrs(c.Request.Context(), slog.LevelInfo, mes, attrs...)
 			}
 		}()
 		c.Next()

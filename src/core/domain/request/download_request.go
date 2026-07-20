@@ -18,6 +18,8 @@ type DownloadTaskListRequest struct {
 	State int `form:"state"`
 	// 任务类型（可选，0-6=离线下载，7=网盘文件下载，-1=所有类型）
 	Type int `form:"type"`
+	// 多任务类型过滤，使用逗号分隔；不能与type同时传递
+	Types string `form:"types"`
 	// 页码
 	Page int `form:"page" binding:"required,min=1"`
 	// 每页数量
@@ -28,6 +30,8 @@ type DownloadTaskListRequest struct {
 type TaskOperationRequest struct {
 	// 任务ID
 	TaskID string `json:"task_id" binding:"required"`
+	// 加密任务恢复密码，仅恢复操作使用且不会持久化
+	FilePassword string `json:"file_password"`
 }
 
 // DeleteTaskRequest 删除任务请求

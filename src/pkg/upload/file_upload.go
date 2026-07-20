@@ -58,8 +58,12 @@ type FileUploadData struct {
 	DiskID string `json:"disk_id"`
 	// 文件加密密码（明文）
 	FilePassword string `json:"file_password"`
+	// ReservedSize 离线下载预先扣减的用户空间
+	ReservedSize int64 `json:"reserved_size"`
 	// 处理失败时保留临时分片，供后台任务重试。
 	PreserveTempOnError bool `json:"preserve_temp_on_error"`
+	// PreserveTempOnSuccess 成功后保留源文件，由批次任务统一清理。
+	PreserveTempOnSuccess bool `json:"preserve_temp_on_success"`
 	// StageCallback 用于异步任务记录处理阶段，不参与持久化。
 	StageCallback func(stage string) `json:"-"`
 }
@@ -90,7 +94,7 @@ func ProcessUploadedFile(data *FileUploadData, repoFactory *impl.RepositoryFacto
 			}
 			panic(recovered)
 		}
-		if err == nil || !data.PreserveTempOnError {
+		if (err == nil && !data.PreserveTempOnSuccess) || (err != nil && !data.PreserveTempOnError) {
 			cleanupTempFiles(data)
 		}
 	}()
@@ -385,15 +389,28 @@ func ProcessUploadedFile(data *FileUploadData, repoFactory *impl.RepositoryFacto
 			return fmt.Errorf("写入用户文件关联失败: %w", err)
 		}
 
-		// 10.4 更新用户剩余空间
+		// 10.4 原子扣减用户剩余空间，避免并发上传或离线下载把空间扣成负数。
 		user, err := txFactory.User().GetByID(ctx, data.UserID)
 		if err != nil {
 			return fmt.Errorf("查询用户信息失败: %w", err)
 		}
 		if user.Space > 0 { // 如果不是无限空间
-			user.FreeSpace -= actualFileSize // 使用实际文件大小
-			if err := txFactory.User().Update(ctx, user); err != nil {
-				return fmt.Errorf("更新用户剩余空间失败: %w", err)
+			remainingCharge := actualFileSize - data.ReservedSize
+			query := tx.Model(&models.UserInfo{}).Where("id = ?", data.UserID)
+			if remainingCharge > 0 {
+				result := query.Where("free_space >= ?", remainingCharge).
+					UpdateColumn("free_space", gorm.Expr("free_space - ?", remainingCharge))
+				if result.Error != nil {
+					return fmt.Errorf("更新用户剩余空间失败: %w", result.Error)
+				}
+				if result.RowsAffected != 1 {
+					return fmt.Errorf("用户可用空间不足")
+				}
+			} else if remainingCharge < 0 {
+				result := query.UpdateColumn("free_space", gorm.Expr("free_space + ?", -remainingCharge))
+				if result.Error != nil {
+					return fmt.Errorf("返还用户预留空间失败: %w", result.Error)
+				}
 			}
 		}
 

@@ -443,6 +443,8 @@ export default {
     createDownload: '创建下载',
     createDownloadSuccess: '下载任务创建成功',
     createDownloadFailed: '下载任务创建失败',
+    resumePasswordPrompt: '请输入文件密码以恢复加密下载',
+    passwordRequired: '文件密码不能为空',
     downloadList: '下载列表',
     noDownloads: '暂无下载任务',
     taskCount: '{count} 个任务',

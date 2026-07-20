@@ -22,7 +22,7 @@ type DownloadTaskResponse struct {
 	Type int `json:"type"`
 	// 类型文本
 	TypeText string `json:"type_text"`
-	// 任务状态（0=初始化,1=下载中,2=暂停,3=完成,4=失败）
+	// 任务状态（0=排队,1=下载中,2=暂停,3=完成,4=失败,5=已取消）
 	State int `json:"state"`
 	// 状态文本
 	StateText string `json:"state_text"`
@@ -30,6 +30,10 @@ type DownloadTaskResponse struct {
 	VirtualPath string `json:"virtual_path"`
 	// 是否支持断点续传
 	SupportRange bool `json:"support_range"`
+	// 是否启用加密存储
+	EnableEncryption bool `json:"enable_encryption"`
+	// 恢复任务时是否需要重新输入密码
+	RequiresPassword bool `json:"requires_password"`
 	// 错误信息
 	ErrorMsg string `json:"error_msg"`
 	// 文件ID（下载完成后）

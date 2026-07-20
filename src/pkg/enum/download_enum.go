@@ -13,6 +13,8 @@ const (
 	DownloadTaskStateFinished
 	// DownloadTaskStateFailed 失败
 	DownloadTaskStateFailed
+	// DownloadTaskStateCanceled 已取消
+	DownloadTaskStateCanceled
 )
 
 func (s DownloadTaskState) Value() int {

@@ -69,6 +69,20 @@ pool_size = 10
 [storage]
 driver = "local"
 
+[download]
+# 全局最大并行离线下载任务数
+max_active_tasks = 4
+# 单用户最大并行离线下载任务数
+max_active_tasks_per_user = 2
+# 单个HTTP任务最大连接数
+http_max_connections_per_task = 4
+# HTTP分片大小，单位MB
+http_chunk_size_mb = 10
+# Torrent最大并行会话数
+torrent_max_active_sessions = 2
+# 网络错误最大重试次数
+max_retries = 3
+
 # WebDAV 配置
 [webdav]
 # 是否启用 WebDAV 服务

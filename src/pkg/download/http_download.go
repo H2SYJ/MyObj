@@ -2,6 +2,7 @@ package download
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"myobj/src/internal/repository/impl"
@@ -13,11 +14,14 @@ import (
 	neturl "net/url"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
 )
+
+var errRangeUnsupported = errors.New("服务器不支持可靠Range下载")
 
 // 下载任务管理器
 var (
@@ -27,13 +31,17 @@ var (
 
 // HTTPDownloadOptions HTTP下载配置
 type HTTPDownloadOptions struct {
-	EnableEncryption bool   // 是否加密存储
-	VirtualPath      string // 虚拟保存路径
-	MaxRetries       int    // 最大重试次数
-	ChunkSize        int64  // 分片大小（字节），默认10MB
-	MaxConcurrent    int    // 最大并发数，默认4
-	Timeout          int    // 超时时间（秒），默认300
-	FilePassword     string //加密文件密码（加密存储必备）
+	EnableEncryption bool                       // 是否加密存储
+	VirtualPath      string                     // 虚拟保存路径
+	MaxRetries       int                        // 最大重试次数
+	ChunkSize        int64                      // 分片大小（字节），默认10MB
+	MaxConcurrent    int                        // 最大并发数，默认4
+	Timeout          int                        // 超时时间（秒），默认300
+	FilePassword     string                     // 加密文件密码（加密存储必备）
+	RunToken         string                     // 当前执行令牌
+	Client           *http.Client               // 测试或受控场景注入的HTTP客户端
+	ReservedSize     int64                      // 已预留的用户空间
+	ReserveSpace     func(int64) (int64, error) // 根据远端大小预留用户空间
 }
 
 // HTTPDownloadResult HTTP下载结果
@@ -62,11 +70,14 @@ type downloadProgress struct {
 	LastUpdate         time.Time
 	SpeedHistory       []int64 // 速度历史记录（最多10条），用于平滑显示
 	RepoFactory        *impl.RepositoryFactory
+	RunToken           string
+	ReservedSize       int64
+	ReserveSpace       func(int64) (int64, error)
 	mu                 sync.RWMutex
 }
 
 // newDownloadProgress 创建进度管理器
-func newDownloadProgress(taskID string, totalSize int64, repoFactory *impl.RepositoryFactory) *downloadProgress {
+func newDownloadProgress(taskID string, totalSize int64, repoFactory *impl.RepositoryFactory, runToken string) *downloadProgress {
 	return &downloadProgress{
 		TaskID:             taskID,
 		TotalSize:          totalSize,
@@ -74,6 +85,7 @@ func newDownloadProgress(taskID string, totalSize int64, repoFactory *impl.Repos
 		LastUpdate:         time.Now(),
 		SpeedHistory:       make([]int64, 0, 10),
 		RepoFactory:        repoFactory,
+		RunToken:           runToken,
 	}
 }
 
@@ -121,25 +133,36 @@ func (dp *downloadProgress) updateProgress(downloaded int64) {
 		dp.LastDownloadedSize = downloaded
 		dp.DownloadedSize = downloaded
 
-		// 更新数据库
-		ctx := context.Background()
-		task, err := dp.RepoFactory.DownloadTask().GetByID(ctx, dp.TaskID)
-		if err != nil {
-			logger.LOG.Error("获取下载任务失败", "taskID", dp.TaskID, "error", err)
-			return
-		}
-
-		task.DownloadedSize = dp.DownloadedSize
-		task.Speed = dp.Speed
+		progressValue := 0
 		if dp.TotalSize > 0 {
-			task.Progress = int(float64(dp.DownloadedSize) / float64(dp.TotalSize) * 100)
+			progressValue = int(float64(dp.DownloadedSize) / float64(dp.TotalSize) * 100)
+			if progressValue > 100 {
+				progressValue = 100
+			}
 		}
-		task.UpdateTime = custom_type.Now()
-
-		if err := dp.RepoFactory.DownloadTask().Update(ctx, task); err != nil {
+		_, err := dp.RepoFactory.DownloadTask().UpdateIfRunToken(context.Background(), dp.TaskID, dp.RunToken, map[string]interface{}{
+			"downloaded_size": dp.DownloadedSize,
+			"speed":           dp.Speed,
+			"progress":        progressValue,
+		})
+		if err != nil {
 			logger.LOG.Error("更新下载任务进度失败", "taskID", dp.TaskID, "error", err)
 		}
 	}
+}
+
+func (dp *downloadProgress) ensureUnknownSizeReservation(requiredSize int64) error {
+	if dp.TotalSize > 0 || dp.ReserveSpace == nil || requiredSize <= dp.ReservedSize {
+		return nil
+	}
+	const reservationBlock = int64(64 * 1024 * 1024)
+	target := ((requiredSize + reservationBlock - 1) / reservationBlock) * reservationBlock
+	reserved, err := dp.ReserveSpace(target)
+	if err != nil {
+		return err
+	}
+	dp.ReservedSize = reserved
+	return nil
 }
 
 // DownloadHTTP 下载HTTP/HTTPS文件
@@ -162,23 +185,31 @@ func DownloadHTTP(
 	repoFactory *impl.RepositoryFactory,
 	opts *HTTPDownloadOptions,
 ) (*HTTPDownloadResult, error) {
-	// 创建可取消的context
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-
-	// 注册取消函数
 	downloadTasksMu.Lock()
 	downloadTasks[taskID] = cancel
 	downloadTasksMu.Unlock()
-
-	// 确保清理
 	defer func() {
 		downloadTasksMu.Lock()
 		delete(downloadTasks, taskID)
 		downloadTasksMu.Unlock()
 	}()
+	return DownloadHTTPWithContext(ctx, taskID, url, userID, tempDir, repoFactory, opts)
+}
 
-	// 使用默认配置
+// DownloadHTTPWithContext 使用调用方上下文执行HTTP/HTTPS下载。
+// 最终任务状态由DownloadManager统一提交，本函数只更新元数据和进度。
+func DownloadHTTPWithContext(
+	ctx context.Context,
+	taskID string,
+	url string,
+	userID string,
+	tempDir string,
+	repoFactory *impl.RepositoryFactory,
+	opts *HTTPDownloadOptions,
+) (*HTTPDownloadResult, error) {
+
 	if opts == nil {
 		opts = &HTTPDownloadOptions{
 			EnableEncryption: false,
@@ -189,10 +220,29 @@ func DownloadHTTP(
 			Timeout:          300,
 		}
 	}
+	if opts.ChunkSize <= 0 {
+		opts.ChunkSize = 10 * 1024 * 1024
+	}
+	if opts.MaxConcurrent <= 0 {
+		opts.MaxConcurrent = 4
+	}
+	if opts.MaxRetries < 0 {
+		opts.MaxRetries = 0
+	}
+	if opts.Timeout <= 0 {
+		opts.Timeout = 300
+	}
+	client := opts.Client
+	if client == nil {
+		if err := ValidatePublicHTTPURL(url); err != nil {
+			return nil, err
+		}
+		client = newPublicHTTPClient(opts.Timeout)
+	}
 
 	// 1. 获取文件信息
 	logger.LOG.Info("开始获取文件信息", "url", url)
-	fileInfo, supportRange, err := GetFileInfo(url, opts.Timeout)
+	fileInfo, supportRange, err := GetFileInfoWithClient(ctx, url, client)
 	if err != nil {
 		return nil, fmt.Errorf("获取文件信息失败: %w", err)
 	}
@@ -204,18 +254,23 @@ func DownloadHTTP(
 	)
 
 	// 2. 更新任务信息
-	task, err := repoFactory.DownloadTask().GetByID(ctx, taskID)
+	updated, err := repoFactory.DownloadTask().UpdateIfRunToken(ctx, taskID, opts.RunToken, map[string]interface{}{
+		"file_name":     fileInfo.FileName,
+		"file_size":     fileInfo.FileSize,
+		"support_range": supportRange,
+	})
 	if err != nil {
-		return nil, fmt.Errorf("获取下载任务失败: %w", err)
-	}
-
-	task.FileName = fileInfo.FileName
-	task.FileSize = fileInfo.FileSize
-	task.SupportRange = supportRange
-	task.State = enum.DownloadTaskStateDownloading.Value()
-	task.UpdateTime = custom_type.Now()
-	if err := repoFactory.DownloadTask().Update(ctx, task); err != nil {
 		return nil, fmt.Errorf("更新任务信息失败: %w", err)
+	}
+	if !updated {
+		return nil, context.Canceled
+	}
+	if opts.ReserveSpace != nil && fileInfo.FileSize > 0 {
+		reservedSize, reserveErr := opts.ReserveSpace(fileInfo.FileSize)
+		if reserveErr != nil {
+			return nil, reserveErr
+		}
+		opts.ReservedSize = reservedSize
 	}
 
 	// 3. 创建临时目录
@@ -227,34 +282,39 @@ func DownloadHTTP(
 
 	// 4. 下载文件
 	filePath := filepath.Join(sessionDir, fileInfo.FileName)
-	progress := newDownloadProgress(taskID, fileInfo.FileSize, repoFactory)
+	progress := newDownloadProgress(taskID, fileInfo.FileSize, repoFactory, opts.RunToken)
+	progress.ReservedSize = opts.ReservedSize
+	progress.ReserveSpace = opts.ReserveSpace
 
-	if supportRange && fileInfo.FileSize > opts.ChunkSize {
-		// 支持断点续传，使用多线程下载
+	if supportRange && fileInfo.FileSize > 0 {
 		logger.LOG.Info("使用多线程下载", "chunkSize", opts.ChunkSize, "concurrent", opts.MaxConcurrent)
-		err = downloadWithRange(ctx, url, filePath, fileInfo.FileSize, opts, progress, taskID, repoFactory)
+		err = downloadWithRange(ctx, url, filePath, fileInfo, opts, progress, client)
+		if errors.Is(err, errRangeUnsupported) {
+			logger.LOG.Warn("服务器未正确实现Range，回退到单线程下载", "url", url)
+			_ = os.Remove(filePath)
+			_ = os.Remove(filePath + ".manifest.json")
+			err = downloadDirect(ctx, url, filePath, client, progress)
+		}
 	} else {
-		// 不支持断点续传或文件较小，直接下载
 		logger.LOG.Info("使用单线程下载")
-		err = downloadDirect(ctx, url, filePath, opts.Timeout, progress, taskID, repoFactory)
+		err = downloadDirect(ctx, url, filePath, client, progress)
 	}
 
 	if err != nil {
-		// 更新任务为失败状态
-		task.State = enum.DownloadTaskStateFailed.Value()
-		task.ErrorMsg = err.Error()
-		task.UpdateTime = custom_type.Now()
-		repoFactory.DownloadTask().Update(ctx, task)
 		logger.LOG.Error("文件下载失败", "taskID", taskID, "error", err)
-
-		// 如果不是用户暂停或取消，则清理临时文件
-		if !strings.Contains(err.Error(), "任务已取消") {
-			if removeErr := os.RemoveAll(sessionDir); removeErr != nil {
-				logger.LOG.Warn("清理临时目录失败", "path", sessionDir, "error", removeErr)
-			}
-		}
 		return nil, fmt.Errorf("文件下载失败: %w", err)
 	}
+
+	stat, err := os.Stat(filePath)
+	if err != nil {
+		return nil, fmt.Errorf("检查下载文件失败: %w", err)
+	}
+	actualSize := stat.Size()
+	if fileInfo.FileSize >= 0 && actualSize != fileInfo.FileSize {
+		return nil, fmt.Errorf("下载文件大小不一致: 期望%d字节，实际%d字节", fileInfo.FileSize, actualSize)
+	}
+	fileInfo.FileSize = actualSize
+	opts.ReservedSize = progress.ReservedSize
 
 	logger.LOG.Info("文件下载完成", "fileName", fileInfo.FileName, "size", fileInfo.FileSize)
 
@@ -275,15 +335,11 @@ func DownloadHTTP(
 		IsEnc:        opts.EnableEncryption,
 		IsChunk:      false,
 		FilePassword: opts.FilePassword,
+		ReservedSize: opts.ReservedSize,
 	}
 
 	fileID, err := upload.ProcessUploadedFile(uploadData, repoFactory)
 	if err != nil {
-		// 更新任务为失败状态
-		task.State = enum.DownloadTaskStateFailed.Value()
-		task.ErrorMsg = fmt.Sprintf("上传文件失败: %v", err)
-		task.UpdateTime = custom_type.Now()
-		repoFactory.DownloadTask().Update(ctx, task)
 		logger.LOG.Error("上传文件失败", "taskID", taskID, "error", err)
 		// 清理临时文件
 		os.RemoveAll(sessionDir)
@@ -293,17 +349,6 @@ func DownloadHTTP(
 	// 清理临时文件（上传成功后）
 	if removeErr := os.RemoveAll(sessionDir); removeErr != nil {
 		logger.LOG.Warn("清理临时目录失败", "path", sessionDir, "error", removeErr)
-	}
-
-	// 7. 更新任务为完成状态
-	task.FileID = fileID
-	task.State = enum.DownloadTaskStateFinished.Value()
-	task.Progress = 100
-	task.UpdateTime = custom_type.Now()
-	task.FinishTime = custom_type.Now()
-	task.DownloadedSize = task.FileSize
-	if err := repoFactory.DownloadTask().Update(ctx, task); err != nil {
-		logger.LOG.Error("更新任务完成状态失败", "taskID", taskID, "error", err)
 	}
 
 	logger.LOG.Info("离线下载任务完成", "taskID", taskID, "fileID", fileID)
@@ -317,46 +362,104 @@ func DownloadHTTP(
 
 // FileInfoResult 文件信息结果
 type FileInfoResult struct {
-	FileName string
-	FileSize int64
-	Size     int64 // 别名，与FileSize一致
+	FileName     string
+	FileSize     int64
+	Size         int64 // 别名，与FileSize一致
+	ETag         string
+	LastModified string
 }
 
 // GetFileInfo 获取文件信息（文件名和大小）
 func GetFileInfo(url string, timeout int) (*FileInfoResult, bool, error) {
-	client := &http.Client{
-		Timeout: time.Duration(timeout) * time.Second,
+	if err := ValidatePublicHTTPURL(url); err != nil {
+		return nil, false, err
 	}
+	return GetFileInfoWithClient(context.Background(), url, newPublicHTTPClient(timeout))
+}
 
-	req, err := http.NewRequest("HEAD", url, nil)
+// GetFileInfoWithClient 获取远端文件元数据；HEAD不可用时回退到Range GET探测。
+func GetFileInfoWithClient(ctx context.Context, rawURL string, client *http.Client) (*FileInfoResult, bool, error) {
+	req, err := http.NewRequestWithContext(ctx, http.MethodHead, rawURL, nil)
 	if err != nil {
 		return nil, false, fmt.Errorf("创建请求失败: %w", err)
 	}
-
 	resp, err := client.Do(req)
-	if err != nil {
-		return nil, false, fmt.Errorf("请求失败: %w", err)
+	if err == nil {
+		defer resp.Body.Close()
+		if resp.StatusCode >= 200 && resp.StatusCode < 300 {
+			fileSize := resp.ContentLength
+			return &FileInfoResult{
+				FileName:     extractFileName(rawURL, resp.Header.Get("Content-Disposition")),
+				FileSize:     fileSize,
+				Size:         fileSize,
+				ETag:         resp.Header.Get("ETag"),
+				LastModified: resp.Header.Get("Last-Modified"),
+			}, resp.Header.Get("Accept-Ranges") == "bytes", nil
+		}
 	}
-	defer resp.Body.Close()
 
-	if resp.StatusCode != http.StatusOK {
-		return nil, false, fmt.Errorf("服务器返回错误: %d", resp.StatusCode)
+	getReq, requestErr := http.NewRequestWithContext(ctx, http.MethodGet, rawURL, nil)
+	if requestErr != nil {
+		return nil, false, fmt.Errorf("创建探测请求失败: %w", requestErr)
 	}
-
-	// 获取文件大小
-	fileSize := resp.ContentLength
-
-	// 检测是否支持断点续传
-	supportRange := resp.Header.Get("Accept-Ranges") == "bytes"
-
-	// 获取文件名
-	fileName := extractFileName(url, resp.Header.Get("Content-Disposition"))
-
+	getReq.Header.Set("Range", "bytes=0-0")
+	getResp, requestErr := client.Do(getReq)
+	if requestErr != nil {
+		if err != nil {
+			return nil, false, fmt.Errorf("HEAD和GET探测均失败: %v; %w", err, requestErr)
+		}
+		return nil, false, fmt.Errorf("GET探测失败: %w", requestErr)
+	}
+	defer getResp.Body.Close()
+	if getResp.StatusCode != http.StatusPartialContent && getResp.StatusCode != http.StatusOK {
+		return nil, false, fmt.Errorf("服务器返回错误: %d", getResp.StatusCode)
+	}
+	fileSize := getResp.ContentLength
+	supportRange := getResp.StatusCode == http.StatusPartialContent
+	if supportRange {
+		_, _, total, parseErr := parseContentRange(getResp.Header.Get("Content-Range"))
+		if parseErr != nil {
+			return nil, false, parseErr
+		}
+		fileSize = total
+	}
 	return &FileInfoResult{
-		FileName: fileName,
-		FileSize: fileSize,
-		Size:     fileSize, // 设置别名
+		FileName:     extractFileName(rawURL, getResp.Header.Get("Content-Disposition")),
+		FileSize:     fileSize,
+		Size:         fileSize,
+		ETag:         getResp.Header.Get("ETag"),
+		LastModified: getResp.Header.Get("Last-Modified"),
 	}, supportRange, nil
+}
+
+func parseContentRange(value string) (int64, int64, int64, error) {
+	if !strings.HasPrefix(value, "bytes ") {
+		return 0, 0, 0, fmt.Errorf("无效的Content-Range: %s", value)
+	}
+	parts := strings.Split(strings.TrimPrefix(value, "bytes "), "/")
+	if len(parts) != 2 {
+		return 0, 0, 0, fmt.Errorf("无效的Content-Range: %s", value)
+	}
+	rangeParts := strings.Split(parts[0], "-")
+	if len(rangeParts) != 2 {
+		return 0, 0, 0, fmt.Errorf("无效的Content-Range: %s", value)
+	}
+	start, err := strconv.ParseInt(rangeParts[0], 10, 64)
+	if err != nil {
+		return 0, 0, 0, fmt.Errorf("无效的Content-Range起点: %w", err)
+	}
+	end, err := strconv.ParseInt(rangeParts[1], 10, 64)
+	if err != nil {
+		return 0, 0, 0, fmt.Errorf("无效的Content-Range终点: %w", err)
+	}
+	total, err := strconv.ParseInt(parts[1], 10, 64)
+	if err != nil {
+		return 0, 0, 0, fmt.Errorf("无效的Content-Range总大小: %w", err)
+	}
+	if start < 0 || end < start || total <= end {
+		return 0, 0, 0, fmt.Errorf("Content-Range范围不合法: %s", value)
+	}
+	return start, end, total, nil
 }
 
 // extractFileName 从URL或Content-Disposition中提取文件名
@@ -463,16 +566,14 @@ func downloadDirect(
 	ctx context.Context,
 	url string,
 	filePath string,
-	timeout int,
+	client *http.Client,
 	progress *downloadProgress,
-	taskID string,
-	repoFactory *impl.RepositoryFactory,
 ) error {
-	client := &http.Client{
-		Timeout: time.Duration(timeout) * time.Second,
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+	if err != nil {
+		return fmt.Errorf("创建下载请求失败: %w", err)
 	}
-
-	resp, err := client.Get(url)
+	resp, err := client.Do(req)
 	if err != nil {
 		return fmt.Errorf("下载请求失败: %w", err)
 	}
@@ -493,15 +594,11 @@ func downloadDirect(
 	var downloaded int64
 
 	for {
-		// 检查context是否取消
-		select {
-		case <-ctx.Done():
-			return fmt.Errorf("任务已取消")
-		default:
-		}
-
 		n, err := resp.Body.Read(buffer)
 		if n > 0 {
+			if reserveErr := progress.ensureUnknownSizeReservation(downloaded + int64(n)); reserveErr != nil {
+				return fmt.Errorf("预留用户空间失败: %w", reserveErr)
+			}
 			if _, writeErr := file.Write(buffer[:n]); writeErr != nil {
 				return fmt.Errorf("写入文件失败: %w", writeErr)
 			}
@@ -512,6 +609,9 @@ func downloadDirect(
 			break
 		}
 		if err != nil {
+			if ctx.Err() != nil {
+				return ctx.Err()
+			}
 			return fmt.Errorf("读取数据失败: %w", err)
 		}
 	}
@@ -524,122 +624,117 @@ func downloadWithRange(
 	ctx context.Context,
 	url string,
 	filePath string,
-	totalSize int64,
+	fileInfo *FileInfoResult,
 	opts *HTTPDownloadOptions,
 	progress *downloadProgress,
-	taskID string,
-	repoFactory *impl.RepositoryFactory,
+	client *http.Client,
 ) error {
-	// 检查是否存在未完成的下载文件
-	var file *os.File
-	var err error
-	var existingSize int64
+	if err := probeRangeSupport(ctx, url, fileInfo.FileSize, client); err != nil {
+		return err
+	}
+	totalSize := fileInfo.FileSize
+	manifestPath := filePath + ".manifest.json"
+	manifest, loadErr := loadDownloadManifest(manifestPath)
+	resume := loadErr == nil && manifestMatches(manifest, url, fileInfo)
+	if !resume {
+		_ = os.Remove(filePath)
+		_ = os.Remove(manifestPath)
+		chunks := calculateChunks(totalSize, opts.ChunkSize)
+		manifest = &downloadManifest{
+			Version:      1,
+			URL:          url,
+			FileSize:     totalSize,
+			ETag:         fileInfo.ETag,
+			LastModified: fileInfo.LastModified,
+			Chunks:       make([]manifestChunk, 0, len(chunks)),
+		}
+		for _, chunk := range chunks {
+			manifest.Chunks = append(manifest.Chunks, manifestChunk{Index: chunk.Index, Start: chunk.Start, End: chunk.End})
+		}
+		if err := saveDownloadManifest(manifestPath, manifest); err != nil {
+			return err
+		}
+	}
 
-	if fileInfo, statErr := os.Stat(filePath); statErr == nil {
-		// 文件已存在，从断点续传
-		existingSize = fileInfo.Size()
-		logger.LOG.Info("检测到未完成的下载，从断点续传",
-			"filePath", filePath,
-			"existingSize", existingSize,
-			"totalSize", totalSize,
-		)
-		file, err = os.OpenFile(filePath, os.O_RDWR, 0644)
-		if err != nil {
-			return fmt.Errorf("打开文件失败: %w", err)
-		}
-	} else {
-		// 创建新文件
-		file, err = os.Create(filePath)
-		if err != nil {
-			return fmt.Errorf("创建文件失败: %w", err)
-		}
-		// 预分配文件空间
-		if err := file.Truncate(totalSize); err != nil {
-			file.Close()
-			return fmt.Errorf("预分配文件空间失败: %w", err)
-		}
-		existingSize = 0
+	file, err := os.OpenFile(filePath, os.O_CREATE|os.O_RDWR, 0644)
+	if err != nil {
+		return fmt.Errorf("打开下载文件失败: %w", err)
 	}
 	defer file.Close()
-
-	// 计算分片
-	chunks := calculateChunks(totalSize, opts.ChunkSize)
-	logger.LOG.Info("分片计算完成", "总分片数", len(chunks))
-
-	// 过滤已下载的分片
-	var pendingChunks []chunkInfo
-	for _, chunk := range chunks {
-		if chunk.End < existingSize {
-			// 该分片已完成
-			continue
-		} else if chunk.Start < existingSize {
-			// 该分片部分完成，调整起始位置
-			chunk.Start = existingSize
+	if stat, statErr := file.Stat(); statErr != nil || stat.Size() != totalSize {
+		if err := file.Truncate(totalSize); err != nil {
+			return fmt.Errorf("预分配文件空间失败: %w", err)
 		}
-		pendingChunks = append(pendingChunks, chunk)
 	}
 
+	pendingChunks := make([]chunkInfo, 0, len(manifest.Chunks))
+	var downloadedBytes int64
+	for _, chunk := range manifest.Chunks {
+		if chunk.Done {
+			downloadedBytes += chunk.End - chunk.Start + 1
+			continue
+		}
+		pendingChunks = append(pendingChunks, chunkInfo{Index: chunk.Index, Start: chunk.Start, End: chunk.End})
+	}
 	if len(pendingChunks) == 0 {
-		logger.LOG.Info("文件已下载完成")
 		return nil
 	}
+	progress.DownloadedSize = downloadedBytes
+	progress.LastDownloadedSize = downloadedBytes
+	initialProgress := int(float64(downloadedBytes) / float64(totalSize) * 100)
+	_, _ = progress.RepoFactory.DownloadTask().UpdateIfRunToken(context.Background(), progress.TaskID, progress.RunToken, map[string]interface{}{
+		"downloaded_size": downloadedBytes,
+		"progress":        initialProgress,
+		"speed":           0,
+	})
+	logger.LOG.Info("待下载分片", "总数", len(manifest.Chunks), "待下载", len(pendingChunks), "已下载", len(manifest.Chunks)-len(pendingChunks))
 
-	logger.LOG.Info("待下载分片",
-		"总数", len(chunks),
-		"待下载", len(pendingChunks),
-		"已下载", len(chunks)-len(pendingChunks),
-	)
-
-	// 并发下载控制
 	var wg sync.WaitGroup
-	sem := make(chan struct{}, opts.MaxConcurrent) // 并发控制
+	sem := make(chan struct{}, opts.MaxConcurrent)
 	errChan := make(chan error, len(pendingChunks))
-	var downloadedBytes int64 = existingSize // 从已下载的大小开始
+	var manifestMu sync.Mutex
 
-	// 更新初始进度
-	progress.updateProgress(existingSize)
-
-	// 下载每个分片
+launchChunks:
 	for i := range pendingChunks {
-		// 检查context是否取消
 		select {
 		case <-ctx.Done():
-			return fmt.Errorf("任务已取消")
-		default:
+			break launchChunks
+		case sem <- struct{}{}:
 		}
-
 		wg.Add(1)
-		sem <- struct{}{} // 获取信号量
-
 		go func(chunk *chunkInfo) {
 			defer wg.Done()
-			defer func() { <-sem }() // 释放信号量
-
-			// 重试机制
+			defer func() { <-sem }()
 			for retry := 0; retry <= opts.MaxRetries; retry++ {
-				// 检查context是否取消
-				select {
-				case <-ctx.Done():
-					return // 任务已取消，退出
-				default:
+				if ctx.Err() != nil {
+					return
 				}
-
 				if retry > 0 {
-					logger.LOG.Warn("重试下载分片",
-						"chunk", chunk.Index,
-						"retry", retry,
-						"maxRetries", opts.MaxRetries,
-					)
-					time.Sleep(time.Duration(retry) * 2 * time.Second) // 指数退避
+					logger.LOG.Warn("重试下载分片", "chunk", chunk.Index, "retry", retry, "maxRetries", opts.MaxRetries)
+					select {
+					case <-ctx.Done():
+						return
+					case <-time.After(time.Duration(retry*2) * time.Second):
+					}
 				}
-
-				err := downloadChunk(ctx, url, file, chunk, &downloadedBytes, progress, opts.Timeout)
+				err := downloadChunk(ctx, url, file, chunk, &downloadedBytes, progress, client, fileInfo)
 				if err == nil {
-					return // 下载成功
+					manifestMu.Lock()
+					syncErr := file.Sync()
+					if syncErr == nil {
+						manifest.Chunks[chunk.Index].Done = true
+						syncErr = saveDownloadManifest(manifestPath, manifest)
+					}
+					manifestMu.Unlock()
+					if syncErr != nil {
+						errChan <- syncErr
+					}
+					return
 				}
-
+				if ctx.Err() != nil {
+					return
+				}
 				if retry == opts.MaxRetries {
-					// 所有重试都失败
 					errChan <- fmt.Errorf("分片 %d 下载失败: %w", chunk.Index, err)
 					return
 				}
@@ -647,11 +742,11 @@ func downloadWithRange(
 		}(&pendingChunks[i])
 	}
 
-	// 等待所有分片下载完成
 	wg.Wait()
 	close(errChan)
-
-	// 检查是否有错误
+	if ctx.Err() != nil {
+		return ctx.Err()
+	}
 	for err := range errChan {
 		if err != nil {
 			return err
@@ -659,6 +754,30 @@ func downloadWithRange(
 	}
 
 	logger.LOG.Info("所有分片下载完成")
+	return nil
+}
+
+func probeRangeSupport(ctx context.Context, rawURL string, totalSize int64, client *http.Client) error {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, rawURL, nil)
+	if err != nil {
+		return fmt.Errorf("创建Range探测请求失败: %w", err)
+	}
+	req.Header.Set("Range", "bytes=0-0")
+	resp, err := client.Do(req)
+	if err != nil {
+		return fmt.Errorf("Range探测失败: %w", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusPartialContent {
+		return fmt.Errorf("%w，状态码: %d", errRangeUnsupported, resp.StatusCode)
+	}
+	start, end, total, err := parseContentRange(resp.Header.Get("Content-Range"))
+	if err != nil {
+		return err
+	}
+	if start != 0 || end != 0 || total != totalSize {
+		return fmt.Errorf("Range探测结果不匹配")
+	}
 	return nil
 }
 
@@ -693,13 +812,10 @@ func downloadChunk(
 	chunk *chunkInfo,
 	downloadedBytes *int64,
 	progress *downloadProgress,
-	timeout int,
-) error {
-	client := &http.Client{
-		Timeout: time.Duration(timeout) * time.Second,
-	}
-
-	req, err := http.NewRequest("GET", url, nil)
+	client *http.Client,
+	fileInfo *FileInfoResult,
+) (resultErr error) {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 	if err != nil {
 		return fmt.Errorf("创建请求失败: %w", err)
 	}
@@ -707,6 +823,11 @@ func downloadChunk(
 	// 设置Range头
 	rangeHeader := fmt.Sprintf("bytes=%d-%d", chunk.Start, chunk.End)
 	req.Header.Set("Range", rangeHeader)
+	if fileInfo.ETag != "" {
+		req.Header.Set("If-Range", fileInfo.ETag)
+	} else if fileInfo.LastModified != "" {
+		req.Header.Set("If-Range", fileInfo.LastModified)
+	}
 
 	resp, err := client.Do(req)
 	if err != nil {
@@ -714,38 +835,71 @@ func downloadChunk(
 	}
 	defer resp.Body.Close()
 
-	if resp.StatusCode != http.StatusPartialContent && resp.StatusCode != http.StatusOK {
-		return fmt.Errorf("服务器返回错误: %d", resp.StatusCode)
+	if resp.StatusCode != http.StatusPartialContent {
+		return fmt.Errorf("Range请求必须返回206，实际状态码: %d", resp.StatusCode)
+	}
+	start, end, total, err := parseContentRange(resp.Header.Get("Content-Range"))
+	if err != nil {
+		return err
+	}
+	if start != chunk.Start || end != chunk.End || total != fileInfo.FileSize {
+		return fmt.Errorf("Content-Range与请求范围不一致")
+	}
+	expected := chunk.End - chunk.Start + 1
+	if resp.ContentLength >= 0 && resp.ContentLength != expected {
+		return fmt.Errorf("Range响应大小不一致: 期望%d字节，实际%d字节", expected, resp.ContentLength)
 	}
 
 	// 读取数据并写入文件
 	buffer := make([]byte, 32*1024) // 32KB缓冲区
 	offset := chunk.Start
-
-	for {
-		// 检查context是否取消
-		select {
-		case <-ctx.Done():
-			return fmt.Errorf("任务已取消")
-		default:
+	remaining := expected
+	var written int64
+	defer func() {
+		if resultErr != nil && written > 0 {
+			current := atomic.AddInt64(downloadedBytes, -written)
+			progress.updateProgress(current)
 		}
+	}()
 
-		n, err := resp.Body.Read(buffer)
+	for remaining > 0 {
+		readSize := int64(len(buffer))
+		if remaining < readSize {
+			readSize = remaining
+		}
+		n, err := resp.Body.Read(buffer[:readSize])
 		if n > 0 {
 			// 写入指定位置
 			if _, writeErr := file.WriteAt(buffer[:n], offset); writeErr != nil {
 				return fmt.Errorf("写入文件失败: %w", writeErr)
 			}
 			offset += int64(n)
+			remaining -= int64(n)
+			written += int64(n)
 			atomic.AddInt64(downloadedBytes, int64(n))
 			progress.updateProgress(atomic.LoadInt64(downloadedBytes))
+		}
+		if err == io.EOF && remaining > 0 {
+			return fmt.Errorf("Range响应提前结束，还缺少%d字节", remaining)
 		}
 		if err == io.EOF {
 			break
 		}
 		if err != nil {
+			if ctx.Err() != nil {
+				return ctx.Err()
+			}
 			return fmt.Errorf("读取数据失败: %w", err)
 		}
+	}
+	var extra [1]byte
+	if n, extraErr := resp.Body.Read(extra[:]); n > 0 {
+		return fmt.Errorf("Range响应超过声明的字节范围")
+	} else if extraErr != nil && extraErr != io.EOF {
+		if ctx.Err() != nil {
+			return ctx.Err()
+		}
+		return fmt.Errorf("校验Range响应结束失败: %w", extraErr)
 	}
 
 	return nil

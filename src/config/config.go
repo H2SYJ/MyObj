@@ -22,6 +22,7 @@ type MyObjConfig struct {
 	Cors     Cors     `toml:"cors"`     // 跨域配置
 	Cache    Cache    `toml:"cache"`    // 缓存配置
 	WebDAV   WebDAV   `toml:"webdav"`   // WebDAV配置
+	Download Download `toml:"download"` // 离线下载配置
 }
 
 // Server 服务器配置
@@ -135,6 +136,22 @@ type WebDAV struct {
 	Prefix string `toml:"prefix"`
 }
 
+// Download 离线下载调度配置
+type Download struct {
+	// MaxActiveTasks 全局最大并行任务数
+	MaxActiveTasks int `toml:"max_active_tasks"`
+	// MaxActiveTasksPerUser 单用户最大并行任务数
+	MaxActiveTasksPerUser int `toml:"max_active_tasks_per_user"`
+	// HTTPMaxConnectionsPerTask 单个HTTP任务最大连接数
+	HTTPMaxConnectionsPerTask int `toml:"http_max_connections_per_task"`
+	// HTTPChunkSizeMB HTTP分片大小，单位MB
+	HTTPChunkSizeMB int `toml:"http_chunk_size_mb"`
+	// TorrentMaxActiveSessions Torrent最大并行会话数
+	TorrentMaxActiveSessions int `toml:"torrent_max_active_sessions"`
+	// MaxRetries 网络错误最大重试次数
+	MaxRetries int `toml:"max_retries"`
+}
+
 // InitConfig 初始化配置
 // 自动搜索并加载 config.toml 文件
 // 搜索顺序:
@@ -149,12 +166,12 @@ func InitConfig() error {
 
 	config := new(MyObjConfig)
 	if _, err := toml.DecodeFile(configPath, config); err != nil {
-		return fmt.Errorf(fmt.Sprintf("配置文件解析失败: %v", err))
+		return fmt.Errorf("配置文件解析失败: %w", err)
 	}
 
 	// 验证必要的配置
 	if err := validateConfig(config); err != nil {
-		return fmt.Errorf(fmt.Sprintf("配置验证失败: %v", err))
+		return fmt.Errorf("配置验证失败: %w", err)
 	}
 
 	CONFIG = config
@@ -252,6 +269,29 @@ func validateConfig(cfg *MyObjConfig) error {
 	// 验证日志配置
 	if cfg.Log.LogPath == "" {
 		cfg.Log.LogPath = "./logs/" // 使用默认路径
+	}
+
+	// 离线下载配置使用安全的单机默认值，兼容旧配置文件。
+	if cfg.Download.MaxActiveTasks <= 0 {
+		cfg.Download.MaxActiveTasks = 4
+	}
+	if cfg.Download.MaxActiveTasksPerUser <= 0 {
+		cfg.Download.MaxActiveTasksPerUser = 2
+	}
+	if cfg.Download.MaxActiveTasksPerUser > cfg.Download.MaxActiveTasks {
+		cfg.Download.MaxActiveTasksPerUser = cfg.Download.MaxActiveTasks
+	}
+	if cfg.Download.HTTPMaxConnectionsPerTask <= 0 {
+		cfg.Download.HTTPMaxConnectionsPerTask = 4
+	}
+	if cfg.Download.HTTPChunkSizeMB <= 0 {
+		cfg.Download.HTTPChunkSizeMB = 10
+	}
+	if cfg.Download.TorrentMaxActiveSessions <= 0 {
+		cfg.Download.TorrentMaxActiveSessions = 2
+	}
+	if cfg.Download.MaxRetries <= 0 {
+		cfg.Download.MaxRetries = 3
 	}
 
 	return nil
