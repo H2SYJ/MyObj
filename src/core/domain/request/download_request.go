@@ -10,13 +10,21 @@ type CreateOfflineDownloadRequest struct {
 	EnableEncryption bool `json:"enable_encryption"`
 	// 文件密码（加密文件必需）
 	FilePassword string `json:"file_password"`
+	// 下载类型：auto、http、hls，默认为auto
+	DownloadType string `json:"download_type"`
+	// HLS输出文件名（可选）
+	FileName string `json:"file_name"`
+	// HLS自定义请求头；指针用于区分未传递与显式清空
+	RequestHeaders *map[string]string `json:"request_headers"`
+	// 允许携带自定义请求头的额外主机
+	HeaderHosts *[]string `json:"header_hosts"`
 }
 
 // DownloadTaskListRequest 下载任务列表请求
 type DownloadTaskListRequest struct {
 	// 任务状态（可选，0=初始化,1=下载中,2=暂停,3=完成,4=失败，-1=所有状态）
 	State int `form:"state"`
-	// 任务类型（可选，0-6=离线下载，7=网盘文件下载，-1=所有类型）
+	// 任务类型（可选，0、4、5、9=离线下载，7=网盘文件下载，-1=所有类型）
 	Type int `form:"type"`
 	// 多任务类型过滤，使用逗号分隔；不能与type同时传递
 	Types string `form:"types"`
@@ -32,6 +40,10 @@ type TaskOperationRequest struct {
 	TaskID string `json:"task_id" binding:"required"`
 	// 加密任务恢复密码，仅恢复操作使用且不会持久化
 	FilePassword string `json:"file_password"`
+	// 更新HLS自定义请求头；未传递时继续使用原值
+	RequestHeaders *map[string]string `json:"request_headers"`
+	// 更新允许携带自定义请求头的额外主机
+	HeaderHosts *[]string `json:"header_hosts"`
 }
 
 // DeleteTaskRequest 删除任务请求

@@ -727,3 +727,5 @@ modernc.org/sqlite v1.23.1 h1:nrSBg4aRQQwq59JpvGEQ15tNxoO5pX/kUjcRNwSAGQM=
 modernc.org/sqlite v1.23.1/go.mod h1:OrDj17Mggn6MhE+iPbBNf7RGKODDE9NFT0f3EwDzJqk=
 zombiezen.com/go/sqlite v0.13.1 h1:qDzxyWWmMtSSEH5qxamqBFmqA2BLSSbtODi3ojaE02o=
 zombiezen.com/go/sqlite v0.13.1/go.mod h1:Ht/5Rg3Ae2hoyh1I7gbWtWAl89CNocfqeb/aAMTkJr4=
+github.com/Eyevinn/hls-m3u8 v0.6.5 h1:qcX5h+kh3RDUQsvWzS0G8NdLquHi6eY3Ap67ywzIjgY=
+github.com/Eyevinn/hls-m3u8 v0.6.5/go.mod h1:9jzVfwCo1+TC6yz+TKDBt9gIshzI9fhVE7M5AhcOSnQ=

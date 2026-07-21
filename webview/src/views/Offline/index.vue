@@ -49,7 +49,13 @@
                 :percentage="row.progress"
                 :status="row.state === 3 ? 'success' : row.state === 4 || row.state === 5 ? 'exception' : undefined"
               />
-              <span class="progress-text">{{ formatSize(row.downloaded_size) }} / {{ formatSize(row.file_size) }}</span>
+              <span class="progress-text">
+                {{
+                  row.file_size > 0
+                    ? `${formatSize(row.downloaded_size)} / ${formatSize(row.file_size)}`
+                    : t('offline.downloadedOnly', { size: formatSize(row.downloaded_size) })
+                }}
+              </span>
             </div>
           </template>
         </el-table-column>
@@ -140,7 +146,13 @@
                   <el-tag :type="getStatusType(row.state)" size="small" effect="plain">
                     {{ row.state_text }}
                   </el-tag>
-                  <span class="task-size">{{ formatSize(row.downloaded_size) }} / {{ formatSize(row.file_size) }}</span>
+                  <span class="task-size">
+                    {{
+                      row.file_size > 0
+                        ? `${formatSize(row.downloaded_size)} / ${formatSize(row.file_size)}`
+                        : t('offline.downloadedOnly', { size: formatSize(row.downloaded_size) })
+                    }}
+                  </span>
                   <span v-if="row.state === 1" class="task-speed">{{ formatSpeed(row.speed) }}</span>
                 </div>
                 <div v-if="row.url" class="task-url">{{ truncateUrl(row.url, 40) }}</div>
@@ -290,6 +302,48 @@
               node-key="value"
             />
           </el-form-item>
+          <el-form-item :label="t('offline.downloadType')">
+            <el-select v-model="downloadForm.download_type" style="width: 100%">
+              <el-option :label="t('offline.downloadTypeAuto')" value="auto" />
+              <el-option :label="t('offline.downloadTypeHttp')" value="http" />
+              <el-option :label="t('offline.downloadTypeHls')" value="hls" />
+            </el-select>
+          </el-form-item>
+          <template v-if="showHLSOptions">
+            <el-form-item :label="t('offline.outputFileName')">
+              <el-input v-model="downloadForm.file_name" :placeholder="t('offline.outputFileNamePlaceholder')" />
+            </el-form-item>
+            <el-form-item :label="t('offline.requestHeaders')">
+              <div class="hls-header-editor">
+                <div v-for="(header, index) in hlsHeaderRows" :key="header.id" class="hls-header-row">
+                  <el-input
+                    v-model="header.name"
+                    :placeholder="t('offline.headerName')"
+                    @paste="handleHeaderPaste($event, index, 'create')"
+                  />
+                  <el-input v-model="header.value" :placeholder="t('offline.headerValue')" />
+                  <el-button link type="danger" @click="removeHeaderRow(index, 'create')">{{
+                    t('common.delete')
+                  }}</el-button>
+                </div>
+                <el-button link type="primary" @click="addHeaderRow('create')"
+                  >+ {{ t('offline.addHeader') }}</el-button
+                >
+                <div class="input-tip">{{ t('offline.headerPasteTip') }}</div>
+              </div>
+            </el-form-item>
+            <el-form-item :label="t('offline.headerHosts')">
+              <el-select
+                v-model="downloadForm.header_hosts"
+                multiple
+                filterable
+                allow-create
+                default-first-option
+                :placeholder="t('offline.headerHostsPlaceholder')"
+                style="width: 100%"
+              />
+            </el-form-item>
+          </template>
           <el-form-item :label="t('offline.encryptStorage')">
             <el-switch v-model="downloadForm.enable_encryption" />
           </el-form-item>
@@ -452,6 +506,48 @@
         </el-button>
       </template>
     </el-dialog>
+
+    <el-dialog v-model="showResumeHeadersDialog" :title="t('offline.updateHeadersTitle')" width="680px">
+      <el-form label-width="110px">
+        <el-form-item :label="t('offline.requestHeaders')">
+          <div class="hls-header-editor">
+            <div v-for="(header, index) in resumeHeaderRows" :key="header.id" class="hls-header-row">
+              <el-input
+                v-model="header.name"
+                :placeholder="t('offline.headerName')"
+                @paste="handleHeaderPaste($event, index, 'resume')"
+              />
+              <el-input v-model="header.value" :placeholder="t('offline.headerValue')" />
+              <el-button link type="danger" @click="removeHeaderRow(index, 'resume')">{{
+                t('common.delete')
+              }}</el-button>
+            </div>
+            <el-button link type="primary" @click="addHeaderRow('resume')">+ {{ t('offline.addHeader') }}</el-button>
+            <div class="input-tip">{{ t('offline.headerPasteTip') }}</div>
+          </div>
+        </el-form-item>
+        <el-form-item :label="t('offline.headerHosts')">
+          <el-select
+            v-model="resumeHeaderHosts"
+            multiple
+            filterable
+            allow-create
+            default-first-option
+            :placeholder="t('offline.headerHostsPlaceholder')"
+            style="width: 100%"
+          />
+        </el-form-item>
+        <el-form-item v-if="resumeTargetTask?.requires_password" :label="t('offline.encryptPassword')">
+          <el-input v-model="resumeFilePassword" type="password" show-password />
+        </el-form-item>
+      </el-form>
+      <template #footer>
+        <el-button @click="showResumeHeadersDialog = false">{{ t('common.cancel') }}</el-button>
+        <el-button type="primary" :loading="resumingWithHeaders" @click="confirmResumeWithHeaders">
+          {{ t('tasks.resume') }}
+        </el-button>
+      </template>
+    </el-dialog>
   </div>
 </template>
 
@@ -490,6 +586,22 @@
   const loadingTree = ref(false)
   const folderTreeData = ref<any[]>([])
 
+  interface HeaderRow {
+    id: number
+    name: string
+    value: string
+  }
+
+  let nextHeaderRowId = 1
+  const createHeaderRow = (name = '', value = ''): HeaderRow => ({ id: nextHeaderRowId++, name, value })
+  const hlsHeaderRows = ref<HeaderRow[]>([createHeaderRow()])
+  const resumeHeaderRows = ref<HeaderRow[]>([createHeaderRow()])
+  const showResumeHeadersDialog = ref(false)
+  const resumeTargetTask = ref<OfflineDownloadTask | null>(null)
+  const resumeHeaderHosts = ref<string[]>([])
+  const resumeFilePassword = ref('')
+  const resumingWithHeaders = ref(false)
+
   const downloadFormRef = ref<FormInstance>()
   const torrentUploadRef = ref()
   const torrentFileTableRef = ref()
@@ -502,8 +614,108 @@
     inputText: '', // 文本输入（URL 或磁力链接）
     virtual_path: '',
     enable_encryption: false,
-    file_password: ''
+    file_password: '',
+    download_type: 'auto' as 'auto' | 'http' | 'hls',
+    file_name: '',
+    header_hosts: [] as string[]
   })
+
+  const showHLSOptions = computed(() => {
+    if (downloadForm.download_type === 'hls') return true
+    if (downloadForm.download_type === 'http') return false
+    return /\.m3u8(?:$|[?#])/i.test(downloadForm.inputText.trim())
+  })
+
+  const blockedHeaderNames = new Set([
+    'accept-encoding',
+    'connection',
+    'content-length',
+    'forwarded',
+    'host',
+    'if-match',
+    'if-modified-since',
+    'if-none-match',
+    'if-range',
+    'if-unmodified-since',
+    'keep-alive',
+    'proxy-authenticate',
+    'proxy-authorization',
+    'proxy-connection',
+    'range',
+    'te',
+    'trailer',
+    'transfer-encoding',
+    'upgrade',
+    'x-forwarded-for',
+    'x-forwarded-host',
+    'x-forwarded-proto'
+  ])
+
+  const getHeaderRows = (mode: 'create' | 'resume') => (mode === 'create' ? hlsHeaderRows : resumeHeaderRows)
+
+  const addHeaderRow = (mode: 'create' | 'resume') => {
+    const rows = getHeaderRows(mode)
+    if (rows.value.length >= 32) {
+      proxy?.$modal.msgWarning(t('offline.headerLimit'))
+      return
+    }
+    rows.value.push(createHeaderRow())
+  }
+
+  const removeHeaderRow = (index: number, mode: 'create' | 'resume') => {
+    const rows = getHeaderRows(mode)
+    rows.value.splice(index, 1)
+    if (rows.value.length === 0) rows.value.push(createHeaderRow())
+  }
+
+  const validateHeaderRows = (rows: HeaderRow[]): Record<string, string> => {
+    const result: Record<string, string> = {}
+    const seen = new Set<string>()
+    for (const row of rows) {
+      const name = row.name.trim()
+      const value = row.value.trim()
+      if (!name && !value) continue
+      if (!/^[!#$%&'*+.^_`|~0-9A-Za-z-]+$/.test(name)) throw new Error(t('offline.invalidHeaderName', { name }))
+      const lowerName = name.toLowerCase()
+      if (blockedHeaderNames.has(lowerName) || lowerName.startsWith('proxy-')) {
+        throw new Error(t('offline.blockedHeaderName', { name }))
+      }
+      if (seen.has(lowerName)) throw new Error(t('offline.duplicateHeaderName', { name }))
+      if (/[\r\n]/.test(value)) throw new Error(t('offline.invalidHeaderValue', { name }))
+      seen.add(lowerName)
+      result[name] = value
+    }
+    return result
+  }
+
+  const handleHeaderPaste = (event: ClipboardEvent, index: number, mode: 'create' | 'resume') => {
+    const text = event.clipboardData?.getData('text') || ''
+    if (!/[\r\n]/.test(text)) return
+    const parsed: HeaderRow[] = []
+    for (const line of text.split(/\r?\n/).filter(item => item.trim())) {
+      const delimiter = line.indexOf(':')
+      if (delimiter <= 0) {
+        proxy?.$modal.msgError(t('offline.headerPasteInvalid'))
+        return
+      }
+      parsed.push(createHeaderRow(line.slice(0, delimiter).trim(), line.slice(delimiter + 1).trim()))
+    }
+    const rows = getHeaderRows(mode)
+    const candidate = [...rows.value]
+    candidate.splice(index, 1, ...parsed)
+    if (candidate.length > 32) {
+      proxy?.$modal.msgError(t('offline.headerLimit'))
+      return
+    }
+    try {
+      validateHeaderRows(candidate)
+    } catch (error: any) {
+      proxy?.$modal.msgError(error.message)
+      return
+    }
+    event.preventDefault()
+    rows.value = candidate.length > 0 ? candidate : [createHeaderRow()]
+  }
 
   // 种子下载相关状态
   const torrentFileName = ref('')
@@ -603,15 +815,12 @@
     }
 
     try {
-      // 查询所有类型的离线下载任务（type < 7），不包含网盘文件下载（type=7）
-      // 由于后端不支持 type < 7 的查询，这里先查询所有任务，然后在前端过滤
-      // 或者可以分别查询 type=0,1,2,3,4,5,6，但这样需要多次请求
-      // 为了简化，暂时保持前端过滤，但可以优化为后端支持范围查询
+      // 查询受下载管理器管理的HTTP、种子、磁力和HLS任务，不包含网盘文件下载。
       const res = await getDownloadTaskList({
         page: taskPage.value,
         pageSize: taskPageSize.value,
         state: -1,
-        types: '0,4,5'
+        types: '0,4,5,9'
       })
       if (res.code === 200 && res.data) {
         const newTasks = res.data.tasks || []
@@ -761,7 +970,13 @@
             url: downloadForm.inputText.trim(),
             virtual_path: downloadForm.virtual_path || undefined,
             enable_encryption: downloadForm.enable_encryption,
-            file_password: downloadForm.enable_encryption ? downloadForm.file_password : undefined
+            file_password: downloadForm.enable_encryption ? downloadForm.file_password : undefined,
+            download_type: downloadForm.download_type,
+            file_name:
+              showHLSOptions.value && downloadForm.file_name.trim() ? downloadForm.file_name.trim() : undefined,
+            request_headers: showHLSOptions.value ? validateHeaderRows(hlsHeaderRows.value) : undefined,
+            header_hosts:
+              showHLSOptions.value && downloadForm.header_hosts.length ? downloadForm.header_hosts : undefined
           })
 
           if (res.code === 200) {
@@ -792,6 +1007,14 @@
   // 恢复任务
   const resumeTask = async (task: OfflineDownloadTask) => {
     try {
+      if (task.requires_headers) {
+        resumeTargetTask.value = task
+        resumeHeaderRows.value = [createHeaderRow()]
+        resumeHeaderHosts.value = []
+        resumeFilePassword.value = ''
+        showResumeHeadersDialog.value = true
+        return
+      }
       let filePassword: string | undefined
       if (task.requires_password) {
         const promptResult: any = await proxy?.$modal.prompt(t('offline.resumePasswordPrompt'))
@@ -806,6 +1029,31 @@
       loadTaskList()
     } catch (error: any) {
       proxy?.$modal.msgError(error.message || t('tasks.resumeFailed'))
+    }
+  }
+
+  const confirmResumeWithHeaders = async () => {
+    if (!resumeTargetTask.value) return
+    if (resumeTargetTask.value.requires_password && !resumeFilePassword.value) {
+      proxy?.$modal.msgWarning(t('offline.passwordRequired'))
+      return
+    }
+    try {
+      const headers = validateHeaderRows(resumeHeaderRows.value)
+      resumingWithHeaders.value = true
+      await resumeDownload(
+        resumeTargetTask.value.id,
+        resumeTargetTask.value.requires_password ? resumeFilePassword.value : undefined,
+        headers,
+        resumeHeaderHosts.value
+      )
+      showResumeHeadersDialog.value = false
+      proxy?.$modal.msgSuccess(t('tasks.resumeSuccess'))
+      loadTaskList()
+    } catch (error: any) {
+      proxy?.$modal.msgError(error.message || t('tasks.resumeFailed'))
+    } finally {
+      resumingWithHeaders.value = false
     }
   }
 
@@ -886,6 +1134,10 @@
     downloadForm.virtual_path = ''
     downloadForm.enable_encryption = false
     downloadForm.file_password = ''
+    downloadForm.download_type = 'auto'
+    downloadForm.file_name = ''
+    downloadForm.header_hosts = []
+    hlsHeaderRows.value = [createHeaderRow()]
     torrentFileName.value = ''
     torrentFileContent.value = ''
     torrentParseResult.value = null
@@ -1058,6 +1310,18 @@
 </script>
 
 <style scoped>
+  .hls-header-editor {
+    width: 100%;
+  }
+
+  .hls-header-row {
+    display: grid;
+    grid-template-columns: minmax(120px, 0.8fr) minmax(180px, 1.4fr) auto;
+    gap: 8px;
+    align-items: center;
+    margin-bottom: 8px;
+  }
+
   .offline-page {
     height: 100%;
     display: flex;

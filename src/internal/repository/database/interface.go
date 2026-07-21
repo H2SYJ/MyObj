@@ -68,6 +68,7 @@ func migrateDownloadTaskSchema(db *gorm.DB) error {
 	columns := []string{
 		"BatchID", "RunToken", "WorkerID", "LeaseExpiresAt",
 		"RetryCount", "NextRetryAt", "ReservedSize",
+		"RequestHeadersEncrypted", "HeaderHostsJSON", "RequiresHeaders",
 	}
 	for _, column := range columns {
 		if !db.Migrator().HasColumn(&models.DownloadTask{}, column) {

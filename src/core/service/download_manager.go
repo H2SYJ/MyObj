@@ -223,6 +223,50 @@ func (m *DownloadManager) runTask(ctx context.Context, task *models.DownloadTask
 			UploadLimiter:      m.networkPolicy.BTUploadLimiter(),
 		}
 		fileID, err = download.DownloadTorrentSingleFile(ctx, task.ID, task.URL, task.FileIndex, task.UserID, m.tempDir, m.factory, opts)
+	} else if task.Type == enum.DownloadTaskTypeHLS.Value() {
+		secret := ""
+		if config.CONFIG != nil {
+			secret = config.CONFIG.Auth.Secret
+		}
+		headers, decryptErr := download.DecryptHLSRequestHeaders(secret, task.ID, task.UserID, task.RequestHeadersEncrypted)
+		if decryptErr != nil {
+			err = &download.HLSCredentialsRequiredError{Reason: "已保存的HLS请求头无法解密，请重新输入请求头后恢复任务"}
+			return
+		}
+		headerHosts, decodeErr := download.DecodeHLSHeaderHosts(task.HeaderHostsJSON)
+		if decodeErr != nil {
+			err = &download.HLSCredentialsRequiredError{Reason: "已保存的HLS请求头主机无效，请重新输入请求头后恢复任务"}
+			return
+		}
+		opts := &download.HLSDownloadOptions{
+			EnableEncryption: task.EnableEncryption,
+			VirtualPath:      task.VirtualPath,
+			MaxRetries:       m.config.MaxRetries,
+			MaxConcurrent:    m.config.HTTPMaxConnectionsPerTask,
+			FilePassword:     filePassword,
+			RunToken:         task.RunToken,
+			ReservedSize:     task.ReservedSize,
+			ProxyURL:         m.networkPolicy.ProxyURL(),
+			DownloadLimiter:  m.networkPolicy.DownloadLimiter(),
+			RequestHeaders:   headers,
+			HeaderHosts:      headerHosts,
+			OutputFileName:   task.FileName,
+			ReserveSpace: func(size int64) (int64, error) {
+				reserved, reserveErr := m.ensureReservation(task, size)
+				if reserveErr == nil {
+					task.ReservedSize = reserved
+				}
+				return reserved, reserveErr
+			},
+		}
+		result, downloadErr := download.DownloadHLSWithContext(ctx, task.ID, task.URL, task.UserID, m.tempDir, m.factory, opts)
+		err = downloadErr
+		if result != nil {
+			fileID = result.FileID
+			task.FileID = result.FileID
+			task.FileName = result.FileName
+			task.FileSize = result.FileSize
+		}
 	} else {
 		opts := &download.HTTPDownloadOptions{
 			EnableEncryption: task.EnableEncryption,
@@ -282,6 +326,8 @@ func (m *DownloadManager) finishTask(task *models.DownloadTask, fileID string, r
 		updated, err := m.factory.DownloadTask().UpdateIfRunToken(ctx, task.ID, task.RunToken, map[string]interface{}{
 			"state":            enum.DownloadTaskStateFinished.Value(),
 			"file_id":          fileID,
+			"file_name":        task.FileName,
+			"file_size":        task.FileSize,
 			"progress":         100,
 			"downloaded_size":  task.FileSize,
 			"speed":            0,
@@ -291,6 +337,7 @@ func (m *DownloadManager) finishTask(task *models.DownloadTask, fileID string, r
 			"lease_expires_at": nil,
 			"next_retry_at":    nil,
 			"error_msg":        "",
+			"requires_headers": false,
 			"reserved_size":    0,
 		})
 		if err != nil {
@@ -313,6 +360,23 @@ func (m *DownloadManager) finishTask(task *models.DownloadTask, fileID string, r
 			m.cleanupTaskTemp(latest)
 			m.releaseReservation(latest.ID)
 		}
+		return
+	}
+	if download.IsHLSCredentialsRequired(runErr) {
+		_, updateErr := m.factory.DownloadTask().UpdateIfRunToken(ctx, task.ID, task.RunToken, map[string]interface{}{
+			"state":            enum.DownloadTaskStatePaused.Value(),
+			"speed":            0,
+			"run_token":        "",
+			"worker_id":        "",
+			"lease_expires_at": nil,
+			"next_retry_at":    nil,
+			"requires_headers": true,
+			"error_msg":        runErr.Error(),
+		})
+		if updateErr != nil {
+			logger.LOG.Error("暂停HLS凭据失效任务失败", "taskID", task.ID, "error", updateErr)
+		}
+		m.deleteSecret(task.ID)
 		return
 	}
 	if m.isRetryable(runErr) && task.RetryCount < m.config.MaxRetries {
@@ -384,7 +448,7 @@ func (m *DownloadManager) Pause(taskID string) error {
 	return nil
 }
 
-func (m *DownloadManager) Resume(task *models.DownloadTask, filePassword string) error {
+func (m *DownloadManager) Resume(task *models.DownloadTask, filePassword string, taskUpdates map[string]interface{}) error {
 	if task.EnableEncryption && filePassword == "" {
 		return fmt.Errorf("加密任务恢复时必须输入文件密码")
 	}
@@ -393,15 +457,19 @@ func (m *DownloadManager) Resume(task *models.DownloadTask, filePassword string)
 		m.secrets[task.ID] = filePassword
 		m.mu.Unlock()
 	}
+	updates := map[string]interface{}{
+		"error_msg":        "",
+		"retry_count":      0,
+		"next_retry_at":    nil,
+		"run_token":        "",
+		"worker_id":        "",
+		"lease_expires_at": nil,
+	}
+	for key, value := range taskUpdates {
+		updates[key] = value
+	}
 	transitioned, err := m.factory.DownloadTask().Transition(context.Background(), task.ID,
-		[]int{enum.DownloadTaskStatePaused.Value()}, enum.DownloadTaskStateInit.Value(), map[string]interface{}{
-			"error_msg":        "",
-			"retry_count":      0,
-			"next_retry_at":    nil,
-			"run_token":        "",
-			"worker_id":        "",
-			"lease_expires_at": nil,
-		})
+		[]int{enum.DownloadTaskStatePaused.Value()}, enum.DownloadTaskStateInit.Value(), updates)
 	if err != nil || !transitioned {
 		m.deleteSecret(task.ID)
 		if err != nil {
@@ -476,6 +544,8 @@ func (m *DownloadManager) cleanupTaskTemp(task *models.DownloadTask) {
 	var path string
 	if task.Type == enum.DownloadTaskTypeHttp.Value() {
 		path = fmt.Sprintf("%s/http_%s", m.tempDir, task.ID)
+	} else if task.Type == enum.DownloadTaskTypeHLS.Value() {
+		path = fmt.Sprintf("%s/hls_%s", m.tempDir, task.ID)
 	} else if task.Type == enum.DownloadTaskTypeBtp.Value() || task.Type == enum.DownloadTaskTypeMagnet.Value() {
 		if task.BatchID != "" {
 			var activeCount int64
@@ -579,7 +649,7 @@ func (m *DownloadManager) releaseReservation(taskID string) {
 
 func (m *DownloadManager) recoverInterruptedTasks() error {
 	db := m.factory.DB().WithContext(context.Background())
-	types := []int{enum.DownloadTaskTypeHttp.Value(), enum.DownloadTaskTypeBtp.Value(), enum.DownloadTaskTypeMagnet.Value()}
+	types := []int{enum.DownloadTaskTypeHttp.Value(), enum.DownloadTaskTypeBtp.Value(), enum.DownloadTaskTypeMagnet.Value(), enum.DownloadTaskTypeHLS.Value()}
 	if err := db.Model(&models.DownloadTask{}).Where("type IN ? AND state IN ? AND enable_encryption = ?", types,
 		[]int{enum.DownloadTaskStateInit.Value(), enum.DownloadTaskStateDownloading.Value()}, true).
 		Updates(map[string]interface{}{

@@ -20,6 +20,8 @@ export interface OfflineDownloadTask {
   support_range: boolean
   enable_encryption: boolean
   requires_password: boolean
+  has_request_headers: boolean
+  requires_headers: boolean
   error_msg: string
   file_id: string
   create_time: string
@@ -33,6 +35,10 @@ export interface CreateOfflineDownloadRequest {
   virtual_path?: string
   enable_encryption?: boolean
   file_password?: string
+  download_type?: 'auto' | 'http' | 'hls'
+  file_name?: string
+  request_headers?: Record<string, string>
+  header_hosts?: string[]
 }
 
 // 下载任务列表响应
@@ -74,10 +80,17 @@ export const pauseDownload = (taskId: string) => {
 /**
  * 恢复下载任务
  */
-export const resumeDownload = (taskId: string, filePassword?: string) => {
+export const resumeDownload = (
+  taskId: string,
+  filePassword?: string,
+  requestHeaders?: Record<string, string>,
+  headerHosts?: string[]
+) => {
   return post<ApiResponse>(API_ENDPOINTS.DOWNLOAD.RESUME, {
     task_id: taskId,
-    file_password: filePassword
+    file_password: filePassword,
+    request_headers: requestHeaders,
+    header_hosts: headerHosts
   })
 }
 

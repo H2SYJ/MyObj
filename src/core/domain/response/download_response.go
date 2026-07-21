@@ -18,7 +18,7 @@ type DownloadTaskResponse struct {
 	Progress int `json:"progress"`
 	// 下载速度（字节/秒）
 	Speed int64 `json:"speed"`
-	// 任务类型（0=HTTP, 1=FTP, 2=SFTP, 3=S3, 4=BT, 5=磁力, 6=本地）
+	// 任务类型（0=HTTP, 1=FTP, 2=SFTP, 3=S3, 4=BT, 5=磁力, 6=本地, 9=HLS）
 	Type int `json:"type"`
 	// 类型文本
 	TypeText string `json:"type_text"`
@@ -34,6 +34,10 @@ type DownloadTaskResponse struct {
 	EnableEncryption bool `json:"enable_encryption"`
 	// 恢复任务时是否需要重新输入密码
 	RequiresPassword bool `json:"requires_password"`
+	// 是否已配置HLS自定义请求头
+	HasRequestHeaders bool `json:"has_request_headers"`
+	// 恢复任务时是否需要更新HLS请求头
+	RequiresHeaders bool `json:"requires_headers"`
 	// 错误信息
 	ErrorMsg string `json:"error_msg"`
 	// 文件ID（下载完成后）

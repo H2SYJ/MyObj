@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"fmt"
+	"myobj/src/config"
 	"myobj/src/core/domain/request"
 	"myobj/src/core/domain/response"
 	"myobj/src/internal/repository/impl"
@@ -74,6 +75,13 @@ func (d *DownloadService) CreateOfflineDownload(req *request.CreateOfflineDownlo
 	if err := download.ValidatePublicHTTPURL(req.URL); err != nil {
 		return nil, err
 	}
+	downloadType := strings.ToLower(strings.TrimSpace(req.DownloadType))
+	if downloadType == "" {
+		downloadType = "auto"
+	}
+	if downloadType != "auto" && downloadType != "http" && downloadType != "hls" {
+		return nil, fmt.Errorf("download_type仅支持auto、http或hls")
+	}
 
 	// 1. 验证用户是否存在并获取用户信息
 	user, err := d.factory.User().GetByID(ctx, userID)
@@ -94,13 +102,58 @@ func (d *DownloadService) CreateOfflineDownload(req *request.CreateOfflineDownlo
 		}
 	}
 
-	// 3. 获取文件信息并检查用户空间
-	fileInfo, supportRange, err := download.GetFileInfoWithNetworkPolicy(req.URL, 300,
-		d.networkPolicy.ProxyURL(), d.networkPolicy.DownloadLimiter())
+	taskID := uuid.Must(uuid.NewV7()).String()
+	rawHeaders := map[string]string{}
+	if req.RequestHeaders != nil {
+		rawHeaders = *req.RequestHeaders
+	}
+	extraHosts := []string{}
+	if req.HeaderHosts != nil {
+		extraHosts = *req.HeaderHosts
+	}
+	if len(extraHosts) > 0 && len(rawHeaders) == 0 {
+		return nil, fmt.Errorf("未配置请求头时不能单独配置请求头主机")
+	}
+	headers, headerHosts, err := download.NormalizeHLSRequestConfig(req.URL, rawHeaders, extraHosts)
 	if err != nil {
-		// 无法获取文件大小时，仍然允许创建任务（可能是动态内容）
-		logger.LOG.Warn("无法获取文件信息，跳过空间检查", "url", req.URL, "error", err)
-	} else if fileInfo.Size > 0 {
+		return nil, err
+	}
+
+	isHLS := downloadType == "hls"
+	if downloadType == "auto" {
+		isHLS = download.LooksLikeHLSURL(req.URL)
+		if !isHLS {
+			detected, detectErr := download.DetectHLSContentType(ctx, req.URL, d.networkPolicy.ProxyURL(),
+				d.networkPolicy.DownloadLimiter(), headers, headerHosts)
+			if detectErr != nil {
+				logger.LOG.Warn("自动探测HLS类型失败，按普通HTTP任务处理", "url", req.URL, "error", detectErr)
+			} else {
+				isHLS = detected
+			}
+		}
+	}
+	if !isHLS && (len(headers) > 0 || req.FileName != "") {
+		return nil, fmt.Errorf("file_name和request_headers仅支持HLS任务，请将download_type设为hls")
+	}
+
+	var fileInfo *download.FileInfoResult
+	supportRange := false
+	if !isHLS {
+		fileInfo, supportRange, err = download.GetFileInfoWithNetworkPolicy(req.URL, 300,
+			d.networkPolicy.ProxyURL(), d.networkPolicy.DownloadLimiter())
+		if err != nil {
+			// 无法获取文件大小时，仍然允许创建任务（可能是动态内容）
+			logger.LOG.Warn("无法获取文件信息，跳过空间检查", "url", req.URL, "error", err)
+		}
+	} else {
+		supportRange = true
+		if probeErr := download.ProbeHLSPlaylist(ctx, req.URL, d.networkPolicy.ProxyURL(),
+			d.networkPolicy.DownloadLimiter(), headers, headerHosts); probeErr != nil {
+			// 网络临时错误交由持久任务重试；确定性格式错误也会在执行器中给出完整错误。
+			logger.LOG.Warn("创建HLS任务时预检播放列表失败", "url", req.URL, "error", probeErr)
+		}
+	}
+	if fileInfo != nil && fileInfo.Size > 0 {
 		// 检查用户可用空间（只对非无限空间用户）
 		if user.Space > 0 && user.FreeSpace < fileInfo.Size {
 			return models.NewJsonResponse(400, "用户可用空间不足", map[string]interface{}{
@@ -114,19 +167,48 @@ func (d *DownloadService) CreateOfflineDownload(req *request.CreateOfflineDownlo
 			"user_id", userID)
 	}
 
+	requestHeadersEncrypted := ""
+	headerHostsJSON := ""
+	if isHLS {
+		secret := ""
+		if config.CONFIG != nil {
+			secret = config.CONFIG.Auth.Secret
+		}
+		requestHeadersEncrypted, err = download.EncryptHLSRequestHeaders(secret, taskID, userID, headers)
+		if err != nil {
+			return nil, err
+		}
+		headerHostsJSON, err = download.EncodeHLSHeaderHosts(headerHosts)
+		if err != nil {
+			return nil, err
+		}
+	}
+
 	// 4. 创建下载任务记录
-	taskID := uuid.Must(uuid.NewV7()).String()
+	taskType := enum.DownloadTaskTypeHttp.Value()
+	fileName := ""
+	if isHLS {
+		taskType = enum.DownloadTaskTypeHLS.Value()
+		fileName, err = download.NormalizeHLSOutputFileName(req.FileName, req.URL, taskID)
+		if err != nil {
+			return nil, err
+		}
+	}
 	task := &models.DownloadTask{
-		ID:               taskID,
-		UserID:           userID,
-		Type:             enum.DownloadTaskTypeHttp.Value(),
-		URL:              req.URL,
-		VirtualPath:      virtualPath,
-		EnableEncryption: req.EnableEncryption,
-		State:            enum.DownloadTaskStateInit.Value(),
-		TargetDir:        d.tempDir,
-		CreateTime:       custom_type.Now(),
-		UpdateTime:       custom_type.Now(),
+		ID:                      taskID,
+		UserID:                  userID,
+		Type:                    taskType,
+		FileName:                fileName,
+		URL:                     req.URL,
+		VirtualPath:             virtualPath,
+		EnableEncryption:        req.EnableEncryption,
+		State:                   enum.DownloadTaskStateInit.Value(),
+		TargetDir:               d.tempDir,
+		SupportRange:            supportRange,
+		RequestHeadersEncrypted: requestHeadersEncrypted,
+		HeaderHostsJSON:         headerHostsJSON,
+		CreateTime:              custom_type.Now(),
+		UpdateTime:              custom_type.Now(),
 	}
 	if fileInfo != nil {
 		task.FileName = fileInfo.FileName
@@ -167,7 +249,7 @@ func (d *DownloadService) GetTaskList(req *request.DownloadTaskListRequest, user
 		types := make([]int, 0, len(parts))
 		for _, part := range parts {
 			value, parseErr := strconv.Atoi(strings.TrimSpace(part))
-			if parseErr != nil || value < 0 || value > enum.DownloadTaskTypePackage.Value() {
+			if parseErr != nil || value < 0 || value > enum.DownloadTaskTypeHLS.Value() {
 				return nil, fmt.Errorf("无效的任务类型: %s", part)
 			}
 			types = append(types, value)
@@ -310,7 +392,54 @@ func (d *DownloadService) ResumeTask(req *request.TaskOperationRequest, userID s
 	if !isManagedOfflineType(task.Type) {
 		return nil, fmt.Errorf("该任务类型不支持恢复")
 	}
-	if err := d.manager.Resume(task, req.FilePassword); err != nil {
+	resumeUpdates := map[string]interface{}{}
+	if task.Type == enum.DownloadTaskTypeHLS.Value() {
+		if task.RequiresHeaders && req.RequestHeaders == nil {
+			return nil, fmt.Errorf("该HLS任务需要更新请求头后才能恢复")
+		}
+		if req.RequestHeaders != nil || req.HeaderHosts != nil {
+			secret := ""
+			if config.CONFIG != nil {
+				secret = config.CONFIG.Auth.Secret
+			}
+			headers := map[string]string{}
+			if req.RequestHeaders != nil {
+				headers = *req.RequestHeaders
+			} else {
+				headers, err = download.DecryptHLSRequestHeaders(secret, task.ID, task.UserID, task.RequestHeadersEncrypted)
+				if err != nil {
+					return nil, fmt.Errorf("读取原HLS请求头失败，请重新提交请求头: %w", err)
+				}
+			}
+			hosts := []string{}
+			if req.HeaderHosts != nil {
+				hosts = *req.HeaderHosts
+			} else {
+				hosts, err = download.DecodeHLSHeaderHosts(task.HeaderHostsJSON)
+				if err != nil {
+					return nil, err
+				}
+			}
+			headers, hosts, err = download.NormalizeHLSRequestConfig(task.URL, headers, hosts)
+			if err != nil {
+				return nil, err
+			}
+			encrypted, encryptErr := download.EncryptHLSRequestHeaders(secret, task.ID, task.UserID, headers)
+			if encryptErr != nil {
+				return nil, encryptErr
+			}
+			hostsJSON, encodeErr := download.EncodeHLSHeaderHosts(hosts)
+			if encodeErr != nil {
+				return nil, encodeErr
+			}
+			resumeUpdates["request_headers_encrypted"] = encrypted
+			resumeUpdates["header_hosts_json"] = hostsJSON
+			resumeUpdates["requires_headers"] = false
+		}
+	} else if req.RequestHeaders != nil || req.HeaderHosts != nil {
+		return nil, fmt.Errorf("只有HLS任务支持更新请求头")
+	}
+	if err := d.manager.Resume(task, req.FilePassword, resumeUpdates); err != nil {
 		logger.LOG.Error("恢复下载任务失败", "error", err, "taskID", req.TaskID)
 		return nil, fmt.Errorf("恢复任务失败: %w", err)
 	}
@@ -403,26 +532,28 @@ func (d *DownloadService) convertTaskToResponse(task *models.DownloadTask) *resp
 	typeText := d.getTypeText(task.Type)
 
 	return &response.DownloadTaskResponse{
-		ID:               task.ID,
-		URL:              task.URL,
-		FileName:         task.FileName,
-		FileSize:         task.FileSize,
-		DownloadedSize:   task.DownloadedSize,
-		Progress:         task.Progress,
-		Speed:            task.Speed,
-		Type:             task.Type,
-		TypeText:         typeText,
-		State:            task.State,
-		StateText:        stateText,
-		VirtualPath:      task.VirtualPath,
-		SupportRange:     task.SupportRange,
-		EnableEncryption: task.EnableEncryption,
-		RequiresPassword: task.EnableEncryption && task.State == enum.DownloadTaskStatePaused.Value(),
-		ErrorMsg:         task.ErrorMsg,
-		FileID:           task.FileID,
-		CreateTime:       task.CreateTime,
-		UpdateTime:       task.UpdateTime,
-		FinishTime:       task.FinishTime,
+		ID:                task.ID,
+		URL:               task.URL,
+		FileName:          task.FileName,
+		FileSize:          task.FileSize,
+		DownloadedSize:    task.DownloadedSize,
+		Progress:          task.Progress,
+		Speed:             task.Speed,
+		Type:              task.Type,
+		TypeText:          typeText,
+		State:             task.State,
+		StateText:         stateText,
+		VirtualPath:       task.VirtualPath,
+		SupportRange:      task.SupportRange,
+		EnableEncryption:  task.EnableEncryption,
+		RequiresPassword:  task.EnableEncryption && task.State == enum.DownloadTaskStatePaused.Value(),
+		HasRequestHeaders: task.RequestHeadersEncrypted != "",
+		RequiresHeaders:   task.RequiresHeaders,
+		ErrorMsg:          task.ErrorMsg,
+		FileID:            task.FileID,
+		CreateTime:        task.CreateTime,
+		UpdateTime:        task.UpdateTime,
+		FinishTime:        task.FinishTime,
 	}
 }
 
@@ -447,7 +578,8 @@ func (d *DownloadService) getStateText(state int) string {
 }
 
 func isManagedOfflineType(taskType int) bool {
-	return taskType == enum.DownloadTaskTypeHttp.Value() || taskType == enum.DownloadTaskTypeBtp.Value() || taskType == enum.DownloadTaskTypeMagnet.Value()
+	return taskType == enum.DownloadTaskTypeHttp.Value() || taskType == enum.DownloadTaskTypeBtp.Value() ||
+		taskType == enum.DownloadTaskTypeMagnet.Value() || taskType == enum.DownloadTaskTypeHLS.Value()
 }
 
 // getTypeText 获取类型文本
@@ -471,6 +603,8 @@ func (d *DownloadService) getTypeText(taskType int) string {
 		return "网盘下载"
 	case enum.DownloadTaskTypePackage.Value():
 		return "打包下载"
+	case enum.DownloadTaskTypeHLS.Value():
+		return "HLS"
 	default:
 		return "未知"
 	}

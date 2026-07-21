@@ -149,7 +149,7 @@ func (r *downloadTaskRepository) ListRunnable(ctx context.Context, now time.Time
 	var tasks []*models.DownloadTask
 	err := r.db.WithContext(ctx).
 		Where("state = ?", 0).
-		Where("type IN ?", []int{0, 4, 5}).
+		Where("type IN ?", []int{0, 4, 5, 9}).
 		Where("next_retry_at IS NULL OR next_retry_at <= ?", now).
 		Order("create_time ASC").
 		Limit(limit).

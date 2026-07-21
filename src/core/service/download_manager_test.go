@@ -4,6 +4,7 @@ import (
 	"context"
 	"myobj/src/internal/repository/impl"
 	"myobj/src/pkg/custom_type"
+	"myobj/src/pkg/download"
 	"myobj/src/pkg/enum"
 	"myobj/src/pkg/models"
 	"testing"
@@ -64,6 +65,7 @@ func TestRecoverInterruptedTasks(t *testing.T) {
 	factory := newManagerTestFactory(t)
 	tasks := []*models.DownloadTask{
 		{ID: "plain", UserID: "u", Type: 0, State: 1, RunToken: "old"},
+		{ID: "hls", UserID: "u", Type: enum.DownloadTaskTypeHLS.Value(), State: 1, RunToken: "old-hls"},
 		{ID: "encrypted", UserID: "u", Type: 0, State: 0, EnableEncryption: true},
 		{ID: "canceled", UserID: "u", Type: 0, State: 5},
 	}
@@ -77,16 +79,58 @@ func TestRecoverInterruptedTasks(t *testing.T) {
 		t.Fatal(err)
 	}
 	plain, _ := factory.DownloadTask().GetByID(context.Background(), "plain")
+	hlsTask, _ := factory.DownloadTask().GetByID(context.Background(), "hls")
 	encrypted, _ := factory.DownloadTask().GetByID(context.Background(), "encrypted")
 	canceled, _ := factory.DownloadTask().GetByID(context.Background(), "canceled")
 	if plain.State != enum.DownloadTaskStateInit.Value() || plain.RunToken != "" {
 		t.Fatalf("普通任务未重新排队: %#v", plain)
+	}
+	if hlsTask.State != enum.DownloadTaskStateInit.Value() || hlsTask.RunToken != "" {
+		t.Fatalf("HLS任务未重新排队: %#v", hlsTask)
 	}
 	if encrypted.State != enum.DownloadTaskStatePaused.Value() {
 		t.Fatalf("加密任务未转为暂停: %#v", encrypted)
 	}
 	if canceled.State != enum.DownloadTaskStateCanceled.Value() {
 		t.Fatalf("终态任务不应变化: %#v", canceled)
+	}
+}
+
+func TestHLSCredentialsErrorPausesTask(t *testing.T) {
+	factory := newManagerTestFactory(t)
+	task := &models.DownloadTask{ID: "hls", UserID: "u", Type: enum.DownloadTaskTypeHLS.Value(), State: 1, RunToken: "run"}
+	if err := factory.DownloadTask().Create(context.Background(), task); err != nil {
+		t.Fatal(err)
+	}
+	manager := NewDownloadManager(factory, t.TempDir())
+	manager.finishTask(task, "", &download.HLSCredentialsRequiredError{StatusCode: 401})
+	latest, err := factory.DownloadTask().GetByID(context.Background(), task.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if latest.State != enum.DownloadTaskStatePaused.Value() || !latest.RequiresHeaders || latest.RunToken != "" {
+		t.Fatalf("HLS凭据失效状态错误: %#v", latest)
+	}
+}
+
+func TestSuccessfulTaskPersistsFinalFileMetadata(t *testing.T) {
+	factory := newManagerTestFactory(t)
+	task := &models.DownloadTask{
+		ID: "hls-finished", UserID: "u", Type: enum.DownloadTaskTypeHLS.Value(), State: 1,
+		RunToken: "run", FileName: "video.mp4", FileSize: 12345,
+	}
+	if err := factory.DownloadTask().Create(context.Background(), task); err != nil {
+		t.Fatal(err)
+	}
+	manager := NewDownloadManager(factory, t.TempDir())
+	manager.finishTask(task, "file-id", nil)
+	latest, err := factory.DownloadTask().GetByID(context.Background(), task.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if latest.State != enum.DownloadTaskStateFinished.Value() || latest.FileID != "file-id" ||
+		latest.FileName != task.FileName || latest.FileSize != task.FileSize || latest.DownloadedSize != task.FileSize {
+		t.Fatalf("完成任务的文件元数据未正确回写: %#v", latest)
 	}
 }
 
@@ -120,10 +164,10 @@ func TestEncryptedResumeRequiresPassword(t *testing.T) {
 		t.Fatal(err)
 	}
 	manager := NewDownloadManager(factory, t.TempDir())
-	if err := manager.Resume(task, ""); err == nil {
+	if err := manager.Resume(task, "", nil); err == nil {
 		t.Fatal("加密任务缺少密码时不应恢复")
 	}
-	if err := manager.Resume(task, "secret"); err != nil {
+	if err := manager.Resume(task, "secret", nil); err != nil {
 		t.Fatalf("提供密码后恢复失败: %v", err)
 	}
 	latest, _ := factory.DownloadTask().GetByID(context.Background(), task.ID)

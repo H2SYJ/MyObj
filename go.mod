@@ -4,6 +4,7 @@ go 1.25
 
 require (
 	github.com/BurntSushi/toml v1.5.0
+	github.com/Eyevinn/hls-m3u8 v0.6.5
 	github.com/anacrolix/torrent v1.59.1
 	github.com/gabriel-vasile/mimetype v1.4.11
 	github.com/gin-gonic/gin v1.11.0

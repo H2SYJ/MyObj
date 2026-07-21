@@ -19,7 +19,7 @@ func TestMigrateDownloadTaskSchemaAddsSchedulerColumns(t *testing.T) {
 	if err := migrateDownloadTaskSchema(db); err != nil {
 		t.Fatal(err)
 	}
-	for _, column := range []string{"run_token", "worker_id", "lease_expires_at", "retry_count", "next_retry_at", "batch_id", "reserved_size"} {
+	for _, column := range []string{"run_token", "worker_id", "lease_expires_at", "retry_count", "next_retry_at", "batch_id", "reserved_size", "request_headers_encrypted", "header_hosts_json", "requires_headers"} {
 		if !db.Migrator().HasColumn(&models.DownloadTask{}, column) {
 			t.Fatalf("缺少迁移字段: %s", column)
 		}

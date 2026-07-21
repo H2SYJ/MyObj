@@ -42,6 +42,8 @@ const (
 	DownloadTaskTypeLocalFile
 	// DownloadTaskTypePackage 打包下载
 	DownloadTaskTypePackage
+	// DownloadTaskTypeHLS HLS/m3u8 下载
+	DownloadTaskTypeHLS
 )
 
 func (t DownloadTaskType) Value() int {
