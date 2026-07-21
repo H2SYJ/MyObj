@@ -13,9 +13,11 @@ import (
 	"myobj/src/pkg/models"
 	"myobj/src/pkg/preview"
 	"myobj/src/pkg/util"
+	"myobj/src/pkg/virtualpath"
 	"os"
 	"path/filepath"
 	"regexp"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -333,34 +335,11 @@ func ProcessUploadedFile(data *FileUploadData, repoFactory *impl.RepositoryFacto
 		UpdatedAt:       custom_type.Now(),
 	}
 
-	// 将虚拟路径转换为路径ID
-	// 如果 VirtualPath 已经是路径ID（纯数字字符串），直接使用
-	// 如果是路径字符串（如 "/home/"），则调用 getVirtualPathID 获取或创建
-	var virtualPathID string
-	if data.VirtualPath == "" {
-		// 空路径，使用根目录
-		rootPath, err := repoFactory.VirtualPath().GetRootPath(ctx, data.UserID)
-		if err != nil {
-			return "", fmt.Errorf("获取根目录失败: %w", err)
-		}
-		virtualPathID = fmt.Sprintf("%d", rootPath.ID)
-	} else if matched, _ := regexp.MatchString(`^\d+$`, data.VirtualPath); matched {
-		// 纯数字字符串，说明已经是路径ID，直接使用
-		virtualPathID = data.VirtualPath
-	} else {
-		// 路径字符串，需要获取或创建路径
-		var err error
-		virtualPathID, err = getVirtualPathID(ctx, data.UserID, data.VirtualPath, repoFactory)
-		if err != nil {
-			return "", fmt.Errorf("获取虚拟路径ID失败: %w", err)
-		}
-	}
-
 	userFile := &models.UserFiles{
 		UserID:      data.UserID,
 		FileID:      fileID,
-		IsPublic:    false,         // 默认私有
-		VirtualPath: virtualPathID, // 存储路径ID而不是路径字符串
+		IsPublic:    false, // 默认私有
+		VirtualPath: "",
 		FileName:    data.FileName,
 		CreatedAt:   custom_type.Now(),
 		UfID:        uuid.NewString(),
@@ -371,6 +350,30 @@ func ProcessUploadedFile(data *FileUploadData, repoFactory *impl.RepositoryFacto
 	err = repoFactory.DB().Transaction(func(tx *gorm.DB) error {
 		// 创建基于事务的仓储工厂
 		txFactory := repoFactory.WithTx(tx)
+		// 目录和文件元数据在同一事务中创建，入库失败时不会遗留空目录。
+		if data.VirtualPath == "" {
+			rootPath, pathErr := txFactory.VirtualPath().GetRootPath(ctx, data.UserID)
+			if pathErr != nil {
+				return fmt.Errorf("获取根目录失败: %w", pathErr)
+			}
+			userFile.VirtualPath = fmt.Sprintf("%d", rootPath.ID)
+		} else if matched, _ := regexp.MatchString(`^\d+$`, data.VirtualPath); matched {
+			pathID, parseErr := strconv.Atoi(data.VirtualPath)
+			if parseErr != nil {
+				return fmt.Errorf("虚拟路径ID无效")
+			}
+			path, pathErr := txFactory.VirtualPath().GetByID(ctx, pathID)
+			if pathErr != nil || path.UserID != data.UserID {
+				return fmt.Errorf("虚拟路径不存在或无权访问")
+			}
+			userFile.VirtualPath = data.VirtualPath
+		} else {
+			virtualPathID, pathErr := virtualpath.Ensure(ctx, data.UserID, data.VirtualPath, txFactory)
+			if pathErr != nil {
+				return fmt.Errorf("获取虚拟路径ID失败: %w", pathErr)
+			}
+			userFile.VirtualPath = virtualPathID
+		}
 
 		// 10.1 写入文件信息
 		if err := txFactory.FileInfo().Create(ctx, fileInfo); err != nil {

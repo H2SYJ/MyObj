@@ -8,6 +8,12 @@
 -- 开始事务
 START TRANSACTION;
 
+DELETE FROM `plugin_audit_log`;
+DELETE FROM `subscription_item`;
+DELETE FROM `subscription_run`;
+DELETE FROM `subscription`;
+DELETE FROM `installed_plugin`;
+
 -- ================================
 -- 1. 删除用户相关数据
 -- ================================

@@ -39,6 +39,7 @@ export function useMenu() {
           { path: '/files', label: t('menu.files'), icon: 'Folder' },
           { path: '/shares', label: t('menu.shares'), icon: 'Share' },
           { path: '/offline', label: t('menu.offline'), icon: 'Download' },
+          { path: '/subscriptions', label: t('menu.subscriptions'), icon: 'Clock' },
           { path: '/tasks', label: t('menu.tasks'), icon: 'List' },
           { path: '/trash', label: t('menu.trash'), icon: 'Delete' }
         ]

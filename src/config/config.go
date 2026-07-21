@@ -4,6 +4,9 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
+	"time"
+	_ "time/tzdata"
 
 	"github.com/BurntSushi/toml"
 )
@@ -41,6 +44,8 @@ type Server struct {
 	SSLCert string `toml:"ssl_cert"`
 	// Swagger 启用Swagger API文档
 	Swagger bool `toml:"swagger"`
+	// Timezone 定时任务使用的服务器时区，默认Asia/Shanghai
+	Timezone string `toml:"timezone"`
 }
 
 // Auth 认证配置
@@ -248,6 +253,12 @@ func validateConfig(cfg *MyObjConfig) error {
 	// 验证服务器配置
 	if cfg.Server.Port <= 0 || cfg.Server.Port > 65535 {
 		return fmt.Errorf("无效的端口号: %d", cfg.Server.Port)
+	}
+	if strings.TrimSpace(cfg.Server.Timezone) == "" {
+		cfg.Server.Timezone = "Asia/Shanghai"
+	}
+	if _, err := time.LoadLocation(cfg.Server.Timezone); err != nil {
+		return fmt.Errorf("无效的服务器时区: %s", cfg.Server.Timezone)
 	}
 
 	// 验证数据库配置

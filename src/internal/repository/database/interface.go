@@ -56,8 +56,22 @@ func InitDataBase() {
 		logger.LOG.Error("迁移下载任务表失败", "error", err)
 		panic(fmt.Sprintf("迁移下载任务表失败: %v", err))
 	}
+	if err := migrateSubscriptionSchema(databasePool); err != nil {
+		logger.LOG.Error("迁移插件订阅表失败", "error", err)
+		panic(fmt.Sprintf("迁移插件订阅表失败: %v", err))
+	}
 
 	logger.LOG.Info("[数据库] 数据库连接池初始化成功 ✓")
+}
+
+func migrateSubscriptionSchema(db *gorm.DB) error {
+	return db.AutoMigrate(
+		&models.InstalledPlugin{},
+		&models.Subscription{},
+		&models.SubscriptionRun{},
+		&models.SubscriptionItem{},
+		&models.PluginAuditLog{},
+	)
 }
 
 // migrateDownloadTaskSchema 为可靠下载调度补齐字段和索引。

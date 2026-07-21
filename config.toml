@@ -1,5 +1,6 @@
 [server]
 host = "0.0.0.0"
+timezone = "Asia/Shanghai"
 port = 8080
 ssl = false
 api_key = true

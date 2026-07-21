@@ -3,6 +3,7 @@ export default {
     files: 'Files',
     shares: 'Shares',
     offline: 'Offline Download',
+    subscriptions: 'Subscriptions',
     tasks: 'Task Center',
     trash: 'Trash',
     square: 'Square',
@@ -13,7 +14,8 @@ export default {
     adminGroups: 'Group Management',
     adminPermissions: 'Permission Management',
     adminDisks: 'Disk Management',
-    adminSystem: 'System Configuration'
+    adminSystem: 'System Configuration',
+    adminPlugins: 'Plugin Center'
   },
   error: {
     title: 'Error Occurred',
@@ -76,6 +78,7 @@ export default {
     shares: 'Shares',
     tasks: 'Tasks',
     offline: 'Offline Download',
+    subscriptions: 'Subscriptions',
     trash: 'Trash',
     square: 'Square',
     settings: 'Settings',

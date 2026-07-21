@@ -44,6 +44,9 @@ type HTTPDownloadOptions struct {
 	Client           *http.Client               // 测试或受控场景注入的HTTP客户端
 	ProxyURL         string                     // HTTP直链下载代理地址，空字符串表示直连
 	DownloadLimiter  *rate.Limiter              // 跨HTTP与BT任务共享的下载限流器
+	RequestHeaders   map[string]string          // 自定义请求头
+	HeaderHosts      []string                   // 允许携带自定义请求头的精确主机
+	OutputFileName   string                     // 插件可选输出文件名
 	ReservedSize     int64                      // 已预留的用户空间
 	ReserveSpace     func(int64) (int64, error) // 根据远端大小预留用户空间
 }
@@ -242,17 +245,23 @@ func DownloadHTTPWithContext(
 			return nil, err
 		}
 		var clientErr error
-		client, clientErr = newPublicHTTPClient(opts.ProxyURL, opts.DownloadLimiter)
+		client, clientErr = newPublicHTTPClientWithHeaders(opts.ProxyURL, opts.DownloadLimiter, opts.RequestHeaders, opts.HeaderHosts)
 		if clientErr != nil {
 			return nil, clientErr
 		}
 	}
 
 	// 1. 获取文件信息
-	logger.LOG.Info("开始获取文件信息", "url", url)
+	logger.LOG.Info("开始获取文件信息", "url", RedactURLForLog(url))
 	fileInfo, supportRange, err := GetFileInfoWithClient(ctx, url, client)
 	if err != nil {
 		return nil, fmt.Errorf("获取文件信息失败: %w", err)
+	}
+	if opts.OutputFileName != "" {
+		fileInfo.FileName, err = NormalizeHTTPOutputFileName(opts.OutputFileName)
+		if err != nil {
+			return nil, err
+		}
 	}
 
 	logger.LOG.Info("文件信息获取成功",
@@ -298,7 +307,7 @@ func DownloadHTTPWithContext(
 		logger.LOG.Info("使用多线程下载", "chunkSize", opts.ChunkSize, "concurrent", opts.MaxConcurrent)
 		err = downloadWithRange(ctx, url, filePath, fileInfo, opts, progress, client)
 		if errors.Is(err, errRangeUnsupported) {
-			logger.LOG.Warn("服务器未正确实现Range，回退到单线程下载", "url", url)
+			logger.LOG.Warn("服务器未正确实现Range，回退到单线程下载", "url", RedactURLForLog(url))
 			_ = os.Remove(filePath)
 			_ = os.Remove(filePath + ".manifest.json")
 			err = downloadDirect(ctx, url, filePath, client, progress)
@@ -309,7 +318,7 @@ func DownloadHTTPWithContext(
 	}
 
 	if err != nil {
-		logger.LOG.Error("文件下载失败", "taskID", taskID, "error", err)
+		logger.LOG.Error("文件下载失败", "taskID", taskID, "error", RedactErrorForLog(err))
 		return nil, fmt.Errorf("文件下载失败: %w", err)
 	}
 
@@ -326,14 +335,7 @@ func DownloadHTTPWithContext(
 
 	logger.LOG.Info("文件下载完成", "fileName", fileInfo.FileName, "size", fileInfo.FileSize)
 
-	// 5. 确保虚拟路径存在
-	if err := ensureVirtualPath(ctx, userID, opts.VirtualPath, repoFactory); err != nil {
-		// 清理临时文件
-		os.RemoveAll(sessionDir)
-		return nil, fmt.Errorf("创建虚拟路径失败: %w", err)
-	}
-
-	// 6. 上传文件到系统
+	// 5. 上传文件到系统；虚拟目录在入库事务内按需创建。
 	uploadData := &upload.FileUploadData{
 		TempFilePath: filePath,
 		FileName:     fileInfo.FileName,
@@ -368,6 +370,19 @@ func DownloadHTTPWithContext(
 	}, nil
 }
 
+// NormalizeHTTPOutputFileName 校验插件为普通HTTP任务提供的文件名。
+func NormalizeHTTPOutputFileName(requested string) (string, error) {
+	name := strings.TrimSpace(requested)
+	if name == "" || filepath.Base(name) != name || strings.ContainsAny(name, "/\\\x00") {
+		return "", fmt.Errorf("HTTP输出文件名不能包含路径或非法字符")
+	}
+	name = sanitizeFileName(name)
+	if name == "" || name == "." || len([]byte(name)) > 255 {
+		return "", fmt.Errorf("HTTP输出文件名无效或过长")
+	}
+	return name, nil
+}
+
 // FileInfoResult 文件信息结果
 type FileInfoResult struct {
 	FileName     string
@@ -384,10 +399,15 @@ func GetFileInfo(url string, timeout int) (*FileInfoResult, bool, error) {
 
 // GetFileInfoWithNetworkPolicy 使用指定代理和共享限流器获取远端文件信息。
 func GetFileInfoWithNetworkPolicy(rawURL string, _ int, proxyURL string, limiter *rate.Limiter) (*FileInfoResult, bool, error) {
+	return GetFileInfoWithRequestConfig(rawURL, proxyURL, limiter, nil, nil)
+}
+
+// GetFileInfoWithRequestConfig 使用与实际下载相同的自定义请求头执行HEAD或Range探测。
+func GetFileInfoWithRequestConfig(rawURL, proxyURL string, limiter *rate.Limiter, headers map[string]string, headerHosts []string) (*FileInfoResult, bool, error) {
 	if err := ValidatePublicHTTPURL(rawURL); err != nil {
 		return nil, false, err
 	}
-	client, err := newPublicHTTPClient(proxyURL, limiter)
+	client, err := newPublicHTTPClientWithHeaders(proxyURL, limiter, headers, headerHosts)
 	if err != nil {
 		return nil, false, err
 	}
@@ -403,6 +423,9 @@ func GetFileInfoWithClient(ctx context.Context, rawURL string, client *http.Clie
 	resp, err := client.Do(req)
 	if err == nil {
 		defer resp.Body.Close()
+		if credentialErr := credentialsErrorFromStatus(resp.StatusCode, rawURL); credentialErr != nil {
+			return nil, false, credentialErr
+		}
 		if resp.StatusCode >= 200 && resp.StatusCode < 300 {
 			fileSize := resp.ContentLength
 			return &FileInfoResult{
@@ -428,6 +451,9 @@ func GetFileInfoWithClient(ctx context.Context, rawURL string, client *http.Clie
 		return nil, false, fmt.Errorf("GET探测失败: %w", requestErr)
 	}
 	defer getResp.Body.Close()
+	if credentialErr := credentialsErrorFromStatus(getResp.StatusCode, rawURL); credentialErr != nil {
+		return nil, false, credentialErr
+	}
 	if getResp.StatusCode != http.StatusPartialContent && getResp.StatusCode != http.StatusOK {
 		return nil, false, fmt.Errorf("服务器返回错误: %d", getResp.StatusCode)
 	}
@@ -447,6 +473,13 @@ func GetFileInfoWithClient(ctx context.Context, rawURL string, client *http.Clie
 		ETag:         getResp.Header.Get("ETag"),
 		LastModified: getResp.Header.Get("Last-Modified"),
 	}, supportRange, nil
+}
+
+func credentialsErrorFromStatus(statusCode int, rawURL string) error {
+	if statusCode == http.StatusUnauthorized || statusCode == http.StatusForbidden {
+		return &CredentialsRequiredError{StatusCode: statusCode, URL: rawURL}
+	}
+	return nil
 }
 
 func parseContentRange(value string) (int64, int64, int64, error) {
@@ -595,6 +628,9 @@ func downloadDirect(
 		return fmt.Errorf("下载请求失败: %w", err)
 	}
 	defer resp.Body.Close()
+	if credentialErr := credentialsErrorFromStatus(resp.StatusCode, url); credentialErr != nil {
+		return credentialErr
+	}
 
 	if resp.StatusCode != http.StatusOK {
 		return fmt.Errorf("下载失败，状态码: %d", resp.StatusCode)
@@ -785,6 +821,9 @@ func probeRangeSupport(ctx context.Context, rawURL string, totalSize int64, clie
 		return fmt.Errorf("Range探测失败: %w", err)
 	}
 	defer resp.Body.Close()
+	if credentialErr := credentialsErrorFromStatus(resp.StatusCode, rawURL); credentialErr != nil {
+		return credentialErr
+	}
 	if resp.StatusCode != http.StatusPartialContent {
 		return fmt.Errorf("%w，状态码: %d", errRangeUnsupported, resp.StatusCode)
 	}
@@ -851,6 +890,9 @@ func downloadChunk(
 		return fmt.Errorf("请求失败: %w", err)
 	}
 	defer resp.Body.Close()
+	if credentialErr := credentialsErrorFromStatus(resp.StatusCode, url); credentialErr != nil {
+		return credentialErr
+	}
 
 	if resp.StatusCode != http.StatusPartialContent {
 		return fmt.Errorf("Range请求必须返回206，实际状态码: %d", resp.StatusCode)

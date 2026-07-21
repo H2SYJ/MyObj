@@ -9,6 +9,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"net/url"
 	"strings"
@@ -26,8 +27,7 @@ const (
 
 var blockedHLSHeaders = map[string]struct{}{
 	"accept-encoding": {}, "connection": {}, "content-length": {}, "forwarded": {},
-	"host": {}, "if-match": {}, "if-modified-since": {}, "if-none-match": {},
-	"if-range": {}, "if-unmodified-since": {}, "keep-alive": {}, "proxy-authenticate": {},
+	"host": {}, "if-range": {}, "keep-alive": {}, "proxy-authenticate": {},
 	"proxy-authorization": {}, "proxy-connection": {}, "range": {}, "te": {},
 	"trailer": {}, "transfer-encoding": {}, "upgrade": {}, "x-forwarded-for": {},
 	"x-forwarded-host": {}, "x-forwarded-proto": {},
@@ -54,7 +54,7 @@ func NormalizeHLSRequestConfig(sourceURL string, rawHeaders map[string]string, e
 			return nil, nil, fmt.Errorf("无效的请求头名称: %s", name)
 		}
 		lowerName := strings.ToLower(name)
-		if _, blocked := blockedHLSHeaders[lowerName]; blocked || strings.HasPrefix(lowerName, "proxy-") {
+		if _, blocked := blockedHLSHeaders[lowerName]; blocked || strings.HasPrefix(lowerName, "proxy-") || strings.HasPrefix(lowerName, "x-forwarded-") {
 			return nil, nil, fmt.Errorf("请求头%s由下载器管理，不能自定义", name)
 		}
 		if _, exists := seenHeaders[lowerName]; exists {
@@ -68,7 +68,7 @@ func NormalizeHLSRequestConfig(sourceURL string, rawHeaders map[string]string, e
 			return nil, nil, fmt.Errorf("自定义请求头总大小不能超过32 KiB")
 		}
 		canonicalName := http.CanonicalHeaderKey(name)
-		headers[canonicalName] = strings.TrimSpace(value)
+		headers[canonicalName] = value
 		seenHeaders[lowerName] = struct{}{}
 	}
 
@@ -87,6 +87,12 @@ func NormalizeHLSRequestConfig(sourceURL string, rawHeaders map[string]string, e
 	return headers, hosts, nil
 }
 
+// NormalizeRequestConfig 校验并规范化HTTP/HLS共用的自定义请求头和精确主机白名单。
+// 保留旧的HLS入口以兼容已有调用方和密文数据。
+func NormalizeRequestConfig(sourceURL string, rawHeaders map[string]string, extraHosts []string) (map[string]string, []string, error) {
+	return NormalizeHLSRequestConfig(sourceURL, rawHeaders, extraHosts)
+}
+
 func normalizeExactHost(rawHost string) (string, error) {
 	rawHost = strings.TrimSpace(strings.ToLower(rawHost))
 	if rawHost == "" || strings.ContainsAny(rawHost, "*/\\?#@") {
@@ -95,6 +101,19 @@ func normalizeExactHost(rawHost string) (string, error) {
 	parsed, err := url.Parse("https://" + rawHost)
 	if err != nil || parsed.Hostname() == "" || parsed.Port() != "" || parsed.Hostname() != rawHost {
 		return "", fmt.Errorf("无效的请求头主机: %s", rawHost)
+	}
+	if net.ParseIP(parsed.Hostname()) != nil {
+		return "", fmt.Errorf("请求头主机必须是精确域名，不能使用IP地址: %s", rawHost)
+	}
+	for _, label := range strings.Split(rawHost, ".") {
+		if label == "" || len(label) > 63 || strings.HasPrefix(label, "-") || strings.HasSuffix(label, "-") {
+			return "", fmt.Errorf("无效的请求头主机: %s", rawHost)
+		}
+		for _, char := range label {
+			if !((char >= 'a' && char <= 'z') || (char >= '0' && char <= '9') || char == '-') {
+				return "", fmt.Errorf("请求头主机必须使用ASCII域名或punycode: %s", rawHost)
+			}
+		}
 	}
 	return rawHost, nil
 }
@@ -130,6 +149,14 @@ func DecodeHLSHeaderHosts(value string) ([]string, error) {
 		return nil, fmt.Errorf("解码请求头主机失败: %w", err)
 	}
 	return hosts, nil
+}
+
+func EncodeHeaderHosts(hosts []string) (string, error) {
+	return EncodeHLSHeaderHosts(hosts)
+}
+
+func DecodeHeaderHosts(value string) ([]string, error) {
+	return DecodeHLSHeaderHosts(value)
 }
 
 // EncryptHLSRequestHeaders 使用服务端密钥加密HLS请求头。
@@ -186,6 +213,15 @@ func DecryptHLSRequestHeaders(secret, taskID, userID, encrypted string) (map[str
 	return headers, nil
 }
 
+// EncryptRequestHeaders 使用与旧HLS任务完全相同的v1格式，保证历史密文可继续解密。
+func EncryptRequestHeaders(secret, subjectID, userID string, headers map[string]string) (string, error) {
+	return EncryptHLSRequestHeaders(secret, subjectID, userID, headers)
+}
+
+func DecryptRequestHeaders(secret, subjectID, userID, encrypted string) (map[string]string, error) {
+	return DecryptHLSRequestHeaders(secret, subjectID, userID, encrypted)
+}
+
 func newHLSHeaderAEAD(secret string) (cipher.AEAD, error) {
 	if secret == "" {
 		return nil, fmt.Errorf("服务端认证密钥为空，无法保护HLS请求头")
@@ -203,6 +239,10 @@ func newHLSHeaderAEAD(secret string) (cipher.AEAD, error) {
 }
 
 func newHLSHTTPClient(proxyAddress string, limiter *rate.Limiter, headers map[string]string, allowedHosts []string) (*http.Client, error) {
+	return newPublicHTTPClientWithHeaders(proxyAddress, limiter, headers, allowedHosts)
+}
+
+func newPublicHTTPClientWithHeaders(proxyAddress string, limiter *rate.Limiter, headers map[string]string, allowedHosts []string) (*http.Client, error) {
 	client, err := newPublicHTTPClient(proxyAddress, limiter)
 	if err != nil {
 		return nil, err
@@ -215,6 +255,11 @@ func newHLSHTTPClient(proxyAddress string, limiter *rate.Limiter, headers map[st
 	return client, nil
 }
 
+// NewPublicHTTPClientWithHeaders 创建同时执行公网地址校验、限速和精确主机请求头隔离的客户端。
+func NewPublicHTTPClientWithHeaders(proxyAddress string, limiter *rate.Limiter, headers map[string]string, allowedHosts []string) (*http.Client, error) {
+	return newPublicHTTPClientWithHeaders(proxyAddress, limiter, headers, allowedHosts)
+}
+
 type hlsHeaderRoundTripper struct {
 	base         http.RoundTripper
 	headers      map[string]string
@@ -222,13 +267,18 @@ type hlsHeaderRoundTripper struct {
 }
 
 func (t *hlsHeaderRoundTripper) RoundTrip(req *http.Request) (*http.Response, error) {
+	cloned := req.Clone(req.Context())
+	cloned.Header = req.Header.Clone()
 	if _, allowed := t.allowedHosts[strings.ToLower(req.URL.Hostname())]; allowed {
-		cloned := req.Clone(req.Context())
-		cloned.Header = req.Header.Clone()
 		for name, value := range t.headers {
 			cloned.Header.Set(name, value)
 		}
-		req = cloned
+	} else {
+		// net/http 会把上一跳的大部分请求头复制到重定向请求。这里必须显式删除，
+		// 保证跨主机跳转即使继续通过公网校验，也绝不会携带插件凭据。
+		for name := range t.headers {
+			cloned.Header.Del(name)
+		}
 	}
-	return t.base.RoundTrip(req)
+	return t.base.RoundTrip(cloned)
 }

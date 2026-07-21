@@ -43,6 +43,12 @@ const routes: RouteRecordRaw[] = [
         meta: { title: '离线下载', i18nKey: 'route.offline' }
       },
       {
+        path: '/subscriptions',
+        name: 'Subscriptions',
+        component: () => import('@/views/Subscriptions/index.vue'),
+        meta: { title: '订阅管理', i18nKey: 'route.subscriptions' }
+      },
+      {
         path: '/tasks',
         name: 'Tasks',
         component: () => import('@/views/Tasks/index.vue'),
@@ -109,6 +115,12 @@ const routes: RouteRecordRaw[] = [
             name: 'AdminSystem',
             component: () => import('@/views/Admin/System/index.vue'),
             meta: { title: '系统配置', i18nKey: 'route.adminSystem' }
+          },
+          {
+            path: 'plugins',
+            name: 'AdminPlugins',
+            component: () => import('@/views/Admin/Plugins/index.vue'),
+            meta: { title: '插件中心', i18nKey: 'route.adminPlugins' }
           }
         ]
       }

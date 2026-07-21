@@ -152,7 +152,28 @@ export const API_ENDPOINTS = {
     SYSTEM: {
       CONFIG: '/admin/system/config',
       UPDATE_CONFIG: '/admin/system/update-config'
+    },
+    PLUGIN: {
+      LIST: '/admin/plugin/list',
+      INSTALL: '/admin/plugin/install',
+      TOGGLE: '/admin/plugin/toggle',
+      UNINSTALL: '/admin/plugin/uninstall',
+      AUDIT: '/admin/plugin/audit'
     }
+  },
+
+  SUBSCRIPTION: {
+    PLUGINS: '/subscription/plugins',
+    LIST: '/subscription/list',
+    CREATE: '/subscription/create',
+    UPDATE: '/subscription/update',
+    DELETE: '/subscription/delete',
+    TOGGLE: '/subscription/toggle',
+    RUN: '/subscription/run',
+    PERMISSIONS: '/subscription/permissions',
+    RUNS: '/subscription/runs',
+    ITEMS: '/subscription/items',
+    THUMBNAIL_RETRY: '/subscription/item/thumbnail/retry'
   },
 
   // 打包下载

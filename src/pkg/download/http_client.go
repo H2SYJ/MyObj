@@ -2,6 +2,7 @@ package download
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"net"
@@ -46,6 +47,31 @@ func ValidatePublicHTTPURL(rawURL string) error {
 		return fmt.Errorf("不允许访问本机地址")
 	}
 	return validatePublicHost(context.Background(), parsed.Hostname())
+}
+
+// RedactURLForLog 移除查询参数、片段和用户信息，避免日志泄露临时签名或凭据。
+func RedactURLForLog(rawURL string) string {
+	parsed, err := url.Parse(rawURL)
+	if err != nil {
+		return "<invalid-url>"
+	}
+	parsed.RawQuery = ""
+	parsed.ForceQuery = false
+	parsed.Fragment = ""
+	parsed.User = nil
+	return parsed.String()
+}
+
+// RedactErrorForLog 清除net/http错误中可能携带的完整查询参数。
+func RedactErrorForLog(err error) string {
+	if err == nil {
+		return ""
+	}
+	var urlErr *url.Error
+	if errors.As(err, &urlErr) {
+		return fmt.Sprintf("%s %s: %v", urlErr.Op, RedactURLForLog(urlErr.URL), urlErr.Err)
+	}
+	return err.Error()
 }
 
 func validatePublicHost(ctx context.Context, host string) error {
@@ -130,6 +156,11 @@ func newPublicHTTPClient(proxyAddress string, limiter *rate.Limiter) (*http.Clie
 			return ValidatePublicHTTPURL(req.URL.String())
 		},
 	}, nil
+}
+
+// NewPublicHTTPClient 为插件等受控调用方提供与离线下载一致的公网访问策略。
+func NewPublicHTTPClient(proxyAddress string, limiter *rate.Limiter) (*http.Client, error) {
+	return newPublicHTTPClient(proxyAddress, limiter)
 }
 
 type rateLimitedRoundTripper struct {

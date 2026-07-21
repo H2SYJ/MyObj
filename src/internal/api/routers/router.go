@@ -1,6 +1,7 @@
 package routers
 
 import (
+	"context"
 	"fmt"
 	"myobj/src/config"
 	"myobj/src/core/service"
@@ -81,6 +82,8 @@ func initRouter(factory *service.ServerFactory, cache cache.Cache) *gin.Engine {
 		handlers.NewVideoHandler(factory.FileService(), cache).Router(api)
 		// 管理路由
 		handlers.NewAdminHandler(factory.AdminService(), cache).Router(api)
+		handlers.NewPluginHandler(factory.PluginService(), cache).Router(api)
+		handlers.NewSubscriptionHandler(factory.SubscriptionService(), cache).Router(api)
 		// TODO: 这里可以注册更多的路由处理器
 	}
 
@@ -109,6 +112,7 @@ func Execute(cacheLocal cache.Cache) {
 
 	factory := impl.NewRepositoryFactory(database.GetDB())
 	serverFactory := service.NewServiceFactory(factory, cacheLocal)
+	defer serverFactory.Close(context.Background())
 	serverFactory.FileService().StartFinalizeManager()
 	// 启动回收站定时清理任务
 	recycledTask := task.NewRecycledTask(factory)

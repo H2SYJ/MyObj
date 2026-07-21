@@ -16,8 +16,10 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/google/uuid"
+	"gorm.io/gorm"
 )
 
 // DownloadService 下载服务
@@ -69,6 +71,145 @@ func (d *DownloadService) GetRepository() *impl.RepositoryFactory {
 	return d.factory
 }
 
+type SubscriptionDownloadInput struct {
+	ItemID                  string
+	UserID                  string
+	URL                     string
+	DownloadType            string
+	FileName                string
+	SavePath                string
+	RequestHeadersEncrypted string
+	HeaderHostsJSON         string
+}
+
+// EnqueueSubscriptionDownload 将订阅条目原子关联到普通离线下载任务。
+func (d *DownloadService) EnqueueSubscriptionDownload(ctx context.Context, input SubscriptionDownloadInput) (string, error) {
+	task, err := d.buildSubscriptionDownload(input)
+	if err != nil {
+		return "", err
+	}
+	err = d.factory.DB().WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if err := tx.Create(task).Error; err != nil {
+			return err
+		}
+		result := tx.Model(&models.SubscriptionItem{}).Where("id = ? AND download_task_id = '' AND status IN ?", input.ItemID, []string{"deferred", "submit_failed"}).
+			Updates(map[string]interface{}{"download_task_id": task.ID, "status": "submitted", "error_msg": "", "updated_at": time.Now()})
+		if result.Error != nil {
+			return result.Error
+		}
+		if result.RowsAffected != 1 {
+			return fmt.Errorf("订阅条目已提交或状态不允许提交")
+		}
+		return nil
+	})
+	if err != nil {
+		return "", err
+	}
+	d.manager.Notify(task.ID, "")
+	return task.ID, nil
+}
+
+// CreateSubscriptionItemAndDownload 在同一事务内创建订阅条目和普通离线下载任务。
+func (d *DownloadService) CreateSubscriptionItemAndDownload(ctx context.Context, item *models.SubscriptionItem, input SubscriptionDownloadInput) (string, error) {
+	task, err := d.buildSubscriptionDownload(input)
+	if err != nil {
+		return "", err
+	}
+	item.DownloadTaskID = task.ID
+	item.Status = "submitted"
+	err = d.factory.DB().WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if err := tx.Create(item).Error; err != nil {
+			return err
+		}
+		return tx.Create(task).Error
+	})
+	if err != nil {
+		return "", err
+	}
+	d.manager.Notify(task.ID, "")
+	return task.ID, nil
+}
+
+func (d *DownloadService) buildSubscriptionDownload(input SubscriptionDownloadInput) (*models.DownloadTask, error) {
+	if err := download.ValidatePublicHTTPURL(input.URL); err != nil {
+		return nil, err
+	}
+	taskType := enum.DownloadTaskTypeHttp.Value()
+	fileName := input.FileName
+	if input.DownloadType == "hls" {
+		taskType = enum.DownloadTaskTypeHLS.Value()
+		var err error
+		fileName, err = download.NormalizeHLSOutputFileName(fileName, input.URL, input.ItemID)
+		if err != nil {
+			return nil, err
+		}
+	} else if input.DownloadType != "http" {
+		return nil, fmt.Errorf("插件下载类型仅支持http或hls")
+	} else if fileName != "" {
+		var err error
+		fileName, err = download.NormalizeHTTPOutputFileName(fileName)
+		if err != nil {
+			return nil, err
+		}
+	}
+	headers, err := download.DecryptRequestHeaders(config.CONFIG.Auth.Secret, input.ItemID, input.UserID, input.RequestHeadersEncrypted)
+	if err != nil {
+		return nil, err
+	}
+	taskID := uuid.Must(uuid.NewV7()).String()
+	taskHeaders, err := download.EncryptRequestHeaders(config.CONFIG.Auth.Secret, taskID, input.UserID, headers)
+	if err != nil {
+		return nil, err
+	}
+	now := custom_type.Now()
+	return &models.DownloadTask{ID: taskID, UserID: input.UserID, Type: taskType, FileName: fileName, URL: input.URL,
+		VirtualPath: input.SavePath, State: enum.DownloadTaskStateInit.Value(), TargetDir: d.tempDir, SupportRange: taskType == enum.DownloadTaskTypeHLS.Value(),
+		RequestHeadersEncrypted: taskHeaders, HeaderHostsJSON: input.HeaderHostsJSON, CreateTime: now, UpdateTime: now}, nil
+}
+
+func (d *DownloadService) RefreshTaskHeaders(ctx context.Context, taskID, itemID, userID, encrypted, hostsJSON string) error {
+	task, err := d.factory.DownloadTask().GetByID(ctx, taskID)
+	if err != nil || task.UserID != userID {
+		return fmt.Errorf("下载任务不存在")
+	}
+	if task.State == enum.DownloadTaskStateFinished.Value() || task.State == enum.DownloadTaskStateCanceled.Value() {
+		return nil
+	}
+	headers, err := download.DecryptRequestHeaders(config.CONFIG.Auth.Secret, itemID, userID, encrypted)
+	if err != nil {
+		return err
+	}
+	taskEncrypted, err := download.EncryptRequestHeaders(config.CONFIG.Auth.Secret, task.ID, userID, headers)
+	if err != nil {
+		return err
+	}
+	updates := map[string]interface{}{"request_headers_encrypted": taskEncrypted, "header_hosts_json": hostsJSON, "requires_headers": false}
+	if task.State == enum.DownloadTaskStateDownloading.Value() {
+		if err := d.manager.Pause(task.ID); err != nil {
+			return err
+		}
+		task.State = enum.DownloadTaskStatePaused.Value()
+		// 活动任务必须撤销旧run_token并用新凭据重新排队，断点清单继续复用。
+		return d.manager.Resume(task, "", updates)
+	}
+	if task.State == enum.DownloadTaskStatePaused.Value() {
+		if task.RequiresHeaders {
+			return d.manager.Resume(task, "", updates)
+		}
+		// 用户主动暂停的任务只更新凭据，不能被插件刷新意外恢复。
+		return d.factory.DB().WithContext(ctx).Model(&models.DownloadTask{}).
+			Where("id = ? AND user_id = ? AND state = ?", task.ID, userID, enum.DownloadTaskStatePaused.Value()).
+			Updates(updates).Error
+	}
+	// 排队任务直接使用新凭据；普通网络失败任务只更新凭据但保持失败，避免重复下载。
+	if task.State == enum.DownloadTaskStateInit.Value() || task.State == enum.DownloadTaskStateFailed.Value() {
+		return d.factory.DB().WithContext(ctx).Model(&models.DownloadTask{}).
+			Where("id = ? AND user_id = ? AND state = ?", task.ID, userID, task.State).
+			Updates(updates).Error
+	}
+	return nil
+}
+
 // CreateOfflineDownload 创建离线下载任务
 func (d *DownloadService) CreateOfflineDownload(req *request.CreateOfflineDownloadRequest, userID string) (*models.JsonResponse, error) {
 	ctx := context.Background()
@@ -114,7 +255,7 @@ func (d *DownloadService) CreateOfflineDownload(req *request.CreateOfflineDownlo
 	if len(extraHosts) > 0 && len(rawHeaders) == 0 {
 		return nil, fmt.Errorf("未配置请求头时不能单独配置请求头主机")
 	}
-	headers, headerHosts, err := download.NormalizeHLSRequestConfig(req.URL, rawHeaders, extraHosts)
+	headers, headerHosts, err := download.NormalizeRequestConfig(req.URL, rawHeaders, extraHosts)
 	if err != nil {
 		return nil, err
 	}
@@ -126,31 +267,31 @@ func (d *DownloadService) CreateOfflineDownload(req *request.CreateOfflineDownlo
 			detected, detectErr := download.DetectHLSContentType(ctx, req.URL, d.networkPolicy.ProxyURL(),
 				d.networkPolicy.DownloadLimiter(), headers, headerHosts)
 			if detectErr != nil {
-				logger.LOG.Warn("自动探测HLS类型失败，按普通HTTP任务处理", "url", req.URL, "error", detectErr)
+				logger.LOG.Warn("自动探测HLS类型失败，按普通HTTP任务处理", "url", download.RedactURLForLog(req.URL), "error", detectErr)
 			} else {
 				isHLS = detected
 			}
 		}
 	}
-	if !isHLS && (len(headers) > 0 || req.FileName != "") {
-		return nil, fmt.Errorf("file_name和request_headers仅支持HLS任务，请将download_type设为hls")
+	if !isHLS && req.FileName != "" {
+		return nil, fmt.Errorf("file_name仅支持HLS任务，请将download_type设为hls")
 	}
 
 	var fileInfo *download.FileInfoResult
 	supportRange := false
 	if !isHLS {
-		fileInfo, supportRange, err = download.GetFileInfoWithNetworkPolicy(req.URL, 300,
-			d.networkPolicy.ProxyURL(), d.networkPolicy.DownloadLimiter())
+		fileInfo, supportRange, err = download.GetFileInfoWithRequestConfig(req.URL,
+			d.networkPolicy.ProxyURL(), d.networkPolicy.DownloadLimiter(), headers, headerHosts)
 		if err != nil {
 			// 无法获取文件大小时，仍然允许创建任务（可能是动态内容）
-			logger.LOG.Warn("无法获取文件信息，跳过空间检查", "url", req.URL, "error", err)
+			logger.LOG.Warn("无法获取文件信息，跳过空间检查", "url", download.RedactURLForLog(req.URL), "error", err)
 		}
 	} else {
 		supportRange = true
 		if probeErr := download.ProbeHLSPlaylist(ctx, req.URL, d.networkPolicy.ProxyURL(),
 			d.networkPolicy.DownloadLimiter(), headers, headerHosts); probeErr != nil {
 			// 网络临时错误交由持久任务重试；确定性格式错误也会在执行器中给出完整错误。
-			logger.LOG.Warn("创建HLS任务时预检播放列表失败", "url", req.URL, "error", probeErr)
+			logger.LOG.Warn("创建HLS任务时预检播放列表失败", "url", download.RedactURLForLog(req.URL), "error", probeErr)
 		}
 	}
 	if fileInfo != nil && fileInfo.Size > 0 {
@@ -169,16 +310,16 @@ func (d *DownloadService) CreateOfflineDownload(req *request.CreateOfflineDownlo
 
 	requestHeadersEncrypted := ""
 	headerHostsJSON := ""
-	if isHLS {
+	if len(headers) > 0 {
 		secret := ""
 		if config.CONFIG != nil {
 			secret = config.CONFIG.Auth.Secret
 		}
-		requestHeadersEncrypted, err = download.EncryptHLSRequestHeaders(secret, taskID, userID, headers)
+		requestHeadersEncrypted, err = download.EncryptRequestHeaders(secret, taskID, userID, headers)
 		if err != nil {
 			return nil, err
 		}
-		headerHostsJSON, err = download.EncodeHLSHeaderHosts(headerHosts)
+		headerHostsJSON, err = download.EncodeHeaderHosts(headerHosts)
 		if err != nil {
 			return nil, err
 		}
@@ -217,14 +358,14 @@ func (d *DownloadService) CreateOfflineDownload(req *request.CreateOfflineDownlo
 	}
 
 	if err := d.factory.DownloadTask().Create(ctx, task); err != nil {
-		logger.LOG.Error("创建下载任务失败", "error", err, "userID", userID, "url", req.URL)
+		logger.LOG.Error("创建下载任务失败", "error", err, "userID", userID, "url", download.RedactURLForLog(req.URL))
 		return nil, fmt.Errorf("创建任务失败: %w", err)
 	}
 
 	// 5. 通知下载管理器排队执行，密码仅保存在内存中。
 	d.manager.Notify(taskID, req.FilePassword)
 
-	logger.LOG.Info("离线下载任务已创建", "taskID", taskID, "userID", userID, "url", req.URL)
+	logger.LOG.Info("离线下载任务已创建", "taskID", taskID, "userID", userID, "url", download.RedactURLForLog(req.URL))
 
 	// 返回任务信息
 	taskResp := d.convertTaskToResponse(task)
@@ -393,9 +534,9 @@ func (d *DownloadService) ResumeTask(req *request.TaskOperationRequest, userID s
 		return nil, fmt.Errorf("该任务类型不支持恢复")
 	}
 	resumeUpdates := map[string]interface{}{}
-	if task.Type == enum.DownloadTaskTypeHLS.Value() {
+	if task.Type == enum.DownloadTaskTypeHLS.Value() || task.Type == enum.DownloadTaskTypeHttp.Value() {
 		if task.RequiresHeaders && req.RequestHeaders == nil {
-			return nil, fmt.Errorf("该HLS任务需要更新请求头后才能恢复")
+			return nil, fmt.Errorf("该任务需要更新请求头后才能恢复")
 		}
 		if req.RequestHeaders != nil || req.HeaderHosts != nil {
 			secret := ""
@@ -406,29 +547,29 @@ func (d *DownloadService) ResumeTask(req *request.TaskOperationRequest, userID s
 			if req.RequestHeaders != nil {
 				headers = *req.RequestHeaders
 			} else {
-				headers, err = download.DecryptHLSRequestHeaders(secret, task.ID, task.UserID, task.RequestHeadersEncrypted)
+				headers, err = download.DecryptRequestHeaders(secret, task.ID, task.UserID, task.RequestHeadersEncrypted)
 				if err != nil {
-					return nil, fmt.Errorf("读取原HLS请求头失败，请重新提交请求头: %w", err)
+					return nil, fmt.Errorf("读取原请求头失败，请重新提交请求头: %w", err)
 				}
 			}
 			hosts := []string{}
 			if req.HeaderHosts != nil {
 				hosts = *req.HeaderHosts
 			} else {
-				hosts, err = download.DecodeHLSHeaderHosts(task.HeaderHostsJSON)
+				hosts, err = download.DecodeHeaderHosts(task.HeaderHostsJSON)
 				if err != nil {
 					return nil, err
 				}
 			}
-			headers, hosts, err = download.NormalizeHLSRequestConfig(task.URL, headers, hosts)
+			headers, hosts, err = download.NormalizeRequestConfig(task.URL, headers, hosts)
 			if err != nil {
 				return nil, err
 			}
-			encrypted, encryptErr := download.EncryptHLSRequestHeaders(secret, task.ID, task.UserID, headers)
+			encrypted, encryptErr := download.EncryptRequestHeaders(secret, task.ID, task.UserID, headers)
 			if encryptErr != nil {
 				return nil, encryptErr
 			}
-			hostsJSON, encodeErr := download.EncodeHLSHeaderHosts(hosts)
+			hostsJSON, encodeErr := download.EncodeHeaderHosts(hosts)
 			if encodeErr != nil {
 				return nil, encodeErr
 			}
@@ -436,8 +577,6 @@ func (d *DownloadService) ResumeTask(req *request.TaskOperationRequest, userID s
 			resumeUpdates["header_hosts_json"] = hostsJSON
 			resumeUpdates["requires_headers"] = false
 		}
-	} else if req.RequestHeaders != nil || req.HeaderHosts != nil {
-		return nil, fmt.Errorf("只有HLS任务支持更新请求头")
 	}
 	if err := d.manager.Resume(task, req.FilePassword, resumeUpdates); err != nil {
 		logger.LOG.Error("恢复下载任务失败", "error", err, "taskID", req.TaskID)

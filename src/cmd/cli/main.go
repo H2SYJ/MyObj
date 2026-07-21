@@ -11,11 +11,14 @@ import (
 	"myobj/src/pkg/cache"
 	"myobj/src/pkg/logger"
 	"myobj/src/pkg/models"
+	pluginpkg "myobj/src/pkg/plugin"
 	"myobj/src/pkg/preview"
 	"myobj/src/pkg/task"
 	"myobj/src/pkg/util"
 	"os"
+	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/AlecAivazis/survey/v2"
 	"github.com/pterm/pterm"
@@ -39,6 +42,14 @@ func main() {
 		Usage:   "MyObj 系统管理工具",
 		Before:  initialize,
 		Commands: []*cli.Command{
+			{
+				Name:  "plugin",
+				Usage: "WASM订阅插件开发工具",
+				Subcommands: []*cli.Command{
+					{Name: "validate", Usage: "校验.myobj-plugin包", ArgsUsage: "<package.myobj-plugin>", Action: validatePluginAction},
+					{Name: "pack", Usage: "将插件产物目录打包为.myobj-plugin", ArgsUsage: "<source-dir> [output.myobj-plugin]", Action: packPluginAction},
+				},
+			},
 			{
 				Name:  "thumbnail",
 				Usage: "缩略图管理",
@@ -214,6 +225,9 @@ func backfillVideoThumbnailsAction(c *cli.Context) error {
 
 // initialize 初始化系统组件
 func initialize(c *cli.Context) error {
+	if len(os.Args) > 1 && os.Args[1] == "plugin" {
+		return nil
+	}
 	pterm.DefaultHeader.WithFullWidth().Println("MyObj CLI 管理工具")
 	pterm.Info.Println("正在初始化...")
 
@@ -237,6 +251,69 @@ func initialize(c *cli.Context) error {
 
 	pterm.Success.Println("初始化完成")
 	fmt.Println()
+	return nil
+}
+
+func validatePluginAction(c *cli.Context) error {
+	if c.NArg() < 1 {
+		return fmt.Errorf("用法: plugin validate <package.myobj-plugin>")
+	}
+	path := c.Args().Get(0)
+	file, err := os.Open(path)
+	if err != nil {
+		return err
+	}
+	defer file.Close()
+	stat, err := file.Stat()
+	if err != nil {
+		return err
+	}
+	pkg, err := pluginpkg.ReadPackage(file, stat.Size())
+	if err != nil {
+		return err
+	}
+	runtime, err := pluginpkg.NewRuntime(c.Context)
+	if err != nil {
+		return err
+	}
+	defer runtime.Close(c.Context)
+	if err := runtime.ValidateModule(c.Context, pkg.WASM); err != nil {
+		return err
+	}
+	response, _, err := runtime.Invoke(c.Context, pkg.WASMSHA256, pkg.WASM, pluginpkg.InvocationRequest{Action: "healthcheck", Now: time.Now()}, &pluginpkg.InvocationHost{Permissions: map[string]bool{}})
+	if err != nil {
+		return fmt.Errorf("插件健康检查失败: %w", err)
+	}
+	if response == nil || !response.OK {
+		return fmt.Errorf("插件健康检查失败: 插件未返回成功状态")
+	}
+	pterm.Success.Printf("插件包校验通过: %s %s\n", pkg.Manifest.Name, pkg.Manifest.Version)
+	pterm.Info.Printf("包SHA-256: %s\nWASM SHA-256: %s\n", pkg.PackageSHA256, pkg.WASMSHA256)
+	return nil
+}
+
+func packPluginAction(c *cli.Context) error {
+	if c.NArg() < 1 {
+		return fmt.Errorf("用法: plugin pack <source-dir> [output.myobj-plugin]")
+	}
+	sourceDir, err := filepath.Abs(c.Args().Get(0))
+	if err != nil {
+		return err
+	}
+	output := c.Args().Get(1)
+	if output == "" {
+		output = filepath.Join(sourceDir, filepath.Base(sourceDir)+".myobj-plugin")
+	}
+	output, err = filepath.Abs(output)
+	if err != nil {
+		return err
+	}
+	pkg, err := pluginpkg.BuildPackage(sourceDir, output)
+	if err != nil {
+		return err
+	}
+	pterm.Success.Printf("插件包已生成: %s\n", output)
+	pterm.Info.Printf("插件: %s %s\n包SHA-256: %s\n", pkg.Manifest.Name, pkg.Manifest.Version, pkg.PackageSHA256)
 	return nil
 }
 

@@ -26,6 +26,9 @@
         <el-tab-pane :label="t('route.adminSystem')" name="system">
           <AdminSystem />
         </el-tab-pane>
+        <el-tab-pane :label="t('route.adminPlugins')" name="plugins">
+          <AdminPlugins />
+        </el-tab-pane>
       </el-tabs>
     </el-card>
   </div>
@@ -37,6 +40,7 @@
   import AdminPermissions from './Permissions/index.vue'
   import AdminDisks from './Disks/index.vue'
   import AdminSystem from './System/index.vue'
+  import AdminPlugins from './Plugins/index.vue'
   import { useI18n } from '@/composables'
 
   const route = useRoute()
@@ -54,6 +58,7 @@
       else if (name === 'AdminPermissions') activeTab.value = 'permissions'
       else if (name === 'AdminDisks') activeTab.value = 'disks'
       else if (name === 'AdminSystem') activeTab.value = 'system'
+      else if (name === 'AdminPlugins') activeTab.value = 'plugins'
     },
     { immediate: true }
   )
@@ -65,7 +70,8 @@
       groups: '/admin/groups',
       permissions: '/admin/permissions',
       disks: '/admin/disks',
-      system: '/admin/system'
+      system: '/admin/system',
+      plugins: '/admin/plugins'
     }
     if (routeMap[tab] && route.path !== routeMap[tab]) {
       router.push(routeMap[tab])

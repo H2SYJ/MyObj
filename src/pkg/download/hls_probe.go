@@ -47,6 +47,9 @@ func DetectHLSContentType(ctx context.Context, rawURL, proxyAddress string, limi
 	}
 	contentType := strings.ToLower(strings.TrimSpace(strings.Split(resp.Header.Get("Content-Type"), ";")[0]))
 	_ = resp.Body.Close()
+	if resp.StatusCode == http.StatusUnauthorized || resp.StatusCode == http.StatusForbidden {
+		return false, &CredentialsRequiredError{StatusCode: resp.StatusCode, URL: rawURL}
+	}
 	if resp.StatusCode >= 200 && resp.StatusCode < 400 {
 		_, ok := hlsContentTypes[contentType]
 		return ok, nil
@@ -62,7 +65,7 @@ func DetectHLSContentType(ctx context.Context, rawURL, proxyAddress string, limi
 	}
 	defer getResp.Body.Close()
 	if getResp.StatusCode == http.StatusUnauthorized || getResp.StatusCode == http.StatusForbidden {
-		return false, &HLSCredentialsRequiredError{StatusCode: getResp.StatusCode, URL: rawURL}
+		return false, &CredentialsRequiredError{StatusCode: getResp.StatusCode, URL: rawURL}
 	}
 	if getResp.StatusCode < 200 || getResp.StatusCode >= 400 {
 		return false, fmt.Errorf("探测HLS类型失败，状态码: %d", getResp.StatusCode)
@@ -129,7 +132,7 @@ func fetchHLSBytes(ctx context.Context, client *http.Client, rawURL string, rang
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode == http.StatusUnauthorized || resp.StatusCode == http.StatusForbidden {
-		return nil, &HLSCredentialsRequiredError{StatusCode: resp.StatusCode, URL: rawURL}
+		return nil, &CredentialsRequiredError{StatusCode: resp.StatusCode, URL: rawURL}
 	}
 	if rangeLength > 0 {
 		if resp.StatusCode != http.StatusPartialContent {

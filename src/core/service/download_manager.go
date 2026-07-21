@@ -208,6 +208,20 @@ func (m *DownloadManager) runTask(ctx context.Context, task *models.DownloadTask
 		return
 	}
 	task.ReservedSize = reservedSize
+	secret := ""
+	if config.CONFIG != nil {
+		secret = config.CONFIG.Auth.Secret
+	}
+	requestHeaders, decryptErr := download.DecryptRequestHeaders(secret, task.ID, task.UserID, task.RequestHeadersEncrypted)
+	if decryptErr != nil {
+		err = &download.CredentialsRequiredError{Reason: "已保存的请求头无法解密，请重新输入请求头后恢复任务"}
+		return
+	}
+	headerHosts, decodeErr := download.DecodeHeaderHosts(task.HeaderHostsJSON)
+	if decodeErr != nil {
+		err = &download.CredentialsRequiredError{Reason: "已保存的请求头主机无效，请重新输入请求头后恢复任务"}
+		return
+	}
 	if isTorrent {
 		opts := &download.TorrentSingleFileDownloadOptions{
 			MaxConcurrentPeers: 200,
@@ -224,20 +238,6 @@ func (m *DownloadManager) runTask(ctx context.Context, task *models.DownloadTask
 		}
 		fileID, err = download.DownloadTorrentSingleFile(ctx, task.ID, task.URL, task.FileIndex, task.UserID, m.tempDir, m.factory, opts)
 	} else if task.Type == enum.DownloadTaskTypeHLS.Value() {
-		secret := ""
-		if config.CONFIG != nil {
-			secret = config.CONFIG.Auth.Secret
-		}
-		headers, decryptErr := download.DecryptHLSRequestHeaders(secret, task.ID, task.UserID, task.RequestHeadersEncrypted)
-		if decryptErr != nil {
-			err = &download.HLSCredentialsRequiredError{Reason: "已保存的HLS请求头无法解密，请重新输入请求头后恢复任务"}
-			return
-		}
-		headerHosts, decodeErr := download.DecodeHLSHeaderHosts(task.HeaderHostsJSON)
-		if decodeErr != nil {
-			err = &download.HLSCredentialsRequiredError{Reason: "已保存的HLS请求头主机无效，请重新输入请求头后恢复任务"}
-			return
-		}
 		opts := &download.HLSDownloadOptions{
 			EnableEncryption: task.EnableEncryption,
 			VirtualPath:      task.VirtualPath,
@@ -248,7 +248,7 @@ func (m *DownloadManager) runTask(ctx context.Context, task *models.DownloadTask
 			ReservedSize:     task.ReservedSize,
 			ProxyURL:         m.networkPolicy.ProxyURL(),
 			DownloadLimiter:  m.networkPolicy.DownloadLimiter(),
-			RequestHeaders:   headers,
+			RequestHeaders:   requestHeaders,
 			HeaderHosts:      headerHosts,
 			OutputFileName:   task.FileName,
 			ReserveSpace: func(size int64) (int64, error) {
@@ -280,6 +280,9 @@ func (m *DownloadManager) runTask(ctx context.Context, task *models.DownloadTask
 			ReservedSize:     task.ReservedSize,
 			ProxyURL:         m.networkPolicy.ProxyURL(),
 			DownloadLimiter:  m.networkPolicy.DownloadLimiter(),
+			RequestHeaders:   requestHeaders,
+			HeaderHosts:      headerHosts,
+			OutputFileName:   task.FileName,
 			ReserveSpace: func(size int64) (int64, error) {
 				reserved, reserveErr := m.ensureReservation(task, size)
 				if reserveErr == nil {
@@ -362,7 +365,7 @@ func (m *DownloadManager) finishTask(task *models.DownloadTask, fileID string, r
 		}
 		return
 	}
-	if download.IsHLSCredentialsRequired(runErr) {
+	if download.IsCredentialsRequired(runErr) {
 		_, updateErr := m.factory.DownloadTask().UpdateIfRunToken(ctx, task.ID, task.RunToken, map[string]interface{}{
 			"state":            enum.DownloadTaskStatePaused.Value(),
 			"speed":            0,
@@ -374,7 +377,7 @@ func (m *DownloadManager) finishTask(task *models.DownloadTask, fileID string, r
 			"error_msg":        runErr.Error(),
 		})
 		if updateErr != nil {
-			logger.LOG.Error("暂停HLS凭据失效任务失败", "taskID", task.ID, "error", updateErr)
+			logger.LOG.Error("暂停凭据失效的HTTP/HLS任务失败", "taskID", task.ID, "error", updateErr)
 		}
 		m.deleteSecret(task.ID)
 		return
@@ -394,7 +397,7 @@ func (m *DownloadManager) finishTask(task *models.DownloadTask, fileID string, r
 			"worker_id":        "",
 			"lease_expires_at": nil,
 			"speed":            0,
-			"error_msg":        fmt.Sprintf("第%d次重试等待中: %v", retryCount, runErr),
+			"error_msg":        fmt.Sprintf("第%d次重试等待中: %s", retryCount, download.RedactErrorForLog(runErr)),
 		})
 		return
 	}
@@ -405,7 +408,7 @@ func (m *DownloadManager) finishTask(task *models.DownloadTask, fileID string, r
 		"worker_id":        "",
 		"lease_expires_at": nil,
 		"next_retry_at":    nil,
-		"error_msg":        runErr.Error(),
+		"error_msg":        download.RedactErrorForLog(runErr),
 	})
 	if err != nil {
 		logger.LOG.Error("提交下载失败状态失败", "taskID", task.ID, "error", err)

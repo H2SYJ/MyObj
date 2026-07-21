@@ -21,6 +21,11 @@ DROP TABLE IF EXISTS `virtual_path`;
 DROP TABLE IF EXISTS `upload_chunk`;
 DROP TABLE IF EXISTS `upload_task`;
 DROP TABLE IF EXISTS `download_task`;
+DROP TABLE IF EXISTS `plugin_audit_log`;
+DROP TABLE IF EXISTS `subscription_item`;
+DROP TABLE IF EXISTS `subscription_run`;
+DROP TABLE IF EXISTS `subscription`;
+DROP TABLE IF EXISTS `installed_plugin`;
 DROP TABLE IF EXISTS `shares`;
 DROP TABLE IF EXISTS `recycled`;
 DROP TABLE IF EXISTS `disk`;
@@ -249,6 +254,9 @@ CREATE TABLE `download_task` (
 	`retry_count` INT DEFAULT 0 COMMENT '已重试次数',
 	`next_retry_at` DATETIME DEFAULT NULL COMMENT '下次允许重试时间',
 	`reserved_size` BIGINT DEFAULT 0 COMMENT '已预留用户空间',
+	`request_headers_encrypted` TEXT DEFAULT NULL COMMENT 'HTTP/HLS请求头密文',
+	`header_hosts_json` TEXT DEFAULT NULL COMMENT '请求头精确主机白名单',
+	`requires_headers` BOOLEAN DEFAULT FALSE COMMENT '是否等待更新请求头',
     `create_time` DATETIME DEFAULT NULL COMMENT '创建时间',
     `update_time` DATETIME DEFAULT NULL COMMENT '更新时间',
     `finish_time` DATETIME DEFAULT NULL COMMENT '完成时间',
@@ -262,6 +270,131 @@ CREATE TABLE `download_task` (
 	KEY `idx_download_user_type_state_create` (`user_id`, `type`, `state`, `create_time`),
 	KEY `idx_download_schedule` (`state`, `type`, `next_retry_at`, `create_time`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='下载任务表';
+
+-- 可安装插件表
+CREATE TABLE `installed_plugin` (
+    `id` VARCHAR(128) NOT NULL,
+    `name` VARCHAR(255) NOT NULL,
+    `version` VARCHAR(64) NOT NULL,
+    `api_version` VARCHAR(32) NOT NULL,
+    `author` VARCHAR(255) DEFAULT NULL,
+    `description` TEXT DEFAULT NULL,
+    `manifest_json` TEXT NOT NULL,
+    `package_path` TEXT NOT NULL,
+    `wasm_path` TEXT NOT NULL,
+    `package_sha256` VARCHAR(64) NOT NULL,
+    `wasm_sha256` VARCHAR(64) NOT NULL,
+    `permissions` TEXT DEFAULT NULL,
+    `enabled` BOOLEAN NOT NULL DEFAULT TRUE,
+    `installed_by` VARCHAR(64) DEFAULT NULL,
+    `created_at` DATETIME NOT NULL,
+    `updated_at` DATETIME NOT NULL,
+    PRIMARY KEY (`id`),
+    KEY `idx_installed_plugin_enabled` (`enabled`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='可安装WASM插件';
+
+-- 用户订阅表
+CREATE TABLE `subscription` (
+    `id` VARCHAR(64) NOT NULL,
+    `user_id` VARCHAR(64) NOT NULL,
+    `name` VARCHAR(255) NOT NULL,
+    `plugin_id` VARCHAR(128) NOT NULL,
+    `plugin_version` VARCHAR(64) NOT NULL,
+    `config_encrypted` TEXT,
+    `granted_permissions` TEXT,
+    `schedule_time` VARCHAR(5) NOT NULL,
+    `default_path` TEXT NOT NULL,
+    `initial_limit` INT NOT NULL DEFAULT 10,
+    `max_items_per_run` INT NOT NULL DEFAULT 100,
+    `source_generation` INT NOT NULL DEFAULT 1,
+    `enabled` BOOLEAN NOT NULL DEFAULT TRUE,
+    `status` VARCHAR(32) NOT NULL DEFAULT 'ready',
+    `last_error` TEXT,
+    `next_run_at` DATETIME DEFAULT NULL,
+    `last_run_at` DATETIME DEFAULT NULL,
+    `created_at` DATETIME NOT NULL,
+    `updated_at` DATETIME NOT NULL,
+    PRIMARY KEY (`id`),
+    KEY `idx_subscription_user` (`user_id`),
+    KEY `idx_subscription_plugin_id` (`plugin_id`),
+    KEY `idx_subscription_due` (`enabled`, `next_run_at`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='插件订阅';
+
+CREATE TABLE `subscription_run` (
+    `id` VARCHAR(64) NOT NULL,
+    `subscription_id` VARCHAR(64) NOT NULL,
+    `trigger` VARCHAR(16) NOT NULL,
+    `status` VARCHAR(32) NOT NULL,
+    `run_token` VARCHAR(64) DEFAULT NULL,
+    `lease_expires_at` DATETIME DEFAULT NULL,
+    `items_found` INT NOT NULL DEFAULT 0,
+    `tasks_created` INT NOT NULL DEFAULT 0,
+    `items_skipped` INT NOT NULL DEFAULT 0,
+    `error_msg` TEXT,
+    `started_at` DATETIME DEFAULT NULL,
+    `finished_at` DATETIME DEFAULT NULL,
+    `created_at` DATETIME NOT NULL,
+    PRIMARY KEY (`id`),
+    KEY `idx_subscription_run` (`subscription_id`),
+    KEY `idx_subscription_run_status` (`status`),
+    KEY `idx_subscription_run_token` (`run_token`),
+    KEY `idx_subscription_run_lease` (`lease_expires_at`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='订阅执行记录';
+
+CREATE TABLE `subscription_item` (
+    `id` VARCHAR(64) NOT NULL,
+    `subscription_id` VARCHAR(64) NOT NULL,
+    `source_generation` INT NOT NULL,
+    `item_key` VARCHAR(64) NOT NULL,
+    `external_id` TEXT,
+    `title` TEXT,
+    `url` TEXT NOT NULL,
+    `download_type` VARCHAR(16) NOT NULL,
+    `file_name` TEXT,
+    `save_path` TEXT NOT NULL,
+    `thumbnail_url` TEXT,
+    `request_headers_encrypted` TEXT,
+    `header_hosts_json` TEXT,
+    `headers_digest` VARCHAR(64),
+    `download_task_id` VARCHAR(64),
+    `status` VARCHAR(32) NOT NULL,
+    `error_msg` TEXT,
+    `thumbnail_status` VARCHAR(32) NOT NULL DEFAULT 'none',
+    `thumbnail_retry_count` INT NOT NULL DEFAULT 0,
+    `thumbnail_next_retry_at` DATETIME DEFAULT NULL,
+    `thumbnail_error` TEXT,
+    `published_at` DATETIME DEFAULT NULL,
+    `created_at` DATETIME NOT NULL,
+    `updated_at` DATETIME NOT NULL,
+    PRIMARY KEY (`id`),
+    UNIQUE KEY `uk_subscription_item` (`subscription_id`, `source_generation`, `item_key`),
+    KEY `idx_subscription_item_subscription` (`subscription_id`),
+    KEY `idx_subscription_item_task` (`download_task_id`),
+    KEY `idx_subscription_item_status` (`status`),
+    KEY `idx_subscription_thumbnail_status` (`thumbnail_status`),
+    KEY `idx_subscription_thumbnail_retry` (`thumbnail_next_retry_at`),
+    KEY `idx_subscription_item_published` (`published_at`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='订阅条目';
+
+CREATE TABLE `plugin_audit_log` (
+    `id` VARCHAR(64) NOT NULL,
+    `plugin_id` VARCHAR(128) NOT NULL,
+    `plugin_version` VARCHAR(64),
+    `subscription_id` VARCHAR(64),
+    `user_id` VARCHAR(64),
+    `action` VARCHAR(64) NOT NULL,
+    `summary` TEXT,
+    `result_count` INT NOT NULL DEFAULT 0,
+    `duration_ms` BIGINT NOT NULL DEFAULT 0,
+    `status` VARCHAR(32) NOT NULL,
+    `error_msg` TEXT,
+    `created_at` DATETIME NOT NULL,
+    PRIMARY KEY (`id`),
+    KEY `idx_plugin_audit_plugin` (`plugin_id`),
+    KEY `idx_plugin_audit_subscription` (`subscription_id`),
+    KEY `idx_plugin_audit_user` (`user_id`),
+    KEY `idx_plugin_audit_created` (`created_at`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='插件审计日志';
 
 -- ================================
 -- 6. 创建分享和回收站表

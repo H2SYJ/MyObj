@@ -74,3 +74,31 @@ func TestHLSHeaderRoundTripperScopesAllCustomHeaders(t *testing.T) {
 		t.Fatalf("请求头主机作用域错误: %#v", seen)
 	}
 }
+
+func TestHeaderRoundTripperStripsRedirectCopiedCredentials(t *testing.T) {
+	base := hlsRoundTripFunc(func(req *http.Request) (*http.Response, error) {
+		if req.URL.Hostname() == "blocked.example.com" && req.Header.Get("Cookie") != "" {
+			t.Fatal("跨主机重定向请求携带了插件Cookie")
+		}
+		return &http.Response{StatusCode: 200, Body: io.NopCloser(strings.NewReader("ok")), Header: make(http.Header)}, nil
+	})
+	transport := &hlsHeaderRoundTripper{base: base, headers: map[string]string{"Cookie": "session=secret"}, allowedHosts: map[string]struct{}{"allowed.example.com": {}}}
+	req, _ := http.NewRequest(http.MethodGet, "https://blocked.example.com/file", nil)
+	// 模拟net/http从上一跳复制过来的敏感头。
+	req.Header.Set("Cookie", "session=secret")
+	if _, err := transport.RoundTrip(req); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestRequestHeaderRejectsPrefixesAndExtraIP(t *testing.T) {
+	if _, _, err := NormalizeRequestConfig("https://93.184.216.34/file", map[string]string{"X-Forwarded-Custom": "bad"}, nil); err == nil {
+		t.Fatal("不应允许X-Forwarded-*请求头")
+	}
+	if _, _, err := NormalizeRequestConfig("https://93.184.216.34/file", map[string]string{"Cookie": "ok"}, []string{"8.8.8.8"}); err == nil {
+		t.Fatal("额外白名单只允许精确域名，不允许IP")
+	}
+	if _, _, err := NormalizeRequestConfig("https://93.184.216.34/file", map[string]string{"If-None-Match": "etag"}, nil); err != nil {
+		t.Fatalf("业务条件头不应被扩大禁止范围: %v", err)
+	}
+}

@@ -3,6 +3,7 @@ export default {
     files: '我的文件',
     shares: '我的分享',
     offline: '离线下载',
+    subscriptions: '订阅管理',
     tasks: '任务中心',
     trash: '回收站',
     square: '文件广场',
@@ -13,7 +14,8 @@ export default {
     adminGroups: '组管理',
     adminPermissions: '权限管理',
     adminDisks: '磁盘管理',
-    adminSystem: '系统配置'
+    adminSystem: '系统配置',
+    adminPlugins: '插件中心'
   },
   error: {
     title: '出现错误',
@@ -77,6 +79,7 @@ export default {
     shares: '我的分享',
     tasks: '传输列表',
     offline: '离线下载',
+    subscriptions: '订阅管理',
     trash: '回收站',
     square: '文件广场',
     settings: '系统设置',

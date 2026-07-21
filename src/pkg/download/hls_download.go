@@ -43,25 +43,6 @@ type HLSDownloadOptions struct {
 	ReserveSpace     func(requiredSize int64) (int64, error)
 }
 
-// HLSCredentialsRequiredError 表示远端拒绝当前HLS凭据，应暂停任务等待用户更新请求头。
-type HLSCredentialsRequiredError struct {
-	StatusCode int
-	URL        string
-	Reason     string
-}
-
-func (e *HLSCredentialsRequiredError) Error() string {
-	if e.Reason != "" {
-		return e.Reason
-	}
-	return fmt.Sprintf("HLS资源返回%d，请更新Cookie、Authorization或其他请求头后恢复任务", e.StatusCode)
-}
-
-func IsHLSCredentialsRequired(err error) bool {
-	var target *HLSCredentialsRequiredError
-	return errors.As(err, &target)
-}
-
 type hlsProgress struct {
 	mu                sync.Mutex
 	taskID            string
@@ -151,9 +132,6 @@ func DownloadHLSWithContext(ctx context.Context, taskID, rawURL, userID, tempDir
 			return nil, reserveErr
 		}
 		opts.ReservedSize = reserved
-	}
-	if err := ensureVirtualPath(ctx, userID, opts.VirtualPath, repoFactory); err != nil {
-		return nil, fmt.Errorf("创建虚拟路径失败: %w", err)
 	}
 	uploadData := &upload.FileUploadData{
 		TempFilePath: outputPath, FileName: opts.OutputFileName, FileSize: stat.Size(),
@@ -451,7 +429,7 @@ func downloadHLSItem(ctx context.Context, client *http.Client, rawURL string, of
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode == http.StatusUnauthorized || resp.StatusCode == http.StatusForbidden {
-		return "", 0, &HLSCredentialsRequiredError{StatusCode: resp.StatusCode, URL: rawURL}
+		return "", 0, &CredentialsRequiredError{StatusCode: resp.StatusCode, URL: rawURL}
 	}
 	if length > 0 {
 		if resp.StatusCode != http.StatusPartialContent {

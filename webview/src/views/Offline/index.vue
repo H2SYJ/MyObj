@@ -310,7 +310,7 @@
             </el-select>
           </el-form-item>
           <template v-if="showHLSOptions">
-            <el-form-item :label="t('offline.outputFileName')">
+            <el-form-item v-if="showHLSFileName" :label="t('offline.outputFileName')">
               <el-input v-model="downloadForm.file_name" :placeholder="t('offline.outputFileNamePlaceholder')" />
             </el-form-item>
             <el-form-item :label="t('offline.requestHeaders')">
@@ -621,6 +621,10 @@
   })
 
   const showHLSOptions = computed(() => {
+    return detectedInputType.value === 'url'
+  })
+
+  const showHLSFileName = computed(() => {
     if (downloadForm.download_type === 'hls') return true
     if (downloadForm.download_type === 'http') return false
     return /\.m3u8(?:$|[?#])/i.test(downloadForm.inputText.trim())
@@ -632,11 +636,7 @@
     'content-length',
     'forwarded',
     'host',
-    'if-match',
-    'if-modified-since',
-    'if-none-match',
     'if-range',
-    'if-unmodified-since',
     'keep-alive',
     'proxy-authenticate',
     'proxy-authorization',
@@ -677,7 +677,7 @@
       if (!name && !value) continue
       if (!/^[!#$%&'*+.^_`|~0-9A-Za-z-]+$/.test(name)) throw new Error(t('offline.invalidHeaderName', { name }))
       const lowerName = name.toLowerCase()
-      if (blockedHeaderNames.has(lowerName) || lowerName.startsWith('proxy-')) {
+      if (blockedHeaderNames.has(lowerName) || lowerName.startsWith('proxy-') || lowerName.startsWith('x-forwarded-')) {
         throw new Error(t('offline.blockedHeaderName', { name }))
       }
       if (seen.has(lowerName)) throw new Error(t('offline.duplicateHeaderName', { name }))
@@ -973,7 +973,7 @@
             file_password: downloadForm.enable_encryption ? downloadForm.file_password : undefined,
             download_type: downloadForm.download_type,
             file_name:
-              showHLSOptions.value && downloadForm.file_name.trim() ? downloadForm.file_name.trim() : undefined,
+              showHLSFileName.value && downloadForm.file_name.trim() ? downloadForm.file_name.trim() : undefined,
             request_headers: showHLSOptions.value ? validateHeaderRows(hlsHeaderRows.value) : undefined,
             header_hosts:
               showHLSOptions.value && downloadForm.header_hosts.length ? downloadForm.header_hosts : undefined

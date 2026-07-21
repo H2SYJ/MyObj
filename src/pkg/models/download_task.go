@@ -61,11 +61,11 @@ type DownloadTask struct {
 	NextRetryAt *time.Time `gorm:"column:next_retry_at;type:datetime;index:idx_download_next_retry;index:idx_download_schedule,priority:3"`
 	// 已预留的用户空间
 	ReservedSize int64 `gorm:"column:reserved_size;type:bigint;default:0"`
-	// HLS自定义请求头密文，永不通过API返回
+	// HTTP/HLS自定义请求头密文，永不通过API返回
 	RequestHeadersEncrypted string `gorm:"column:request_headers_encrypted;type:text"`
-	// HLS请求头允许发送的精确主机列表（JSON）
+	// HTTP/HLS请求头允许发送的精确主机列表（JSON）
 	HeaderHostsJSON string `gorm:"column:header_hosts_json;type:text"`
-	// 是否需要用户更新HLS请求头后再恢复
+	// 是否需要用户更新HTTP/HLS请求头后再恢复
 	RequiresHeaders bool `gorm:"column:requires_headers;type:boolean;default:false"`
 	// 创建时间
 	CreateTime custom_type.JsonTime `gorm:"column:create_time;type:datetime;index:idx_download_user_type_state_create,priority:4;index:idx_download_schedule,priority:4"`

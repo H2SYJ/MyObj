@@ -1,5 +1,54 @@
 package request
 
+import (
+	"bytes"
+	"encoding/json"
+	"fmt"
+	"io"
+	"strings"
+)
+
+type UniqueHTTPHeaders map[string]string
+
+// UnmarshalJSON 在Gin绑定请求时保留重复名称校验，避免普通map静默覆盖凭据。
+func (headers *UniqueHTTPHeaders) UnmarshalJSON(data []byte) error {
+	decoder := json.NewDecoder(bytes.NewReader(data))
+	token, err := decoder.Token()
+	if err != nil || token != json.Delim('{') {
+		return fmt.Errorf("request_headers必须是字符串键值对象")
+	}
+	result := UniqueHTTPHeaders{}
+	seen := map[string]bool{}
+	for decoder.More() {
+		nameToken, err := decoder.Token()
+		if err != nil {
+			return err
+		}
+		name, ok := nameToken.(string)
+		if !ok {
+			return fmt.Errorf("请求头名称必须是字符串")
+		}
+		lower := strings.ToLower(name)
+		if seen[lower] {
+			return fmt.Errorf("请求头名称重复: %s", name)
+		}
+		var value string
+		if err := decoder.Decode(&value); err != nil {
+			return fmt.Errorf("请求头值必须是字符串")
+		}
+		seen[lower] = true
+		result[name] = value
+	}
+	if _, err := decoder.Token(); err != nil {
+		return err
+	}
+	if token, err := decoder.Token(); err != io.EOF || token != nil {
+		return fmt.Errorf("request_headers包含多余内容")
+	}
+	*headers = result
+	return nil
+}
+
 // CreateOfflineDownloadRequest 创建离线下载任务请求
 type CreateOfflineDownloadRequest struct {
 	// 下载URL
@@ -14,9 +63,9 @@ type CreateOfflineDownloadRequest struct {
 	DownloadType string `json:"download_type"`
 	// HLS输出文件名（可选）
 	FileName string `json:"file_name"`
-	// HLS自定义请求头；指针用于区分未传递与显式清空
-	RequestHeaders *map[string]string `json:"request_headers"`
-	// 允许携带自定义请求头的额外主机
+	// HTTP/HLS自定义请求头；指针用于区分未传递与显式清空
+	RequestHeaders *UniqueHTTPHeaders `json:"request_headers"`
+	// 允许携带自定义请求头的额外精确主机
 	HeaderHosts *[]string `json:"header_hosts"`
 }
 
@@ -41,7 +90,7 @@ type TaskOperationRequest struct {
 	// 加密任务恢复密码，仅恢复操作使用且不会持久化
 	FilePassword string `json:"file_password"`
 	// 更新HLS自定义请求头；未传递时继续使用原值
-	RequestHeaders *map[string]string `json:"request_headers"`
+	RequestHeaders *UniqueHTTPHeaders `json:"request_headers"`
 	// 更新允许携带自定义请求头的额外主机
 	HeaderHosts *[]string `json:"header_hosts"`
 }
