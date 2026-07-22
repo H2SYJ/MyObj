@@ -688,6 +688,7 @@ result, err := myobjplugin.FilesQuery(myobjplugin.FileQuery{
     IsEncrypted:  &encrypted,
     HasThumbnail: &hasThumbnail,
     Limit:        100,
+    MaxResponseBytes: 256 * 1024,
 })
 if err != nil {
     return nil, err
@@ -750,7 +751,7 @@ if result.NextCursor != "" {
 
 ### 12.4 返回限额与审计
 
-`FileGet` 和 `FilesQuery` 不限制调用次数；每次插件运行累计最多返回 500 条记录，单页最多 100 条。累计结果超限时返回 `file_result_limit`。
+`FileGet` 和 `FilesQuery` 不限制调用次数；每次插件运行累计最多返回 500 条记录，单页最多 100 条。累计结果超限时返回 `file_result_limit`。`FilesQuery` 默认在 WASM 内预留 2 MiB 响应缓冲区，可通过 `FileQuery.MaxResponseBytes` 调整为 64 KiB 至 2 MiB；频繁查询少量结果时应设置尽可能小的值，设置过小而无法容纳响应会返回 `host_call_failed`。
 
 宿主会审计插件、版本、订阅、用户、查询摘要、返回数量、耗时和状态，但不记录完整文件列表。插件也不应把文件列表写入 stderr。
 

@@ -16,7 +16,9 @@ const (
 	minimumHTTPResponseBytes     = 64 * 1024
 	maximumHTTPResponseBytes     = 4 * 1024 * 1024
 	maxHTTPResponseMetadataBytes = 128 * 1024
-	maxFileOutputBytes           = 2 * 1024 * 1024
+	defaultFileResponseBytes     = 2 * 1024 * 1024
+	minimumFileResponseBytes     = 64 * 1024
+	maximumFileResponseBytes     = 2 * 1024 * 1024
 )
 
 type InvocationRequest struct {
@@ -169,6 +171,8 @@ type FileQuery struct {
 	UpdatedBefore *time.Time `json:"updated_before,omitempty"`
 	Cursor        string     `json:"cursor,omitempty"`
 	Limit         int        `json:"limit,omitempty"`
+	// MaxResponseBytes 控制 WASM 内为本次查询预留的响应缓冲区，不会传给宿主。
+	MaxResponseBytes int `json:"-"`
 }
 
 type SafeFileInfo struct {
@@ -192,7 +196,7 @@ type FileQueryResponse struct {
 
 func FileGet(ufID string) (SafeFileInfo, error) {
 	var response FileQueryResponse
-	if err := callFileGet(map[string]string{"uf_id": ufID}, &response, maxFileOutputBytes); err != nil {
+	if err := callFileGet(map[string]string{"uf_id": ufID}, &response, defaultFileResponseBytes); err != nil {
 		return SafeFileInfo{}, err
 	}
 	if response.Error != "" || len(response.Files) != 1 {
@@ -206,11 +210,25 @@ func FileGet(ufID string) (SafeFileInfo, error) {
 
 func FilesQuery(query FileQuery) (FileQueryResponse, error) {
 	var response FileQueryResponse
-	if err := callFilesQuery(query, &response, maxFileOutputBytes); err != nil {
+	capacity, err := fileResponseCapacity(query.MaxResponseBytes)
+	if err != nil {
+		return response, err
+	}
+	if err := callFilesQuery(query, &response, capacity); err != nil {
 		return response, err
 	}
 	if response.Error != "" {
 		return response, fmt.Errorf("%s", response.Error)
 	}
 	return response, nil
+}
+
+func fileResponseCapacity(requested int) (int, error) {
+	if requested == 0 {
+		return defaultFileResponseBytes, nil
+	}
+	if requested < minimumFileResponseBytes || requested > maximumFileResponseBytes {
+		return 0, fmt.Errorf("file_response_limit_out_of_range")
+	}
+	return requested, nil
 }
