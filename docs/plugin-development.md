@@ -518,10 +518,11 @@ if err != nil {
 }
 ```
 
-限制：
+宿主不限制单次插件运行的 HTTP 调用次数，但插件仍受 60 秒执行超时约束。
+
+其他限制：
 
 - 仅支持 `GET`、`HEAD`、`POST`。
-- 单次插件运行最多调用 20 次。
 - 请求 body 最多 1 MiB。
 - 单个响应 body 最多 10 MiB。
 - 最多 32 个请求头，请求头名称和值合计不超过 32 KiB。
@@ -888,7 +889,6 @@ GOFLAGS=-buildvcs=false tinygo build -target=wasip1 -opt=z -o plugin.wasm .
 | 错误 | 含义 | 建议处理 |
 | --- | --- | --- |
 | `permission_denied` | manifest 未声明、订阅未授权或运行中权限被撤销 | 停止当前能力；可选能力应降级，必需能力返回清晰错误 |
-| `http_request_limit` | 单次执行 HTTP 调用超过 20 次 | 合并请求、增大源端分页或减少逐条请求 |
 | `response_too_large` | HTTP 响应超过 10 MiB | 使用源端分页或请求更小字段集 |
 | `method_not_allowed` | 使用了 GET/HEAD/POST 以外方法 | 调整数据源协议或通过 POST 表达操作 |
 | `invalid_url` | URL 无效或未通过公网安全策略 | 检查 scheme、DNS 和重定向目标 |
@@ -987,7 +987,7 @@ files_query(request_ptr: u32, request_len: u32, output_ptr: u32, output_cap: u32
 - [ ] 只声明实际需要的权限，并在 README 解释每项用途。
 - [ ] 所有必填和类型规则都由 `ValidateConfig` 再次校验。
 - [ ] `Healthcheck`、`ValidateConfig` 不调用宿主 API。
-- [ ] `Fetch` 在 60 秒内完成，HTTP 调用不超过 20 次。
+- [ ] `Fetch` 在 60 秒内完成，HTTP 调用次数保持合理。
 - [ ] 返回条目不超过合理规模，stdout 明显小于 2 MiB。
 - [ ] 每个条目有稳定 ID，签名 URL 更新不会改变 ID。
 - [ ] HTTP/HLS、文件名、保存目录和发布时间均已验证。

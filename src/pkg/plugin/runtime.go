@@ -22,7 +22,6 @@ import (
 const (
 	MaxInvocationOutput = 2 * 1024 * 1024
 	MaxInvocationLog    = 256 * 1024
-	MaxHTTPRequests     = 20
 	MaxHTTPResponse     = 10 * 1024 * 1024
 )
 
@@ -33,7 +32,6 @@ type InvocationHost struct {
 	HTTPClient      *http.Client
 	ValidateHTTPURL func(string) error
 	FileQuery       FileQueryFunc
-	httpCount       int
 	fileCount       int
 	fileResults     int
 	mu              sync.Mutex
@@ -127,13 +125,6 @@ func (r *Runtime) hostHTTPRequest(ctx context.Context, module api.Module, reques
 	host := hostFromContext(ctx)
 	if host == nil || !host.Permissions[PermissionPublicHTTP] || host.HTTPClient == nil {
 		return writeHostError(module, outputPtr, outputCap, "permission_denied")
-	}
-	host.mu.Lock()
-	host.httpCount++
-	count := host.httpCount
-	host.mu.Unlock()
-	if count > MaxHTTPRequests {
-		return writeHostError(module, outputPtr, outputCap, "http_request_limit")
 	}
 	requestBytes, ok := module.Memory().Read(requestPtr, requestLen)
 	if !ok {

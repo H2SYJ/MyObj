@@ -39,7 +39,7 @@ func main() {
 
 - 单次 WASM 执行最长 60 秒，内存上限 64 MiB。
 - stdout 最多 2 MiB，stderr 最多 256 KiB。
-- 单次运行最多 20 次宿主 HTTP 调用，单个响应最多 10 MiB。
+- 宿主 HTTP 调用不限制次数，单个响应最多 10 MiB。
 - `FileGet` 和 `FilesQuery` 合计最多 10 次、累计最多返回 500 条。
 - `healthcheck` 和 `validate_config` 在无宿主权限环境运行，不能访问网络或查询文件。
 - 非 `wasip1` 原生测试中调用宿主函数会返回 `host_call_requires_wasip1`；应把解析逻辑拆成纯函数测试。
