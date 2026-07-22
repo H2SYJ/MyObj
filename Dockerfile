@@ -6,6 +6,8 @@ FROM --platform=$BUILDPLATFORM golang:1.25-alpine AS builder
 
 ARG TARGETOS
 ARG TARGETARCH
+# 默认优先使用国内 Go 模块代理；构建时仍可通过 --build-arg GOPROXY=... 覆盖。
+ARG GOPROXY=https://goproxy.cn|https://proxy.golang.org|direct
 
 # 设置工作目录
 WORKDIR /build
@@ -18,7 +20,7 @@ COPY go.mod go.sum ./
 
 # 下载依赖，并让模块缓存在不同构建之间复用。
 RUN --mount=type=cache,target=/go/pkg/mod,sharing=locked \
-    go mod download
+    GOPROXY="${GOPROXY}" go mod download
 
 # 仅复制 Go 源码和编译期依赖的 Swagger Go 包，前端产物变化不会使
 # Go 编译缓存失效。
