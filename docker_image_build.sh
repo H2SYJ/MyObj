@@ -1,8 +1,8 @@
-#!/usr/bin/env bash
+#!/bin/sh
 
-set -Eeuo pipefail
+set -eu
 
-ROOT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
+ROOT_DIR="$(CDPATH= cd "$(dirname "$0")" && pwd)"
 IMAGE="${1:-myobj:latest}"
 
 if ! command -v docker >/dev/null 2>&1; then

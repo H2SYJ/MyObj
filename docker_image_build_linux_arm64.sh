@@ -1,8 +1,8 @@
-#!/usr/bin/env bash
+#!/bin/sh
 
-set -Eeuo pipefail
+set -eu
 
-ROOT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
+ROOT_DIR="$(CDPATH= cd "$(dirname "$0")" && pwd)"
 PLATFORM="linux/arm64"
 IMAGE="${1:-myobj:latest}"
 OUTPUT_FILE="${2:-${ROOT_DIR}/myobj-linux-arm64.tar}"
@@ -29,12 +29,12 @@ echo "正在构建前端资源……"
 )
 
 echo "正在构建 ${PLATFORM} 镜像：${IMAGE}"
-OUTPUT_DIR="$(dirname -- "${OUTPUT_FILE}")"
+OUTPUT_DIR="$(dirname "${OUTPUT_FILE}")"
 mkdir -p "${OUTPUT_DIR}"
 
 TEMP_FILE="${OUTPUT_FILE}.tmp"
-rm -f -- "${TEMP_FILE}"
-trap 'rm -f -- "${TEMP_FILE}"' EXIT
+rm -f "${TEMP_FILE}"
+trap 'rm -f "${TEMP_FILE}"' 0
 
 docker buildx build \
     --platform "${PLATFORM}" \
@@ -42,13 +42,13 @@ docker buildx build \
     --output "type=docker,dest=${TEMP_FILE}" \
     "${ROOT_DIR}"
 
-if [[ ! -s "${TEMP_FILE}" ]]; then
+if [ ! -s "${TEMP_FILE}" ]; then
     echo "错误：镜像导出文件为空。" >&2
     exit 1
 fi
 
-mv -f -- "${TEMP_FILE}" "${OUTPUT_FILE}"
-trap - EXIT
+mv -f "${TEMP_FILE}" "${OUTPUT_FILE}"
+trap - 0
 
 echo "构建完成。"
 echo "镜像：${IMAGE}"
