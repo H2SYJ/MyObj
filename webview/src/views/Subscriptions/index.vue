@@ -76,11 +76,11 @@
             <el-input
               v-else
               v-model="form.config[field.key]"
-              :type="field.secret ? 'password' : 'text'"
+              :type="field.type"
               :placeholder="
                 field.secret && configuredSecrets.includes(field.key) ? '已配置，留空保持不变' : field.description
               "
-              show-password
+              :show-password="field.type === 'password'"
             />
           </el-form-item>
         </template>

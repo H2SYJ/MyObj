@@ -22,10 +22,7 @@
         <el-form-item :label="t('admin.system.offlineDownloadProxy')">
           <el-input
             v-model="configData.offline_download_proxy"
-            type="password"
-            show-password
             clearable
-            autocomplete="new-password"
             :placeholder="t('admin.system.offlineDownloadProxyPlaceholder')"
           />
           <div class="form-tip">{{ t('admin.system.offlineDownloadProxyTip') }}</div>
