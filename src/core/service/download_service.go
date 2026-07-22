@@ -629,56 +629,79 @@ func (d *DownloadService) buildTaskRequestUpdates(task *models.DownloadTask, req
 
 // CancelTask 取消下载任务
 func (d *DownloadService) CancelTask(req *request.TaskOperationRequest, userID string) (*models.JsonResponse, error) {
-	ctx := context.Background()
-
-	// 验证任务是否属于该用户
-	task, err := d.factory.DownloadTask().GetByID(ctx, req.TaskID)
-	if err != nil {
-		logger.LOG.Error("获取下载任务失败", "error", err, "taskID", req.TaskID)
-		return nil, fmt.Errorf("任务不存在")
-	}
-
-	if task.UserID != userID {
-		logger.LOG.Warn("用户尝试操作他人任务", "userID", userID, "taskID", req.TaskID, "taskOwner", task.UserID)
-		return nil, fmt.Errorf("无权操作此任务")
-	}
-
-	if !isManagedOfflineType(task.Type) {
-		return nil, fmt.Errorf("该任务类型不支持取消")
-	}
-	if err := d.manager.Cancel(req.TaskID); err != nil {
-		logger.LOG.Error("取消下载任务失败", "error", err, "taskID", req.TaskID)
-		return nil, fmt.Errorf("取消任务失败: %w", err)
+	if err := d.cancelTask(req.TaskID, userID); err != nil {
+		return nil, err
 	}
 
 	logger.LOG.Info("下载任务已取消", "taskID", req.TaskID, "userID", userID)
 	return models.NewJsonResponse(200, "任务已取消", nil), nil
 }
 
-// DeleteTask 删除下载任务
-func (d *DownloadService) DeleteTask(req *request.DeleteTaskRequest, userID string) (*models.JsonResponse, error) {
+func (d *DownloadService) cancelTask(taskID string, userID string) error {
 	ctx := context.Background()
 
 	// 验证任务是否属于该用户
-	task, err := d.factory.DownloadTask().GetByID(ctx, req.TaskID)
+	task, err := d.factory.DownloadTask().GetByID(ctx, taskID)
 	if err != nil {
-		logger.LOG.Error("获取下载任务失败", "error", err, "taskID", req.TaskID)
-		return nil, fmt.Errorf("任务不存在")
+		logger.LOG.Error("获取下载任务失败", "error", err, "taskID", taskID)
+		return fmt.Errorf("任务不存在")
 	}
 
 	if task.UserID != userID {
-		logger.LOG.Warn("用户尝试删除他人任务", "userID", userID, "taskID", req.TaskID, "taskOwner", task.UserID)
-		return nil, fmt.Errorf("无权删除此任务")
+		logger.LOG.Warn("用户尝试操作他人任务", "userID", userID, "taskID", taskID, "taskOwner", task.UserID)
+		return fmt.Errorf("无权操作此任务")
+	}
+
+	if !isManagedOfflineType(task.Type) {
+		return fmt.Errorf("该任务类型不支持取消")
+	}
+	if err := d.manager.Cancel(taskID); err != nil {
+		logger.LOG.Error("取消下载任务失败", "error", err, "taskID", taskID)
+		return fmt.Errorf("取消任务失败: %w", err)
+	}
+	return nil
+}
+
+// BatchCancelTasks 批量取消下载任务，单个任务失败不影响其他任务。
+func (d *DownloadService) BatchCancelTasks(req *request.BatchTaskOperationRequest, userID string) *models.JsonResponse {
+	return d.batchTaskOperation(req.TaskIDs, "取消", func(taskID string) error {
+		return d.cancelTask(taskID, userID)
+	})
+}
+
+// DeleteTask 删除下载任务
+func (d *DownloadService) DeleteTask(req *request.DeleteTaskRequest, userID string) (*models.JsonResponse, error) {
+	if err := d.deleteTask(req.TaskID, userID); err != nil {
+		return nil, err
+	}
+
+	logger.LOG.Info("下载任务已删除", "taskID", req.TaskID, "userID", userID)
+	return models.NewJsonResponse(200, "任务已删除", nil), nil
+}
+
+func (d *DownloadService) deleteTask(taskID string, userID string) error {
+	ctx := context.Background()
+
+	// 验证任务是否属于该用户
+	task, err := d.factory.DownloadTask().GetByID(ctx, taskID)
+	if err != nil {
+		logger.LOG.Error("获取下载任务失败", "error", err, "taskID", taskID)
+		return fmt.Errorf("任务不存在")
+	}
+
+	if task.UserID != userID {
+		logger.LOG.Warn("用户尝试删除他人任务", "userID", userID, "taskID", taskID, "taskOwner", task.UserID)
+		return fmt.Errorf("无权删除此任务")
 	}
 
 	// 只能删除终态任务
 	if task.State != enum.DownloadTaskStateFinished.Value() && task.State != enum.DownloadTaskStateFailed.Value() && task.State != enum.DownloadTaskStateCanceled.Value() {
-		return nil, fmt.Errorf("只能删除已完成、失败或取消的任务")
+		return fmt.Errorf("只能删除已完成、失败或取消的任务")
 	}
 
 	// 删除任务前，先清理临时文件（如果存在）
 	if task.Path != "" && download.IsTempPath(task.Path) {
-		logger.LOG.Info("删除任务时清理临时文件", "taskID", req.TaskID, "path", task.Path)
+		logger.LOG.Info("删除任务时清理临时文件", "taskID", taskID, "path", task.Path)
 		if err := os.RemoveAll(task.Path); err != nil {
 			logger.LOG.Warn("清理临时文件失败", "error", err, "path", task.Path)
 			// 清理失败不影响删除任务
@@ -687,22 +710,53 @@ func (d *DownloadService) DeleteTask(req *request.DeleteTaskRequest, userID stri
 
 	// 如果是种子下载任务，清理对应的临时目录
 	if task.Type == enum.DownloadTaskTypeBtp.Value() || task.Type == enum.DownloadTaskTypeMagnet.Value() {
-		torrentTempDir := filepath.Join(d.tempDir, fmt.Sprintf("torrent_%s", req.TaskID))
+		torrentTempDir := filepath.Join(d.tempDir, fmt.Sprintf("torrent_%s", taskID))
 		if _, err := os.Stat(torrentTempDir); err == nil {
-			logger.LOG.Info("删除种子下载临时目录", "taskID", req.TaskID, "path", torrentTempDir)
+			logger.LOG.Info("删除种子下载临时目录", "taskID", taskID, "path", torrentTempDir)
 			if err := os.RemoveAll(torrentTempDir); err != nil {
 				logger.LOG.Warn("清理种子临时目录失败", "error", err, "path", torrentTempDir)
 			}
 		}
 	}
 
-	if err := d.factory.DownloadTask().Delete(ctx, req.TaskID); err != nil {
-		logger.LOG.Error("删除下载任务失败", "error", err, "taskID", req.TaskID)
-		return nil, fmt.Errorf("删除任务失败: %w", err)
+	if err := d.factory.DownloadTask().Delete(ctx, taskID); err != nil {
+		logger.LOG.Error("删除下载任务失败", "error", err, "taskID", taskID)
+		return fmt.Errorf("删除任务失败: %w", err)
 	}
+	return nil
+}
 
-	logger.LOG.Info("下载任务已删除", "taskID", req.TaskID, "userID", userID)
-	return models.NewJsonResponse(200, "任务已删除", nil), nil
+// BatchDeleteTasks 批量删除下载任务，单个任务失败不影响其他任务。
+func (d *DownloadService) BatchDeleteTasks(req *request.BatchTaskOperationRequest, userID string) *models.JsonResponse {
+	return d.batchTaskOperation(req.TaskIDs, "删除", func(taskID string) error {
+		return d.deleteTask(taskID, userID)
+	})
+}
+
+func (d *DownloadService) batchTaskOperation(taskIDs []string, operation string, operate func(string) error) *models.JsonResponse {
+	result := &response.BatchTaskOperationResponse{
+		TotalCount:  len(taskIDs),
+		FailedItems: make([]response.BatchTaskOperationFailedItem, 0),
+	}
+	for _, taskID := range taskIDs {
+		if err := operate(taskID); err != nil {
+			result.FailedItems = append(result.FailedItems, response.BatchTaskOperationFailedItem{
+				TaskID: taskID,
+				Reason: err.Error(),
+			})
+			continue
+		}
+		result.SuccessCount++
+	}
+	result.FailedCount = len(result.FailedItems)
+
+	message := fmt.Sprintf("成功%s%d个任务", operation, result.SuccessCount)
+	if result.FailedCount > 0 {
+		message += fmt.Sprintf("，%d个任务失败", result.FailedCount)
+	}
+	logger.LOG.Info("批量下载任务操作完成", "operation", operation, "total", result.TotalCount,
+		"success", result.SuccessCount, "failed", result.FailedCount)
+	return models.NewJsonResponse(200, message, result)
 }
 
 // convertTaskToResponse 转换任务模型为响应格式

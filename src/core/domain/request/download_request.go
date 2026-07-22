@@ -101,6 +101,12 @@ type DeleteTaskRequest struct {
 	TaskID string `json:"task_id" binding:"required"`
 }
 
+// BatchTaskOperationRequest 批量任务操作请求（取消、删除）
+type BatchTaskOperationRequest struct {
+	// 任务ID列表，单次最多操作100个任务
+	TaskIDs []string `json:"task_ids" binding:"required,min=1,max=100,dive,required"`
+}
+
 // CreateLocalFileDownloadRequest 创建网盘文件下载任务请求
 type CreateLocalFileDownloadRequest struct {
 	// 文件ID

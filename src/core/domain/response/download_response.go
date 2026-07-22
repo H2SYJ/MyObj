@@ -62,6 +62,26 @@ type DownloadTaskListResponse struct {
 	PageSize int `json:"page_size"`
 }
 
+// BatchTaskOperationFailedItem 批量任务操作失败项
+type BatchTaskOperationFailedItem struct {
+	// 任务ID
+	TaskID string `json:"task_id"`
+	// 失败原因
+	Reason string `json:"reason"`
+}
+
+// BatchTaskOperationResponse 批量任务操作响应
+type BatchTaskOperationResponse struct {
+	// 请求操作的任务总数
+	TotalCount int `json:"total_count"`
+	// 操作成功数量
+	SuccessCount int `json:"success_count"`
+	// 操作失败数量
+	FailedCount int `json:"failed_count"`
+	// 操作失败明细
+	FailedItems []BatchTaskOperationFailedItem `json:"failed_items"`
+}
+
 // TorrentFileInfo 种子文件信息
 type TorrentFileInfo struct {
 	// 文件索引

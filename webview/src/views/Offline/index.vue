@@ -18,8 +18,44 @@
 
     <!-- 任务列表 -->
     <el-card shadow="never" class="task-list-card">
+      <div v-if="selectedTaskIds.length > 0" class="batch-toolbar">
+        <el-tag type="info" size="small">
+          {{ t('offline.selectedTasks', { count: selectedTaskIds.length }) }}
+        </el-tag>
+        <div class="batch-actions">
+          <el-button
+            type="warning"
+            icon="Close"
+            size="small"
+            :loading="batchCanceling"
+            :disabled="selectedCancelableTaskIds.length === 0 || batchDeleting"
+            @click="batchCancelTasks"
+          >
+            {{ t('offline.batchCancel', { count: selectedCancelableTaskIds.length }) }}
+          </el-button>
+          <el-button
+            type="danger"
+            icon="Delete"
+            size="small"
+            :loading="batchDeleting"
+            :disabled="selectedDeletableTaskIds.length === 0 || batchCanceling"
+            @click="batchDeleteTasks"
+          >
+            {{ t('offline.batchDelete', { count: selectedDeletableTaskIds.length }) }}
+          </el-button>
+        </div>
+      </div>
+
       <!-- PC端：表格布局 -->
-      <el-table :data="taskList" v-loading="loading" class="offline-table desktop-table">
+      <el-table
+        ref="taskTableRef"
+        :data="taskList"
+        row-key="id"
+        v-loading="loading"
+        class="offline-table desktop-table"
+        @selection-change="handleTaskSelectionChange"
+      >
+        <el-table-column type="selection" width="55" :reserve-selection="true" />
         <el-table-column :label="t('tasks.fileName')" min-width="300" class-name="mobile-name-column">
           <template #default="{ row }">
             <div class="file-name-cell">
@@ -142,9 +178,19 @@
 
       <!-- 移动端：卡片布局 -->
       <div class="mobile-task-list" v-loading="loading">
-        <div v-for="row in taskList" :key="row.id" class="mobile-task-item">
+        <div
+          v-for="row in taskList"
+          :key="row.id"
+          class="mobile-task-item"
+          :class="{ selected: selectedTaskIds.includes(row.id) }"
+        >
           <div class="task-item-header">
             <div class="task-item-info">
+              <el-checkbox
+                :model-value="selectedTaskIds.includes(row.id)"
+                class="task-checkbox"
+                @change="() => toggleMobileTaskSelection(row)"
+              />
               <el-icon :size="24" class="task-icon offline-icon"><Document /></el-icon>
               <div class="task-name-wrapper">
                 <file-name-tooltip
@@ -225,7 +271,7 @@
         :page-sizes="[20, 50, 100]"
         layout="total, sizes, prev, pager, next"
         class="task-pagination"
-        @current-change="loadTaskList"
+        @current-change="handleTaskPageChange"
         @size-change="handleTaskPageSizeChange"
       />
     </el-card>
@@ -582,7 +628,9 @@
     resumeDownload,
     retryDownload,
     cancelDownload,
+    batchCancelDownloads,
     deleteDownload,
+    batchDeleteDownloads,
     parseTorrent,
     startTorrentDownload,
     type OfflineDownloadTask,
@@ -605,6 +653,11 @@
   const taskPage = ref(1)
   const taskPageSize = ref(20)
   const taskTotal = ref(0)
+  const taskTableRef = ref()
+  const selectedTaskIds = ref<string[]>([])
+  const batchCanceling = ref(false)
+  const batchDeleting = ref(false)
+  let syncingTaskSelection = false
   const showDownloadDialog = ref(false) // 统一的下载对话框
   let refreshTimer: number | null = null // 支持 setTimeout 和 setInterval
   const loadingTree = ref(false)
@@ -626,6 +679,16 @@
   const resumeFilePassword = ref('')
   const resumingWithHeaders = ref(false)
   const headerDialogMode = ref<'resume' | 'retry'>('resume')
+
+  const selectedCancelableTaskIds = computed(() => {
+    const selected = new Set(selectedTaskIds.value)
+    return taskList.value.filter(task => selected.has(task.id) && [0, 1, 2].includes(task.state)).map(task => task.id)
+  })
+
+  const selectedDeletableTaskIds = computed(() => {
+    const selected = new Set(selectedTaskIds.value)
+    return taskList.value.filter(task => selected.has(task.id) && [3, 4, 5].includes(task.state)).map(task => task.id)
+  })
 
   const downloadFormRef = ref<FormInstance>()
   const torrentUploadRef = ref()
@@ -830,6 +893,36 @@
     }
   })
 
+  const syncTaskTableSelection = async () => {
+    await nextTick()
+    if (!taskTableRef.value) return
+    syncingTaskSelection = true
+    taskTableRef.value.clearSelection()
+    const selected = new Set(selectedTaskIds.value)
+    taskList.value.forEach(task => {
+      if (selected.has(task.id)) taskTableRef.value.toggleRowSelection(task, true)
+    })
+    syncingTaskSelection = false
+  }
+
+  const handleTaskSelectionChange = (selection: OfflineDownloadTask[]) => {
+    if (syncingTaskSelection) return
+    selectedTaskIds.value = selection.map(task => task.id)
+  }
+
+  const toggleMobileTaskSelection = (task: OfflineDownloadTask) => {
+    const selected = new Set(selectedTaskIds.value)
+    if (selected.has(task.id)) selected.delete(task.id)
+    else selected.add(task.id)
+    selectedTaskIds.value = [...selected]
+    void syncTaskTableSelection()
+  }
+
+  const clearTaskSelection = () => {
+    selectedTaskIds.value = []
+    void syncTaskTableSelection()
+  }
+
   // 加载任务列表
   const loadTaskList = async () => {
     // 智能刷新时不显示 loading，避免频繁闪烁
@@ -854,6 +947,9 @@
         // 确保数据更新（即使值相同，也要触发响应式更新）
         // 通过创建新数组来触发 Vue 的响应式更新
         taskList.value = newTasks.map((task: any) => ({ ...task }))
+        const visibleTaskIDs = new Set(taskList.value.map(task => task.id))
+        selectedTaskIds.value = selectedTaskIds.value.filter(taskID => visibleTaskIDs.has(taskID))
+        await syncTaskTableSelection()
 
         // 调试日志：检查数据更新（仅在开发环境）
         if (import.meta.env.DEV) {
@@ -895,6 +991,12 @@
 
   const handleTaskPageSizeChange = () => {
     taskPage.value = 1
+    clearTaskSelection()
+    loadTaskList()
+  }
+
+  const handleTaskPageChange = () => {
+    clearTaskSelection()
     loadTaskList()
   }
 
@@ -1129,6 +1231,39 @@
     }
   }
 
+  // 批量取消当前选中且状态允许取消的任务
+  const batchCancelTasks = async () => {
+    const taskIDs = [...selectedCancelableTaskIds.value]
+    if (taskIDs.length === 0) return
+    try {
+      await proxy?.$modal.confirm(t('offline.confirmBatchCancelTasks', { count: taskIDs.length }))
+      batchCanceling.value = true
+      const res = await batchCancelDownloads(taskIDs)
+      if (res.code !== 200 || !res.data) throw new Error(res.message || t('offline.batchCancelFailed'))
+
+      if (res.data.failed_count === 0) {
+        proxy?.$modal.msgSuccess(t('offline.batchCancelSuccess', { count: res.data.success_count }))
+      } else if (res.data.success_count > 0) {
+        proxy?.$modal.msgWarning(
+          t('offline.batchCancelPartial', {
+            success: res.data.success_count,
+            failed: res.data.failed_count
+          })
+        )
+      } else {
+        proxy?.$modal.msgError(t('offline.batchCancelFailedWithCount', { count: res.data.failed_count }))
+      }
+      selectedTaskIds.value = res.data.failed_items.map(item => item.task_id)
+      await loadTaskList()
+    } catch (error: any) {
+      if (error !== 'cancel' && error?.message !== 'cancel') {
+        proxy?.$modal.msgError(error.message || t('offline.batchCancelFailed'))
+      }
+    } finally {
+      batchCanceling.value = false
+    }
+  }
+
   // 删除任务
   const deleteTask = async (taskId: string) => {
     try {
@@ -1141,6 +1276,39 @@
       if (error !== 'cancel') {
         proxy?.$modal.msgError(error.message || t('tasks.deleteFailed'))
       }
+    }
+  }
+
+  // 批量删除当前选中且处于终态的任务
+  const batchDeleteTasks = async () => {
+    const taskIDs = [...selectedDeletableTaskIds.value]
+    if (taskIDs.length === 0) return
+    try {
+      await proxy?.$modal.confirm(t('offline.confirmBatchDeleteTasks', { count: taskIDs.length }))
+      batchDeleting.value = true
+      const res = await batchDeleteDownloads(taskIDs)
+      if (res.code !== 200 || !res.data) throw new Error(res.message || t('offline.batchDeleteFailed'))
+
+      if (res.data.failed_count === 0) {
+        proxy?.$modal.msgSuccess(t('offline.batchDeleteSuccess', { count: res.data.success_count }))
+      } else if (res.data.success_count > 0) {
+        proxy?.$modal.msgWarning(
+          t('offline.batchDeletePartial', {
+            success: res.data.success_count,
+            failed: res.data.failed_count
+          })
+        )
+      } else {
+        proxy?.$modal.msgError(t('offline.batchDeleteFailedWithCount', { count: res.data.failed_count }))
+      }
+      selectedTaskIds.value = res.data.failed_items.map(item => item.task_id)
+      await loadTaskList()
+    } catch (error: any) {
+      if (error !== 'cancel' && error?.message !== 'cancel') {
+        proxy?.$modal.msgError(error.message || t('offline.batchDeleteFailed'))
+      }
+    } finally {
+      batchDeleting.value = false
     }
   }
 
@@ -1445,6 +1613,20 @@
     overflow: hidden;
   }
 
+  .batch-toolbar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    margin-bottom: 12px;
+  }
+
+  .batch-actions {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+
   .file-name-cell {
     display: flex;
     align-items: center;
@@ -1556,6 +1738,11 @@
     background-color: var(--el-fill-color-light);
   }
 
+  .mobile-task-item.selected {
+    box-shadow: inset 0 0 0 1px var(--el-color-primary);
+    background-color: var(--el-color-primary-light-9);
+  }
+
   .task-item-header {
     display: flex;
     justify-content: space-between;
@@ -1569,6 +1756,11 @@
     gap: 12px;
     flex: 1;
     min-width: 0;
+  }
+
+  .task-checkbox {
+    flex-shrink: 0;
+    margin-top: 2px;
   }
 
   .task-icon {
@@ -1708,6 +1900,20 @@
   }
 
   @media (max-width: 480px) {
+    .batch-toolbar {
+      align-items: flex-start;
+      flex-direction: column;
+    }
+
+    .batch-actions {
+      width: 100%;
+    }
+
+    .batch-actions .el-button {
+      flex: 1;
+      margin-left: 0;
+    }
+
     .mobile-task-item {
       padding: 12px;
     }

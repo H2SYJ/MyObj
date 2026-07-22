@@ -118,6 +118,26 @@ export const cancelDownload = (taskId: string) => {
   return post<ApiResponse>(API_ENDPOINTS.DOWNLOAD.CANCEL, { task_id: taskId })
 }
 
+// 批量任务操作响应
+export interface BatchDownloadOperationResponse {
+  total_count: number
+  success_count: number
+  failed_count: number
+  failed_items: Array<{
+    task_id: string
+    reason: string
+  }>
+}
+
+/**
+ * 批量取消下载任务
+ */
+export const batchCancelDownloads = (taskIds: string[]) => {
+  return post<ApiResponse<BatchDownloadOperationResponse>>(API_ENDPOINTS.DOWNLOAD.BATCH_CANCEL, {
+    task_ids: taskIds
+  })
+}
+
 // 删除下载任务请求
 export interface DeleteDownloadRequest {
   task_id: string
@@ -128,6 +148,15 @@ export interface DeleteDownloadRequest {
  */
 export const deleteDownload = (taskId: string) => {
   return post<ApiResponse>(API_ENDPOINTS.DOWNLOAD.DELETE, { task_id: taskId })
+}
+
+/**
+ * 批量删除下载任务
+ */
+export const batchDeleteDownloads = (taskIds: string[]) => {
+  return post<ApiResponse<BatchDownloadOperationResponse>>(API_ENDPOINTS.DOWNLOAD.BATCH_DELETE, {
+    task_ids: taskIds
+  })
 }
 
 // 创建网盘文件下载任务请求

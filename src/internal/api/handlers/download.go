@@ -54,8 +54,12 @@ func (h *DownloadHandler) Router(c *gin.RouterGroup) {
 		downloadGroup.POST("/retry", middleware.PowerVerify("file:offLine"), h.RetryTask)
 		// 取消下载任务
 		downloadGroup.POST("/cancel", middleware.PowerVerify("file:offLine"), h.CancelTask)
+		// 批量取消下载任务
+		downloadGroup.POST("/batch/cancel", middleware.PowerVerify("file:offLine"), h.BatchCancelTasks)
 		// 删除下载任务
 		downloadGroup.POST("/delete", middleware.PowerVerify("file:offLine"), h.DeleteTask)
+		// 批量删除下载任务
+		downloadGroup.POST("/batch/delete", middleware.PowerVerify("file:offLine"), h.BatchDeleteTasks)
 		// 创建网盘文件下载任务
 		downloadGroup.POST("/local/create", middleware.PowerVerify("file:download"), h.CreateLocalFileDownload)
 		// 下载网盘文件
@@ -195,6 +199,18 @@ func (h *DownloadHandler) CancelTask(c *gin.Context) {
 	c.JSON(200, result)
 }
 
+// BatchCancelTasks 批量取消下载任务
+func (h *DownloadHandler) BatchCancelTasks(c *gin.Context) {
+	req := new(request.BatchTaskOperationRequest)
+	if err := c.ShouldBindJSON(req); err != nil {
+		c.JSON(200, models.NewJsonResponse(400, "参数错误", err.Error()))
+		return
+	}
+
+	result := h.service.BatchCancelTasks(req, c.GetString("userID"))
+	c.JSON(200, result)
+}
+
 // DeleteTask 删除下载任务
 func (h *DownloadHandler) DeleteTask(c *gin.Context) {
 	req := new(request.DeleteTaskRequest)
@@ -210,6 +226,18 @@ func (h *DownloadHandler) DeleteTask(c *gin.Context) {
 		return
 	}
 
+	c.JSON(200, result)
+}
+
+// BatchDeleteTasks 批量删除下载任务
+func (h *DownloadHandler) BatchDeleteTasks(c *gin.Context) {
+	req := new(request.BatchTaskOperationRequest)
+	if err := c.ShouldBindJSON(req); err != nil {
+		c.JSON(200, models.NewJsonResponse(400, "参数错误", err.Error()))
+		return
+	}
+
+	result := h.service.BatchDeleteTasks(req, c.GetString("userID"))
 	c.JSON(200, result)
 }
 
