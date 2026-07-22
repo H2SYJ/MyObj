@@ -5,6 +5,10 @@
 .vscode
 /obj_temp/
 
+# Docker 镜像导出文件
+/myobj-linux-arm64.tar
+/myobj-linux-arm64.tar.tmp
+
 # Python SDK 构建与测试产物
 __pycache__/
 *.py[cod]
