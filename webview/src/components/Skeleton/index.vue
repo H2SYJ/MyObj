@@ -3,9 +3,11 @@
     <!-- 网格视图骨架屏 -->
     <template v-if="viewMode === 'grid'">
       <div v-for="i in count" :key="i" class="skeleton-card" :style="{ animationDelay: `${(i - 1) * 0.05}s` }">
-        <div class="skeleton-icon"></div>
-        <div class="skeleton-text"></div>
-        <div class="skeleton-text short"></div>
+        <div class="skeleton-card-header">
+          <div class="skeleton-header-icon"></div>
+          <div class="skeleton-text"></div>
+        </div>
+        <div class="skeleton-preview"></div>
       </div>
     </template>
 
@@ -45,12 +47,10 @@
 
   /* 网格视图骨架屏 */
   .skeleton-card {
-    background: var(--card-bg, white);
-    border-radius: 16px;
-    padding: 12px;
-    box-shadow:
-      0 1px 3px rgba(0, 0, 0, 0.08),
-      0 4px 12px rgba(0, 0, 0, 0.04);
+    padding: 8px;
+    border: 1px solid var(--el-border-color-lighter);
+    border-radius: 14px;
+    background: var(--el-fill-color-light);
     animation: skeletonFadeIn 0.4s ease-out backwards;
   }
 
@@ -60,10 +60,32 @@
       0 4px 12px rgba(0, 0, 0, 0.2);
   }
 
-  .skeleton-icon {
+  .skeleton-card-header {
+    height: 44px;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 0 4px;
+  }
+
+  .skeleton-header-icon {
+    width: 20px;
+    height: 20px;
+    flex: 0 0 auto;
+    border-radius: 6px;
+    background: linear-gradient(
+      90deg,
+      var(--el-fill-color-lighter) 25%,
+      var(--el-fill-color-light) 50%,
+      var(--el-fill-color-lighter) 75%
+    );
+    background-size: 200% 100%;
+  }
+
+  .skeleton-preview {
     width: 100%;
-    height: 80px;
-    border-radius: 12px;
+    aspect-ratio: 4 / 3;
+    border-radius: 11px;
     background: linear-gradient(
       90deg,
       var(--el-fill-color-lighter) 25%,
@@ -72,13 +94,13 @@
     );
     background-size: 200% 100%;
     animation: shimmer 1.5s infinite;
-    margin-bottom: 8px;
   }
 
   .skeleton-text {
+    width: 72%;
     height: 12px;
     border-radius: 6px;
-    margin-top: 8px;
+    margin-top: 0;
     background: linear-gradient(
       90deg,
       var(--el-fill-color-lighter) 25%,
@@ -165,9 +187,9 @@
   /* 网格布局 */
   .grid-view {
     display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
-    gap: 20px;
-    padding: 4px;
+    grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+    gap: 16px;
+    padding: 6px;
   }
 
   /* 动画 */
@@ -192,7 +214,8 @@
   }
 
   /* 优化 shimmer 动画，使用更平滑的缓动函数 */
-  .skeleton-icon,
+  .skeleton-header-icon,
+  .skeleton-preview,
   .skeleton-text,
   .skeleton-list-icon,
   .skeleton-action {
@@ -202,7 +225,8 @@
   /* 优化动画性能 */
   .skeleton-card,
   .skeleton-list-item,
-  .skeleton-icon,
+  .skeleton-header-icon,
+  .skeleton-preview,
   .skeleton-text,
   .skeleton-list-icon,
   .skeleton-action {
@@ -213,23 +237,15 @@
   /* 响应式 */
   @media (max-width: 991px) {
     .grid-view {
-      grid-template-columns: repeat(auto-fill, minmax(100px, 1fr));
+      grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
       gap: 12px;
-    }
-
-    .skeleton-icon {
-      height: 60px;
     }
   }
 
   @media (max-width: 480px) {
     .grid-view {
-      grid-template-columns: repeat(auto-fill, minmax(80px, 1fr));
+      grid-template-columns: repeat(auto-fill, minmax(132px, 1fr));
       gap: 8px;
-    }
-
-    .skeleton-icon {
-      height: 50px;
     }
 
     .skeleton-list-item {

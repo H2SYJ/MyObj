@@ -1,16 +1,11 @@
 <template>
   <div
     class="file-icon-wrapper"
-    :class="{ 'has-thumbnail': showThumbnail && !isEncrypted }"
-    :style="{ width: `${iconSize}px`, height: `${iconSize}px` }"
+    :class="{ 'has-thumbnail': canShowThumbnail, 'is-fluid': fluid }"
+    :style="fluid ? undefined : { width: `${iconSize}px`, height: `${iconSize}px` }"
   >
     <!-- 缩略图（加密文件不显示缩略图） -->
-    <img
-      v-if="showThumbnail && thumbnailUrl && !isEncrypted"
-      :src="thumbnailUrl"
-      class="thumbnail-image"
-      @error="handleImageError"
-    />
+    <img v-if="canShowThumbnail" :src="thumbnailUrl" class="thumbnail-image" @error="handleImageError" />
 
     <!-- 文件类型图标 -->
     <div
@@ -56,16 +51,28 @@
     iconSize?: number
     showBadge?: boolean
     isEncrypted?: boolean
+    fluid?: boolean
   }
 
   const props = withDefaults(defineProps<Props>(), {
     iconSize: 48,
     showThumbnail: false,
     showBadge: true,
-    isEncrypted: false
+    isEncrypted: false,
+    fluid: false
   })
 
   const imageError = ref(false)
+  const canShowThumbnail = computed(
+    () => props.showThumbnail && Boolean(props.thumbnailUrl) && !props.isEncrypted && !imageError.value
+  )
+
+  watch(
+    () => props.thumbnailUrl,
+    () => {
+      imageError.value = false
+    }
+  )
 
   // 获取图标配置
   const iconConfig = computed<FileIconConfig>(() => {
@@ -113,6 +120,12 @@
     overflow: hidden;
     box-sizing: border-box;
     vertical-align: middle;
+  }
+
+  .file-icon-wrapper.is-fluid {
+    width: 100%;
+    height: 100%;
+    display: block;
   }
 
   .file-icon-card {

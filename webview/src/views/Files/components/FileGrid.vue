@@ -20,47 +20,45 @@
       @pointercancel="cancelLongPress"
       @pointermove="cancelLongPress"
     >
+      <div class="file-card-header">
+        <el-icon v-if="entry.type === 'folder'" :size="20" class="header-icon folder-icon"><Folder /></el-icon>
+        <el-icon v-else :size="20" class="header-icon" :color="getFileIcon(entry.file.mime_type).color">
+          <component :is="getFileIcon(entry.file.mime_type).icon" />
+        </el-icon>
+        <file-name-tooltip
+          v-if="entry.type === 'file'"
+          :file-name="entry.file.file_name"
+          view-mode="list"
+          tag="div"
+          custom-class="file-name"
+        />
+        <div v-else class="file-name folder-name">{{ cleanName(entry.folder.name) }}</div>
+      </div>
+
       <button class="more-button" type="button" :aria-label="t('common.more')" @click.stop="openMore(entry, $event)">
         <el-icon><More /></el-icon>
       </button>
 
-      <div class="file-icon">
-        <el-icon v-if="entry.type === 'folder'" :size="58" class="folder-icon"><Folder /></el-icon>
+      <div class="file-preview">
+        <el-icon v-if="entry.type === 'folder'" :size="88" class="folder-icon"><Folder /></el-icon>
         <file-icon
           v-else
           :mime-type="entry.file.mime_type"
           :file-name="entry.file.file_name"
           :thumbnail-url="getThumbnailUrl(entry.file.file_id)"
           :show-thumbnail="entry.file.has_thumbnail"
-          :icon-size="54"
+          :icon-size="72"
           :is-encrypted="entry.file.is_enc"
+          fluid
         />
-      </div>
-      <file-name-tooltip
-        v-if="entry.type === 'file'"
-        :file-name="entry.file.file_name"
-        view-mode="grid"
-        tag="div"
-        custom-class="file-name"
-      />
-      <div v-else class="file-name folder-name">{{ cleanName(entry.folder.name) }}</div>
-      <div class="file-info">
-        <span v-if="entry.type === 'file'"
-          >{{ formatSize(entry.file.file_size) }} · {{ formatDate(entry.file.created_at) }}</span
-        >
-        <span v-else>{{ formatDate(entry.folder.created_time) }}</span>
-        <span v-if="entry.type === 'file'" class="file-tags">
-          <el-icon v-if="entry.file.is_enc" class="encrypted"><Lock /></el-icon>
-          <el-icon v-if="entry.file.public" class="public"><Share /></el-icon>
-        </span>
       </div>
     </article>
   </div>
 </template>
 
 <script setup lang="ts">
-  import { formatDate, formatSize } from '@/utils'
   import { useI18n } from '@/composables'
+  import { getFileIcon } from '@/utils/file/fileIcon'
   import type { FileEntry } from '../types'
 
   const props = defineProps<{
@@ -111,17 +109,17 @@
 <style scoped>
   .file-grid {
     display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
-    gap: 14px;
+    grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+    gap: 16px;
     padding: 6px;
   }
   .file-card {
     position: relative;
     min-width: 0;
-    padding: 16px 12px 14px;
+    padding: 8px;
     border: 1px solid var(--el-border-color-lighter);
     border-radius: 14px;
-    background: var(--card-bg);
+    background: var(--el-fill-color-light);
     cursor: default;
     user-select: none;
     transition:
@@ -145,8 +143,8 @@
   }
   .more-button {
     position: absolute;
-    top: 7px;
-    right: 7px;
+    top: 8px;
+    right: 8px;
     width: 30px;
     height: 30px;
     display: grid;
@@ -163,66 +161,82 @@
     opacity: 1;
   }
   .more-button:hover {
-    background: var(--el-fill-color);
+    background: var(--el-fill-color-darker);
   }
-  .file-icon {
-    height: 74px;
+  .file-card-header {
+    height: 44px;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    min-width: 0;
+    padding: 0 36px 0 4px;
+  }
+  .header-icon {
+    flex: 0 0 auto;
+  }
+  .file-preview {
+    width: 100%;
+    aspect-ratio: 4 / 3;
     display: grid;
     place-items: center;
+    overflow: hidden;
+    border: 1px solid var(--el-border-color-lighter);
+    border-radius: 11px;
+    background: var(--el-bg-color);
+  }
+  .file-preview :deep(.file-icon-card),
+  .file-preview :deep(.thumbnail-image) {
+    border: 0;
+    border-radius: 10px;
+  }
+  .file-preview :deep(.thumbnail-image:hover) {
+    transform: none;
+    box-shadow: none;
   }
   .folder-icon {
     color: var(--el-color-primary);
   }
   .file-name {
-    margin-top: 7px;
-    color: var(--el-text-color-primary);
-    font-size: 13px;
-    text-align: center;
-  }
-  .folder-name {
+    min-width: 0;
     overflow: hidden;
-    color: var(--el-color-primary);
-    font-weight: 600;
+    color: var(--el-text-color-primary);
+    font-size: 14px;
+    line-height: 1.4;
+    text-align: left;
     text-overflow: ellipsis;
     white-space: nowrap;
   }
-  .file-info {
-    min-height: 20px;
-    margin-top: 5px;
-    color: var(--el-text-color-secondary);
-    font-size: 11px;
-    text-align: center;
-  }
-  .file-tags {
-    margin-left: 5px;
-    display: inline-flex;
-    gap: 3px;
-  }
-  .encrypted {
-    color: var(--el-color-warning);
-  }
-  .public {
-    color: var(--el-color-success);
+  .folder-name {
+    color: var(--el-color-primary);
+    font-weight: 600;
   }
   @media (max-width: 1024px) {
     .file-grid {
-      grid-template-columns: repeat(auto-fill, minmax(106px, 1fr));
-      gap: 10px;
+      grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+      gap: 12px;
     }
     .file-card {
-      padding: 12px 8px;
+      padding: 7px;
     }
     .more-button {
       opacity: 1;
     }
+    .file-card-header {
+      height: 40px;
+      padding-left: 3px;
+    }
   }
   @media (max-width: 480px) {
     .file-grid {
-      grid-template-columns: repeat(auto-fill, minmax(88px, 1fr));
+      grid-template-columns: repeat(auto-fill, minmax(132px, 1fr));
       gap: 8px;
     }
-    .file-icon {
-      height: 60px;
+    .file-card-header {
+      height: 38px;
+      gap: 7px;
+    }
+    .file-name {
+      font-size: 12px;
     }
   }
 </style>

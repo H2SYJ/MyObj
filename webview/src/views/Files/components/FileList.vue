@@ -27,14 +27,14 @@
       @pointermove="cancelLongPress"
     >
       <div class="name-cell">
-        <el-icon v-if="entry.type === 'folder'" :size="32" class="folder-icon"><Folder /></el-icon>
+        <el-icon v-if="entry.type === 'folder'" :size="48" class="folder-icon"><Folder /></el-icon>
         <file-icon
           v-else
           :mime-type="entry.file.mime_type"
           :file-name="entry.file.file_name"
           :thumbnail-url="getThumbnailUrl(entry.file.file_id)"
           :show-thumbnail="entry.file.has_thumbnail"
-          :icon-size="30"
+          :icon-size="48"
           :show-badge="false"
           :is-encrypted="entry.file.is_enc"
         />
@@ -121,15 +121,15 @@
     align-items: center;
   }
   .list-header {
-    min-height: 40px;
-    padding: 0 12px;
+    min-height: 44px;
+    padding: 0 16px;
     color: var(--el-text-color-secondary);
     font-size: 12px;
     border-bottom: 1px solid var(--el-border-color-lighter);
   }
   .list-row {
-    min-height: 58px;
-    padding: 0 8px 0 12px;
+    min-height: 76px;
+    padding: 8px 10px 8px 16px;
     border-bottom: 1px solid var(--el-border-color-lighter);
     border-radius: 10px;
     user-select: none;
@@ -149,11 +149,21 @@
     min-width: 0;
     display: flex;
     align-items: center;
-    gap: 10px;
+    gap: 14px;
   }
   .name-content {
     min-width: 0;
     flex: 1;
+  }
+  .name-content :deep(.file-name-text--table),
+  .folder-name {
+    display: block;
+    max-width: 100%;
+    overflow: hidden;
+    font-size: 15px;
+    line-height: 1.45;
+    text-overflow: ellipsis;
+    white-space: nowrap;
   }
   .folder-icon,
   .folder-name {
@@ -178,8 +188,8 @@
     font-size: 13px;
   }
   .more-button {
-    width: 32px;
-    height: 32px;
+    width: 36px;
+    height: 36px;
     display: grid;
     place-items: center;
     border: 0;
@@ -207,15 +217,24 @@
       display: none;
     }
     .list-row {
-      grid-template-columns: 1fr 40px;
-      min-height: 66px;
-      padding: 6px 4px 6px 8px;
+      grid-template-columns: 1fr 44px;
+      min-height: 80px;
+      padding: 8px 4px 8px 10px;
     }
     .more-button {
       opacity: 1;
     }
     .mobile-meta {
       display: block;
+    }
+  }
+  @media (max-width: 480px) {
+    .name-cell {
+      gap: 11px;
+    }
+    .name-content :deep(.file-name-text--table),
+    .folder-name {
+      font-size: 14px;
     }
   }
 </style>
