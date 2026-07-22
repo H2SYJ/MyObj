@@ -747,9 +747,9 @@ if result.NextCursor != "" {
 
 不会返回物理路径、随机存储名、完整哈希、加密哈希、分片签名、文件内容、缩略图内容、密码、空间或账号信息。
 
-### 12.4 调用限额与审计
+### 12.4 返回限额与审计
 
-`FileGet` 和 `FilesQuery` 合计每次插件运行最多调用 10 次，累计最多返回 500 条记录。单页最多 100 条。超限分别返回 `file_query_limit` 或 `file_result_limit`。
+`FileGet` 和 `FilesQuery` 不限制调用次数；每次插件运行累计最多返回 500 条记录，单页最多 100 条。累计结果超限时返回 `file_result_limit`。
 
 宿主会审计插件、版本、订阅、用户、查询摘要、返回数量、耗时和状态，但不记录完整文件列表。插件也不应把文件列表写入 stderr。
 
@@ -901,7 +901,6 @@ GOFLAGS=-buildvcs=false tinygo build -target=wasip1 -opt=z -o plugin.wasm .
 | `invalid_body` | body 不是有效编码或超过 1 MiB | 缩小请求体 |
 | `not_found` | 文件不存在、已删除或不属于当前用户 | 按不存在处理，不要继续探测 |
 | `invalid_cursor` | cursor 损坏、被修改或不属于当前用户 | 丢弃 cursor，从第一页重新查询 |
-| `file_query_limit` | `FileGet` 与 `FilesQuery` 合计超过 10 次 | 用分页和本地集合减少调用 |
 | `file_result_limit` | 累计返回超过 500 条 | 收紧过滤条件和页数 |
 | `host_call_failed` | 宿主调用写入缓冲区失败或低层 ABI 异常 | 减少返回数据；若持续出现，记录不含秘密的上下文并报告兼容性问题 |
 | `host_call_requires_wasip1` | 在普通 Go 原生构建中调用宿主函数 | 使用纯逻辑单测，实际调用编译为 `wasip1` |

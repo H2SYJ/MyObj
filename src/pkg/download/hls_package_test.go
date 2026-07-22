@@ -5,6 +5,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 )
@@ -28,6 +29,24 @@ func TestPackageLocalHLSWithFFmpeg(t *testing.T) {
 	)
 	if output, err := generate.CombinedOutput(); err != nil {
 		t.Fatalf("生成HLS测试资源失败: %v: %s", err, output)
+	}
+	playlistData, err := os.ReadFile(playlist)
+	if err != nil {
+		t.Fatal(err)
+	}
+	segmentPaths, err := filepath.Glob(filepath.Join(dir, "fixture*.ts"))
+	if err != nil || len(segmentPaths) == 0 {
+		t.Fatalf("查找HLS测试分片失败: %v", err)
+	}
+	for _, segmentPath := range segmentPaths {
+		binPath := strings.TrimSuffix(segmentPath, filepath.Ext(segmentPath)) + ".bin"
+		if err := os.Rename(segmentPath, binPath); err != nil {
+			t.Fatal(err)
+		}
+		playlistData = []byte(strings.ReplaceAll(string(playlistData), filepath.Base(segmentPath), filepath.Base(binPath)))
+	}
+	if err := os.WriteFile(playlist, playlistData, 0644); err != nil {
+		t.Fatal(err)
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()

@@ -621,6 +621,9 @@ func packageLocalHLS(ctx context.Context, sessionDir, outputName string, playlis
 	if err != nil {
 		return "", fmt.Errorf("未找到ffmpeg，无法封装HLS视频: %w", err)
 	}
+	hlsDemuxerOptions := ffmpegHLSDemuxerOptions(ctx, ffmpegPath)
+	allowSegmentExtensions := bytes.Contains(hlsDemuxerOptions, []byte("allowed_segment_extensions"))
+	disableExtensionPicky := bytes.Contains(hlsDemuxerOptions, []byte("extension_picky"))
 	videoPlaylist := playlists[hlsVideoRendition]
 	if videoPlaylist == "" {
 		return "", fmt.Errorf("缺少本地HLS媒体播放列表")
@@ -628,10 +631,11 @@ func packageLocalHLS(ctx context.Context, sessionDir, outputName string, playlis
 	outputPath := filepath.Join(sessionDir, outputName)
 	tempOutput := strings.TrimSuffix(outputPath, filepath.Ext(outputPath)) + ".part.mp4"
 	_ = os.Remove(tempOutput)
-	args := []string{"-v", "error", "-nostdin", "-protocol_whitelist", "file", "-allowed_extensions", "ALL", "-i", videoPlaylist}
+	args := []string{"-v", "error", "-nostdin"}
+	args = append(args, localHLSInputArgs(videoPlaylist, allowSegmentExtensions, disableExtensionPicky)...)
 	if audioPlaylist := playlists[hlsAudioRendition]; audioPlaylist != "" {
-		args = append(args, "-protocol_whitelist", "file", "-allowed_extensions", "ALL", "-i", audioPlaylist,
-			"-map", "0:v?", "-map", "1:a:0?")
+		args = append(args, localHLSInputArgs(audioPlaylist, allowSegmentExtensions, disableExtensionPicky)...)
+		args = append(args, "-map", "0:v?", "-map", "1:a:0?")
 	} else {
 		args = append(args, "-map", "0:v?", "-map", "0:a?")
 	}
@@ -653,6 +657,26 @@ func packageLocalHLS(ctx context.Context, sessionDir, outputName string, playlis
 		return "", fmt.Errorf("提交HLS封装结果失败: %w", err)
 	}
 	return outputPath, nil
+}
+
+func ffmpegHLSDemuxerOptions(ctx context.Context, ffmpegPath string) []byte {
+	command := exec.CommandContext(ctx, ffmpegPath, "-hide_banner", "-h", "demuxer=hls")
+	output, err := command.CombinedOutput()
+	if err != nil {
+		return nil
+	}
+	return output
+}
+
+func localHLSInputArgs(playlist string, allowSegmentExtensions, disableExtensionPicky bool) []string {
+	args := []string{"-protocol_whitelist", "file", "-allowed_extensions", "ALL"}
+	if allowSegmentExtensions {
+		args = append(args, "-allowed_segment_extensions", "ALL")
+	}
+	if disableExtensionPicky {
+		args = append(args, "-extension_picky", "0")
+	}
+	return append(args, "-i", playlist)
 }
 
 func validatePackagedHLS(ctx context.Context, path string) error {

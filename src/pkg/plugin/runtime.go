@@ -35,7 +35,6 @@ type InvocationHost struct {
 	HTTPClient      *http.Client
 	ValidateHTTPURL func(string) error
 	FileQuery       FileQueryFunc
-	fileCount       int
 	fileResults     int
 	mu              sync.Mutex
 }
@@ -239,13 +238,6 @@ func (r *Runtime) hostFileOperation(ctx context.Context, module api.Module, requ
 	host := hostFromContext(ctx)
 	if host == nil || !host.Permissions[PermissionReadMetadata] || host.FileQuery == nil {
 		return writeHostError(module, outputPtr, outputCap, "permission_denied")
-	}
-	host.mu.Lock()
-	host.fileCount++
-	count := host.fileCount
-	host.mu.Unlock()
-	if count > 10 {
-		return writeHostError(module, outputPtr, outputCap, "file_query_limit")
 	}
 	requestBytes, ok := module.Memory().Read(requestPtr, requestLen)
 	if !ok {
