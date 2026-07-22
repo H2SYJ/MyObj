@@ -1,18 +1,19 @@
 import { searchUserFiles } from '@/api/file'
 import { useSearch } from '@/composables'
 import type { FileListResponse, FileItem } from '@/types'
+import type { FileSortBy, FileSortOrder } from './useFileList'
 
 /**
  * 文件搜索 composable（用户文件）
  */
-export function useFileSearch() {
+export function useFileSearch(sortBy: Ref<FileSortBy>, sortOrder: Ref<FileSortOrder>) {
   // 结果转换函数：将后端返回的文件转换为 FileItem 格式
   const transformResult = (files: any[]): FileItem[] => {
     return files.map((file: any) => ({
       file_id: file.uf_id || file.id || '', // 优先使用 uf_id
       file_name: file.file_name || file.name || '', // 优先使用 file_name（用户文件名）
-      file_size: file.size || 0,
-      mime_type: file.mime || '',
+      file_size: file.size || file.file_size || 0,
+      mime_type: file.mime || file.mime_type || '',
       created_at: file.created_at || file.createdAt || '',
       is_enc: file.is_enc || false,
       has_thumbnail: (file.thumbnail_img && file.thumbnail_img !== '') || false,
@@ -20,7 +21,10 @@ export function useFileSearch() {
     }))
   }
 
-  const search = useSearch<FileItem>(searchUserFiles, transformResult)
+  const search = useSearch<FileItem>(
+    params => searchUserFiles({ ...params, sortBy: sortBy.value, sortOrder: sortOrder.value }),
+    transformResult
+  )
 
   // 将搜索结果包装为 FileListResponse 格式（兼容现有代码）
   const searchResults = computed<FileListResponse>(() => ({

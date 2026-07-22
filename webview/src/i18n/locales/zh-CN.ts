@@ -72,7 +72,8 @@ export default {
     export: '导出',
     columnSetting: '列设置',
     selectedCount: '已选择 {count} 项',
-    clearSelection: '清空选择'
+    clearSelection: '清空选择',
+    more: '更多操作'
   },
   menu: {
     files: '我的文件',
@@ -272,9 +273,24 @@ export default {
     dirNameLength: '目录名长度在1-50个字符',
     dirNameInvalidChars: '目录名不能包含特殊字符：\\ / : * ? " < > 竖线',
     sameDirName: '新目录名与原目录名相同',
-    confirmDeleteDir: '确定要删除目录 "{dirName}" 吗？删除后，该目录下的所有文件和子目录都将被删除，且无法恢复。',
+    confirmDeleteDir: '确定要删除目录 "{dirName}" 吗？该目录及其内容将移动到回收站。',
     dirDeleteSuccess: '目录删除成功',
-    dirDeleteFailed: '删除目录失败'
+    dirDeleteFailed: '删除目录失败',
+    open: '打开',
+    pageActions: '页面操作',
+    selectedItems: '选中项目',
+    selectItemsFirst: '请先选择文件或文件夹',
+    moveItemsSuccess: '成功移动 {count} 个项目',
+    confirmDeleteItems: '确定要删除选中的 {count} 个项目吗？删除后将移动到回收站。',
+    sortName: '按名称排序',
+    sortTime: '按时间排序',
+    sortSize: '按大小排序',
+    sortAsc: '升序',
+    sortDesc: '降序',
+    dropUpload: '松开以上传到当前目录',
+    folderUploadUnsupported: '暂不支持文件夹上传',
+    packagePasswordTip: '选中的文件包含加密内容，请输入文件密码',
+    packageFolderPasswordTip: '如果目录中包含加密文件，请输入统一的文件密码；不含加密文件可留空'
   },
   share: {
     title: '分享文件',
@@ -510,6 +526,7 @@ export default {
     readTorrentFailed: '读取种子文件失败'
   },
   trash: {
+    folderItems: '共 {count} 项',
     title: '回收站',
     restore: '还原',
     permanentDelete: '永久删除',
@@ -874,7 +891,7 @@ export default {
         'user:update:else': { name: '修改其他用户信息', description: '修改其他用户信息，包括密码' },
         'user:update:password': { name: '用户密码修改', description: '修改用户自身密码' },
         'file:update:filePassword': { name: '用户文件密码', description: '设置，修改文件密码' },
-        'file:move': { name: '移动文件', description: '移动文件至其他虚拟目录' },
+        'file:move': { name: '移动文件/目录', description: '移动文件或目录至其他虚拟目录' },
         'file:delete': { name: '删除文件', description: '删除文件（移动到回收站）' },
         'webdav:access': { name: 'WebDAV访问', description: '允许通过WebDAV协议访问文件系统' }
       }

@@ -63,10 +63,22 @@ func (r *virtualPathRepository) Count(ctx context.Context, userID string) (int64
 
 // ListSubFoldersByParentID 查询指定父目录ID下的子目录
 func (r *virtualPathRepository) ListSubFoldersByParentID(ctx context.Context, userID string, parentID int, offset, limit int) ([]*models.VirtualPath, error) {
+	return r.ListSubFoldersByParentIDSorted(ctx, userID, parentID, "name", "asc", offset, limit)
+}
+
+func (r *virtualPathRepository) ListSubFoldersByParentIDSorted(ctx context.Context, userID string, parentID int, sortBy, sortOrder string, offset, limit int) ([]*models.VirtualPath, error) {
 	var vpaths []*models.VirtualPath
+	direction := "ASC"
+	if sortOrder == "desc" {
+		direction = "DESC"
+	}
+	column := "path"
+	if sortBy == "time" {
+		column = "created_time"
+	}
 	err := r.db.WithContext(ctx).
 		Where("user_id = ? AND parent_level = ? AND is_dir = ?", userID, parentID, true).
-		Order("path ASC").
+		Order(column + " " + direction + ", id ASC").
 		Offset(offset).Limit(limit).
 		Find(&vpaths).Error
 	return vpaths, err

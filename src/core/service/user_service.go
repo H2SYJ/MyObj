@@ -295,7 +295,7 @@ func (u *UserService) initDefaultPowersForAdminGroup(ctx context.Context) error 
 		{"文件保险箱", "加密文件的上传修改下载", "file:insurance"},
 		{"文件预览", "查看文件和预览支持格式的文件", "file:preview"},
 		{"用户文件密码", "设置，修改文件密码", "file:update:filePassword"},
-		{"移动文件", "移动文件至其他虚拟目录", "file:move"},
+		{"移动文件/目录", "移动文件或目录至其他虚拟目录", "file:move"},
 		{"删除文件", "删除文件（移动到回收站）", "file:delete"},
 
 		// 目录操作权限

@@ -3,6 +3,7 @@ package service
 import (
 	"archive/zip"
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"myobj/src/core/domain/request"
@@ -12,8 +13,12 @@ import (
 	"myobj/src/pkg/enum"
 	"myobj/src/pkg/logger"
 	"myobj/src/pkg/models"
+	"myobj/src/pkg/util"
 	"os"
+	"path"
 	"path/filepath"
+	"sort"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -26,32 +31,45 @@ var packageTasks sync.Map // key: packageID, value: *PackageTask
 
 // PackageTask 打包任务
 type PackageTask struct {
-	PackageID   string
-	PackageName string
-	UserID      string
-	FileIDs     []string
-	Status      string // creating, ready, failed
-	Progress    int    // 0-100
-	TotalSize   int64
-	CreatedSize int64
-	FilePath    string
-	ErrorMsg    string
-	CreatedAt   time.Time // 创建时间，用于清理过期任务
-	mu          sync.Mutex
+	PackageID    string
+	PackageName  string
+	UserID       string
+	FileIDs      []string
+	Entries      []PackageEntry
+	EmptyDirs    []string
+	FilePassword string
+	Status       string // creating, ready, failed
+	Progress     int    // 0-100
+	TotalSize    int64
+	CreatedSize  int64
+	FilePath     string
+	ErrorMsg     string
+	CreatedAt    time.Time // 创建时间，用于清理过期任务
+	mu           sync.Mutex
+}
+
+type PackageEntry struct {
+	FileID      string
+	ArchivePath string
 }
 
 // CreatePackage 创建打包下载任务
 func (f *FileService) CreatePackage(req *request.PackageCreateRequest, userID string) (*models.JsonResponse, error) {
 	ctx := context.Background()
-
-	// 验证文件权限（前端传递的是 uf_id）
-	for _, fileID := range req.FileIDs {
-		userFile, err := f.factory.UserFiles().GetByUserIDAndUfID(ctx, userID, fileID)
+	entries, emptyDirs, totalSize, hasEncrypted, err := f.resolvePackageEntries(ctx, userID, req.FileIDs, req.DirIDs)
+	if err != nil {
+		return models.NewJsonResponse(400, err.Error(), nil), nil
+	}
+	if len(entries) == 0 && len(emptyDirs) == 0 {
+		return models.NewJsonResponse(400, "请选择要下载的文件或目录", nil), nil
+	}
+	if hasEncrypted {
+		user, err := f.factory.User().GetByID(ctx, userID)
 		if err != nil {
-			return nil, fmt.Errorf("文件不存在或无权限: %s", fileID)
+			return nil, err
 		}
-		if userFile.UserID != userID {
-			return nil, fmt.Errorf("无权限访问文件: %s", fileID)
+		if req.FilePassword == "" || !util.CheckPassword(user.FilePassword, req.FilePassword) {
+			return models.NewJsonResponse(400, "文件密码错误", nil), nil
 		}
 	}
 
@@ -61,52 +79,210 @@ func (f *FileService) CreatePackage(req *request.PackageCreateRequest, userID st
 	// 设置打包名称
 	packageName := req.PackageName
 	if packageName == "" {
-		packageName = fmt.Sprintf("files_%d.zip", time.Now().Unix())
+		if len(req.DirIDs) == 1 && len(req.FileIDs) == 0 {
+			if dir, dirErr := f.factory.VirtualPath().GetByID(ctx, req.DirIDs[0]); dirErr == nil {
+				packageName = safeArchiveSegment(cleanFolderName(dir.Path)) + ".zip"
+			}
+		}
+		if packageName == "" {
+			packageName = fmt.Sprintf("files_%d.zip", time.Now().Unix())
+		}
 	}
+	packageName = safeArchiveSegment(path.Base(strings.ReplaceAll(packageName, "\\", "/")))
 	if !strings.HasSuffix(packageName, ".zip") {
 		packageName += ".zip"
 	}
 
 	// 创建打包任务
 	task := &PackageTask{
-		PackageID:   packageID,
-		PackageName: packageName,
-		UserID:      userID,
-		FileIDs:     req.FileIDs,
-		Status:      "creating",
-		Progress:    0,
-		TotalSize:   0,
-		CreatedSize: 0,
-		CreatedAt:   time.Now(),
+		PackageID:    packageID,
+		PackageName:  packageName,
+		UserID:       userID,
+		FileIDs:      packageFileIDs(entries),
+		Entries:      entries,
+		EmptyDirs:    emptyDirs,
+		FilePassword: req.FilePassword,
+		Status:       "creating",
+		Progress:     0,
+		TotalSize:    totalSize,
+		CreatedSize:  0,
+		CreatedAt:    time.Now(),
 	}
 	packageTasks.Store(packageID, task)
 
 	// 异步创建压缩包
 	go f.createZipPackage(ctx, task)
 
-	// 计算总大小（前端传递的是 uf_id）
-	for _, fileID := range req.FileIDs {
-		userFile, _ := f.factory.UserFiles().GetByUserIDAndUfID(ctx, userID, fileID)
-		if userFile != nil {
-			fileInfo, _ := f.factory.FileInfo().GetByID(ctx, userFile.FileID)
-			if fileInfo != nil {
-				task.TotalSize += int64(fileInfo.Size)
-			}
-		}
-	}
 	return models.NewJsonResponse(200, "创建成功", response.PackageCreateResponse{
 		PackageID:   packageID,
 		PackageName: packageName,
-		Status:      task.Status,
-		Progress:    task.Progress,
-		TotalSize:   task.TotalSize,
+		Status:      "creating",
+		Progress:    0,
+		TotalSize:   totalSize,
 	}), nil
+}
+
+func (f *FileService) resolvePackageEntries(
+	ctx context.Context,
+	userID string,
+	fileIDs []string,
+	dirIDs []int,
+) ([]PackageEntry, []string, int64, bool, error) {
+	fileIDs = uniqueStrings(fileIDs)
+	dirIDs = uniqueInts(dirIDs)
+	if len(fileIDs) == 0 && len(dirIDs) == 0 {
+		return nil, nil, 0, false, errors.New("请选择要下载的文件或目录")
+	}
+	rootDirIDs, err := filterNestedDirectories(ctx, f.factory, userID, dirIDs)
+	if err != nil {
+		return nil, nil, 0, false, err
+	}
+
+	entries := make([]PackageEntry, 0)
+	directories := make([]string, 0)
+	seenFiles := make(map[string]struct{})
+	seenPaths := make(map[string]struct{})
+	var totalSize int64
+	hasEncrypted := false
+
+	addFile := func(file *models.UserFiles, archivePath string) error {
+		if _, exists := seenFiles[file.UfID]; exists {
+			return nil
+		}
+		archivePath = path.Clean(strings.ReplaceAll(archivePath, "\\", "/"))
+		if !validArchivePath(archivePath) {
+			return fmt.Errorf("压缩包路径不安全: %s", archivePath)
+		}
+		if _, exists := seenPaths[archivePath]; exists {
+			return fmt.Errorf("压缩包内存在重名条目: %s", archivePath)
+		}
+		info, err := f.factory.FileInfo().GetByID(ctx, file.FileID)
+		if err != nil {
+			return err
+		}
+		seenFiles[file.UfID] = struct{}{}
+		seenPaths[archivePath] = struct{}{}
+		entries = append(entries, PackageEntry{FileID: file.UfID, ArchivePath: archivePath})
+		totalSize += int64(info.Size)
+		hasEncrypted = hasEncrypted || info.IsEnc
+		return nil
+	}
+
+	for _, rootID := range rootDirIDs {
+		root, err := f.factory.VirtualPath().GetByID(ctx, rootID)
+		if err != nil || root.UserID != userID || !root.IsDir {
+			return nil, nil, 0, false, fmt.Errorf("目录不存在或无权限: %d", rootID)
+		}
+		rootName := cleanFolderName(root.Path)
+		if err := validateArchiveSegment(rootName); err != nil {
+			return nil, nil, 0, false, err
+		}
+		type dirEntry struct {
+			Dir         *models.VirtualPath
+			ArchivePath string
+		}
+		queue := []dirEntry{{Dir: root, ArchivePath: rootName}}
+		for i := 0; i < len(queue); i++ {
+			current := queue[i]
+			if _, exists := seenPaths[current.ArchivePath+"/"]; !exists {
+				seenPaths[current.ArchivePath+"/"] = struct{}{}
+				directories = append(directories, current.ArchivePath+"/")
+			}
+			files, err := f.factory.UserFiles().ListByVirtualPath(ctx, userID, strconv.Itoa(current.Dir.ID), 0, -1)
+			if err != nil {
+				return nil, nil, 0, false, err
+			}
+			for _, file := range files {
+				if err := validateArchiveSegment(file.FileName); err != nil {
+					return nil, nil, 0, false, err
+				}
+				if err := addFile(file, path.Join(current.ArchivePath, file.FileName)); err != nil {
+					return nil, nil, 0, false, err
+				}
+			}
+			children, err := f.factory.VirtualPath().ListSubFoldersByParentID(ctx, userID, current.Dir.ID, 0, -1)
+			if err != nil {
+				return nil, nil, 0, false, err
+			}
+			for _, child := range children {
+				name := cleanFolderName(child.Path)
+				if err := validateArchiveSegment(name); err != nil {
+					return nil, nil, 0, false, err
+				}
+				queue = append(queue, dirEntry{Dir: child, ArchivePath: path.Join(current.ArchivePath, name)})
+			}
+		}
+	}
+	// 目录优先展开，若调用方同时选择目录及其成员，保留成员在目录中的相对路径。
+	for _, fileID := range fileIDs {
+		file, err := f.factory.UserFiles().GetByUserIDAndUfID(ctx, userID, fileID)
+		if err != nil {
+			return nil, nil, 0, false, fmt.Errorf("文件不存在或无权限: %s", fileID)
+		}
+		if err := validateArchiveSegment(file.FileName); err != nil {
+			return nil, nil, 0, false, err
+		}
+		if err := addFile(file, file.FileName); err != nil {
+			return nil, nil, 0, false, err
+		}
+	}
+	sort.Slice(entries, func(i, j int) bool { return entries[i].ArchivePath < entries[j].ArchivePath })
+	sort.Strings(directories)
+	return entries, directories, totalSize, hasEncrypted, nil
+}
+
+func validateArchiveSegment(name string) error {
+	trimmed := strings.TrimSpace(name)
+	if trimmed == "" || trimmed == "." || trimmed == ".." || strings.ContainsAny(trimmed, "/\\\x00") {
+		return fmt.Errorf("文件或目录名称不适合打包: %s", name)
+	}
+	return nil
+}
+
+func validArchivePath(value string) bool {
+	if value == "" || value == "." || value == ".." || path.IsAbs(value) || strings.Contains(value, "\\") {
+		return false
+	}
+	for _, segment := range strings.Split(value, "/") {
+		if segment == "" || segment == "." || segment == ".." {
+			return false
+		}
+	}
+	return true
+}
+
+func safeArchiveSegment(name string) string {
+	name = strings.TrimSpace(strings.TrimPrefix(name, "/"))
+	name = strings.NewReplacer("/", "_", "\\", "_", ":", "_").Replace(name)
+	name = strings.Map(func(r rune) rune {
+		if r < 32 {
+			return '_'
+		}
+		return r
+	}, name)
+	if name == "" || name == "." || name == ".." {
+		return "files"
+	}
+	return name
+}
+
+func packageFileIDs(entries []PackageEntry) []string {
+	result := make([]string, 0, len(entries))
+	for _, entry := range entries {
+		result = append(result, entry.FileID)
+	}
+	return result
 }
 
 // createZipPackage 异步创建ZIP压缩包
 func (f *FileService) createZipPackage(ctx context.Context, task *PackageTask) {
+	tempDir := filepath.Join(os.TempDir(), "package_"+task.PackageID)
 	defer func() {
+		task.mu.Lock()
+		task.FilePassword = ""
+		task.mu.Unlock()
 		if r := recover(); r != nil {
+			_ = os.RemoveAll(tempDir)
 			task.mu.Lock()
 			task.Status = "failed"
 			task.ErrorMsg = fmt.Sprintf("打包失败: %v", r)
@@ -116,8 +292,8 @@ func (f *FileService) createZipPackage(ctx context.Context, task *PackageTask) {
 	}()
 
 	// 创建临时目录
-	tempDir := filepath.Join(os.TempDir(), "package_"+task.PackageID)
 	if err := os.MkdirAll(tempDir, 0755); err != nil {
+		_ = os.RemoveAll(tempDir)
 		task.mu.Lock()
 		task.Status = "failed"
 		task.ErrorMsg = fmt.Sprintf("创建临时目录失败: %v", err)
@@ -131,93 +307,90 @@ func (f *FileService) createZipPackage(ctx context.Context, task *PackageTask) {
 	zipPath := filepath.Join(tempDir, task.PackageName)
 	zipFile, err := os.Create(zipPath)
 	if err != nil {
+		_ = os.RemoveAll(tempDir)
 		task.mu.Lock()
 		task.Status = "failed"
 		task.ErrorMsg = fmt.Sprintf("创建ZIP文件失败: %v", err)
 		task.mu.Unlock()
 		return
 	}
-	defer zipFile.Close()
-
 	zipWriter := zip.NewWriter(zipFile)
-	defer zipWriter.Close()
-
-	// 逐个添加文件到ZIP
-	totalFiles := len(task.FileIDs)
-	for i, fileID := range task.FileIDs {
-		// 更新进度
+	fail := func(err error) {
+		_ = zipWriter.Close()
+		_ = zipFile.Close()
+		_ = os.RemoveAll(tempDir)
 		task.mu.Lock()
-		task.Progress = int((i + 1) * 100 / totalFiles)
+		task.Status = "failed"
+		task.ErrorMsg = err.Error()
 		task.mu.Unlock()
-
-		// 获取用户文件（前端传递的是 uf_id）
-		userFile, err := f.factory.UserFiles().GetByUserIDAndUfID(ctx, task.UserID, fileID)
-		if err != nil {
-			logger.LOG.Warn("获取用户文件失败", "fileID", fileID, "error", err)
-			continue
+	}
+	for _, directory := range task.EmptyDirs {
+		if _, err := zipWriter.Create(directory); err != nil {
+			fail(fmt.Errorf("创建目录条目失败: %w", err))
+			return
 		}
+	}
 
-		// 获取文件信息
+	totalFiles := len(task.Entries)
+	for i, entry := range task.Entries {
+		userFile, err := f.factory.UserFiles().GetByUserIDAndUfID(ctx, task.UserID, entry.FileID)
+		if err != nil {
+			fail(fmt.Errorf("获取打包文件失败: %w", err))
+			return
+		}
 		fileInfo, err := f.factory.FileInfo().GetByID(ctx, userFile.FileID)
 		if err != nil {
-			logger.LOG.Warn("获取文件信息失败", "fileID", fileID, "error", err)
-			continue
+			fail(fmt.Errorf("获取文件信息失败: %w", err))
+			return
 		}
-
-		// 准备文件下载（处理加密和分片）
-		// 注意：PrepareLocalFileDownload 需要的是 file_id（file_info表的ID），不是 uf_id
 		downloadResult, err := download.PrepareLocalFileDownload(
-			ctx,
-			userFile.FileID, // 使用 file_info 表的 ID
-			task.UserID,
-			tempDir,
-			f.factory,
-			&download.LocalFileDownloadOptions{},
+			ctx, userFile.FileID, task.UserID, tempDir, f.factory,
+			&download.LocalFileDownloadOptions{FilePassword: task.FilePassword},
 		)
 		if err != nil {
-			logger.LOG.Warn("准备文件下载失败", "fileID", fileID, "error", err)
-			continue
+			fail(fmt.Errorf("准备文件“%s”失败: %w", userFile.FileName, err))
+			return
 		}
-
-		// 打开文件
 		sourceFile, err := os.Open(downloadResult.TempFilePath)
 		if err != nil {
-			logger.LOG.Warn("打开文件失败", "fileID", fileID, "error", err)
-			continue
+			fail(fmt.Errorf("打开文件“%s”失败: %w", userFile.FileName, err))
+			return
 		}
-
-		// 创建ZIP中的文件条目
-		zipEntry, err := zipWriter.Create(userFile.FileName)
+		zipEntry, err := zipWriter.Create(entry.ArchivePath)
 		if err != nil {
-			sourceFile.Close()
-			logger.LOG.Warn("创建ZIP条目失败", "fileID", fileID, "error", err)
-			continue
+			_ = sourceFile.Close()
+			fail(fmt.Errorf("创建压缩条目失败: %w", err))
+			return
 		}
-
-		// 复制文件内容到ZIP
-		written, err := io.Copy(zipEntry, sourceFile)
-		if err != nil {
-			sourceFile.Close()
-			logger.LOG.Warn("复制文件到ZIP失败", "fileID", fileID, "error", err)
-			continue
+		written, copyErr := io.Copy(zipEntry, sourceFile)
+		closeErr := sourceFile.Close()
+		if copyErr != nil || closeErr != nil {
+			if copyErr == nil {
+				copyErr = closeErr
+			}
+			fail(fmt.Errorf("写入文件“%s”失败: %w", userFile.FileName, copyErr))
+			return
 		}
-
-		sourceFile.Close()
 		task.mu.Lock()
 		task.CreatedSize += written
+		if totalFiles > 0 {
+			task.Progress = (i + 1) * 100 / totalFiles
+		}
 		task.mu.Unlock()
-
-		// 清理临时文件（如果是PrepareLocalFileDownload创建的临时文件）
-		// 注意：PrepareLocalFileDownload 创建的临时文件在磁盘的 temp 目录下
-		// 这里暂时不清理，由系统定期清理或下载完成后清理
-		// 如果需要立即清理，可以通过提取路径判断
 		if downloadResult.TempFilePath != fileInfo.Path && strings.Contains(downloadResult.TempFilePath, "temp") {
-			// 提取临时目录并清理
-			tempDir := filepath.Dir(downloadResult.TempFilePath)
-			if strings.Contains(tempDir, "temp") {
-				defer os.RemoveAll(tempDir)
+			preparedDir := filepath.Dir(downloadResult.TempFilePath)
+			if preparedDir != tempDir && strings.Contains(preparedDir, "temp") {
+				_ = os.RemoveAll(preparedDir)
 			}
 		}
+	}
+	if err := zipWriter.Close(); err != nil {
+		fail(fmt.Errorf("完成压缩包失败: %w", err))
+		return
+	}
+	if err := zipFile.Close(); err != nil {
+		fail(fmt.Errorf("关闭压缩包失败: %w", err))
+		return
 	}
 
 	// 完成打包

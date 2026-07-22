@@ -10,6 +10,7 @@ export interface FileSearchParams {
   keyword: string
   type?: string
   sortBy?: string
+  sortOrder?: 'asc' | 'desc'
   page?: number
   pageSize?: number
 }
@@ -120,6 +121,16 @@ export const moveFile = (data: MoveFileRequest) => {
   return post<ApiResponse>(API_ENDPOINTS.FILE.MOVE, data)
 }
 
+export interface MoveItemsRequest {
+  file_ids: string[]
+  dir_ids: number[]
+  target_path: string
+}
+
+export const moveItems = (data: MoveItemsRequest) => {
+  return post<ApiResponse>(API_ENDPOINTS.FILE.MOVE_BATCH, data)
+}
+
 /**
  * 获取虚拟路径树
  */
@@ -139,6 +150,15 @@ export interface DeleteFileRequest {
  */
 export const deleteFiles = (data: DeleteFileRequest) => {
   return post<ApiResponse>(API_ENDPOINTS.FILE.DELETE, data)
+}
+
+export interface DeleteItemsRequest {
+  file_ids: string[]
+  dir_ids: number[]
+}
+
+export const deleteItems = (data: DeleteItemsRequest) => {
+  return post<ApiResponse>(API_ENDPOINTS.FILE.DELETE_BATCH, data)
 }
 
 /**

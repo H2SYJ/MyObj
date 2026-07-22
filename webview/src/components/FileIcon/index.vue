@@ -1,5 +1,9 @@
 <template>
-  <div class="file-icon-wrapper" :class="{ 'has-thumbnail': showThumbnail && !isEncrypted }">
+  <div
+    class="file-icon-wrapper"
+    :class="{ 'has-thumbnail': showThumbnail && !isEncrypted }"
+    :style="{ width: `${iconSize}px`, height: `${iconSize}px` }"
+  >
     <!-- 缩略图（加密文件不显示缩略图） -->
     <img
       v-if="showThumbnail && thumbnailUrl && !isEncrypted"
@@ -101,8 +105,14 @@
   .file-icon-wrapper {
     position: relative;
     display: inline-block;
-    width: 100%;
-    height: 100%;
+    min-width: 0;
+    min-height: 0;
+    max-width: 100%;
+    max-height: 100%;
+    flex: 0 0 auto;
+    overflow: hidden;
+    box-sizing: border-box;
+    vertical-align: middle;
   }
 
   .file-icon-card {
@@ -173,8 +183,14 @@
   }
 
   .thumbnail-image {
+    display: block;
     width: 100%;
     height: 100%;
+    min-width: 0;
+    min-height: 0;
+    max-width: 100%;
+    max-height: 100%;
+    box-sizing: border-box;
     object-fit: cover;
     border-radius: 12px;
     border: 2px solid var(--el-border-color-lighter);

@@ -47,6 +47,7 @@ func (r *recycledRepository) Delete(ctx context.Context, id string) error {
 func (r *recycledRepository) ListByUserID(ctx context.Context, userID string, offset, limit int) ([]*models.Recycled, error) {
 	var recycleds []*models.Recycled
 	err := r.db.WithContext(ctx).Where("user_id = ?", userID).
+		Order("created_at DESC, id ASC").
 		Offset(offset).Limit(limit).Find(&recycleds).Error
 	return recycleds, err
 }
@@ -71,7 +72,7 @@ func (r *recycledRepository) GetExpiredRecords(ctx context.Context, days int) ([
 // CountFileReferences 统计指定文件被多少个用户持有
 func (r *recycledRepository) CountFileReferences(ctx context.Context, fileID string) (int64, error) {
 	var count int64
-	err := r.db.WithContext(ctx).Model(&models.UserFiles{}).
+	err := r.db.WithContext(ctx).Unscoped().Model(&models.UserFiles{}).
 		Where("file_id = ?", fileID).Count(&count).Error
 	return count, err
 }

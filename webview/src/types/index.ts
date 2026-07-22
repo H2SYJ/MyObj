@@ -110,6 +110,7 @@ export interface FileListRequest {
   virtualPath?: string
   type?: string
   sortBy?: string
+  sortOrder?: 'asc' | 'desc'
   page: number
   pageSize: number
 }

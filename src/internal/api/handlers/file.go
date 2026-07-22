@@ -3,7 +3,7 @@ package handlers
 import (
 	"errors"
 	"myobj/src/core/domain/request"
-	_ "myobj/src/core/domain/response" // 导入用于Swagger文档生成
+	"myobj/src/core/domain/response"
 	"myobj/src/core/service"
 	"myobj/src/internal/api/middleware"
 	"myobj/src/pkg/cache"
@@ -79,8 +79,10 @@ func (f *FileHandler) Router(c *gin.RouterGroup) {
 		fileGroup.POST("/makeDir", middleware.PowerVerify("dir:create"), f.MakeDir)
 		// 移动文件
 		fileGroup.POST("/move", middleware.PowerVerify("file:move"), f.MoveFile)
+		fileGroup.POST("/moveBatch", middleware.PowerVerify("file:move"), f.MoveItems)
 		// 删除文件
 		fileGroup.POST("/delete", middleware.PowerVerify("file:delete"), f.DeleteFile)
+		fileGroup.POST("/deleteBatch", f.DeleteItems)
 		// 重命名文件（业务逻辑已验证文件所有权，无需额外权限验证）
 		fileGroup.POST("/rename", f.RenameFile)
 		// 重命名目录（业务逻辑已验证目录所有权，无需额外权限验证）
@@ -344,6 +346,21 @@ func (f *FileHandler) MoveFile(c *gin.Context) {
 	c.JSON(200, moveFile)
 }
 
+// MoveItems 批量移动文件和目录。
+func (f *FileHandler) MoveItems(c *gin.Context) {
+	req := new(request.MoveItemsRequest)
+	if err := c.ShouldBindJSON(req); err != nil {
+		c.JSON(200, models.NewJsonResponse(400, "参数错误", err.Error()))
+		return
+	}
+	result, err := f.service.MoveItems(req, c.GetString("userID"))
+	if err != nil {
+		c.JSON(200, models.NewJsonResponse(500, "移动失败", err.Error()))
+		return
+	}
+	c.JSON(200, result)
+}
+
 // GetVirtualPath 获取虚拟路径
 func (f *FileHandler) GetVirtualPath(c *gin.Context) {
 	userID := c.GetString("userID")
@@ -378,6 +395,46 @@ func (f *FileHandler) DeleteFile(c *gin.Context) {
 		return
 	}
 	c.JSON(200, result)
+}
+
+// DeleteItems 批量删除文件和目录，并按项目类型校验权限。
+func (f *FileHandler) DeleteItems(c *gin.Context) {
+	req := new(request.DeleteItemsRequest)
+	if err := c.ShouldBindJSON(req); err != nil {
+		c.JSON(200, models.NewJsonResponse(400, "参数错误", err.Error()))
+		return
+	}
+	if len(req.FileIDs) > 0 && !requestHasPower(c, "file:delete") {
+		c.JSON(403, models.NewJsonResponse(403, "无文件删除权限", nil))
+		return
+	}
+	if len(req.DirIDs) > 0 && !requestHasPower(c, "dir:delete") {
+		c.JSON(403, models.NewJsonResponse(403, "无目录删除权限", nil))
+		return
+	}
+	result, err := f.service.DeleteItems(req, c.GetString("userID"))
+	if err != nil {
+		c.JSON(200, models.NewJsonResponse(500, "删除失败", err.Error()))
+		return
+	}
+	c.JSON(200, result)
+}
+
+func requestHasPower(c *gin.Context, characteristic string) bool {
+	value, ok := c.Get("userLogin")
+	if !ok {
+		return false
+	}
+	login, ok := value.(response.UserLoginResponse)
+	if !ok {
+		return false
+	}
+	for _, power := range login.Power {
+		if power.Characteristic == characteristic {
+			return true
+		}
+	}
+	return false
 }
 
 // RenameFile godoc

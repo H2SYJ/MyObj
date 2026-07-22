@@ -6,6 +6,8 @@ import type { ApiResponse } from '@/types'
 // 打包下载相关类型
 export interface CreatePackageRequest {
   file_ids: string[]
+  dir_ids?: number[]
+  file_password?: string
   package_name?: string
 }
 

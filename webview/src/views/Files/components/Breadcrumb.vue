@@ -14,17 +14,6 @@
           :title="t('files.goBack')"
         />
 
-        <!-- 刷新按钮 -->
-        <el-button
-          icon="Refresh"
-          circle
-          size="small"
-          class="nav-button"
-          @click="$emit('refresh')"
-          :loading="refreshing"
-          :title="t('common.refresh')"
-        />
-
         <!-- 面包屑导航 -->
         <el-breadcrumb separator="/" class="breadcrumb-nav">
           <el-breadcrumb-item
@@ -54,17 +43,14 @@
     breadcrumbs: Breadcrumb[]
     formatBreadcrumbName: (name: string) => string
     currentPath?: string
-    refreshing?: boolean
   }
 
   const props = withDefaults(defineProps<Props>(), {
-    currentPath: '',
-    refreshing: false
+    currentPath: ''
   })
 
   const emit = defineEmits<{
     navigate: [path: string]
-    refresh: []
     'go-back': []
   }>()
 

@@ -420,13 +420,42 @@ CREATE TABLE `shares` (
 CREATE TABLE `recycled` (
     `id` VARCHAR(64) NOT NULL COMMENT '回收站ID',
     `file_id` VARCHAR(64) NOT NULL COMMENT '文件ID',
+    `item_type` VARCHAR(16) NOT NULL DEFAULT 'file' COMMENT '条目类型：file/folder',
+    `item_name` TEXT NULL COMMENT '显示名称',
+    `original_parent_id` INT NOT NULL DEFAULT 0 COMMENT '原父目录ID',
+    `total_size` BIGINT NOT NULL DEFAULT 0 COMMENT '汇总大小',
+    `item_count` INT NOT NULL DEFAULT 1 COMMENT '汇总项目数',
     `user_id` VARCHAR(64) NOT NULL COMMENT '用户ID',
     `created_at` DATETIME NOT NULL COMMENT '删除时间',
     PRIMARY KEY (`id`),
     UNIQUE KEY `uk_id` (`id`),
     KEY `idx_user_id` (`user_id`),
-    KEY `idx_file_id` (`file_id`)
+    KEY `idx_file_id` (`file_id`),
+    KEY `idx_recycled_user_type_created` (`user_id`, `item_type`, `created_at`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='回收站表';
+
+CREATE TABLE `recycled_directory_node` (
+    `id` BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+    `recycled_id` VARCHAR(64) NOT NULL,
+    `original_dir_id` INT NOT NULL,
+    `parent_original_id` INT NOT NULL DEFAULT 0,
+    `name` TEXT NOT NULL,
+    `depth` INT NOT NULL DEFAULT 0,
+    PRIMARY KEY (`id`),
+    UNIQUE KEY `idx_recycled_original_dir` (`recycled_id`, `original_dir_id`),
+    KEY `idx_recycled_node_parent` (`parent_original_id`),
+    KEY `idx_recycled_node_depth` (`depth`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='回收站目录节点';
+
+CREATE TABLE `recycled_directory_file` (
+    `id` BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+    `recycled_id` VARCHAR(64) NOT NULL,
+    `file_id` VARCHAR(64) NOT NULL,
+    `original_dir_id` INT NOT NULL,
+    PRIMARY KEY (`id`),
+    UNIQUE KEY `idx_recycled_directory_file` (`recycled_id`, `file_id`),
+    KEY `idx_recycled_file_dir` (`original_dir_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='回收站目录文件成员';
 
 -- ================================
 -- 7. 创建磁盘和系统配置表
@@ -486,7 +515,7 @@ INSERT INTO `power` (`id`, `name`, `description`, `created_at`, `characteristic`
 (20, '修改其他用户信息', '修改其他用户信息，包括密码', '2025-11-12 20:52:19', 'user:update:else'),
 (21, '用户密码修改', '修改用户自身密码', '2025-11-13 01:23:28', 'user:update:password'),
 (22, '用户文件密码', '设置，修改文件密码', '2025-11-13 19:14:46', 'file:update:filePassword'),
-(23, '移动文件', '移动文件至其他虚拟目录', '2025-11-18 01:17:59', 'file:move'),
+(23, '移动文件/目录', '移动文件或目录至其他虚拟目录', '2025-11-18 01:17:59', 'file:move'),
 (24, '删除文件', '删除文件（移动到回收站）', '2025-12-11 19:02:02', 'file:delete'),
 (25, 'WebDAV访问', '允许通过WebDAV协议访问文件系统', '2025-12-30 07:34:05', 'webdav:access');
 

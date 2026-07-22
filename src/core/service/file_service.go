@@ -379,7 +379,8 @@ func (f *FileService) SearchUserFiles(req *request.FileSearchRequest, userID str
 	offset := (page - 1) * pageSize
 
 	// 搜索用户文件
-	userFiles, err := f.factory.UserFiles().SearchUserFiles(ctx, userID, req.Keyword, offset, pageSize)
+	sortBy, sortOrder := normalizeFileSort(req.SortBy, req.SortOrder)
+	userFiles, err := f.factory.UserFiles().SearchUserFilesSorted(ctx, userID, req.Keyword, sortBy, sortOrder, offset, pageSize)
 	if err != nil {
 		logger.LOG.Error("搜索用户文件失败", "error", err, "userID", userID, "keyword", req.Keyword)
 		return nil, err
@@ -499,6 +500,7 @@ func (f *FileService) SearchPublicFiles(req *request.FileSearchRequest) (*models
 // GetFileList 获取文件列表（我的文件页面）
 func (f *FileService) GetFileList(req *request.FileListRequest, userID string) (*models.JsonResponse, error) {
 	ctx := context.Background()
+	sortBy, sortOrder := normalizeFileSort(req.SortBy, req.SortOrder)
 
 	// 处理虚拟路径ID，空或为0时使用根目录
 	var currentPathID int
@@ -527,6 +529,9 @@ func (f *FileService) GetFileList(req *request.FileListRequest, userID string) (
 		if err != nil {
 			logger.LOG.Error("查询路径信息失败", "error", err, "pathID", currentPathID)
 			return nil, fmt.Errorf("路径不存在: %w", err)
+		}
+		if currentPath.UserID != userID {
+			return nil, errors.New("无权访问该路径")
 		}
 	}
 
@@ -559,7 +564,11 @@ func (f *FileService) GetFileList(req *request.FileListRequest, userID string) (
 			folderLimit = int(folderCount) - offset
 		}
 
-		folders, err = f.factory.VirtualPath().ListSubFoldersByParentID(ctx, userID, currentPathID, offset, folderLimit)
+		folderSortBy, folderSortOrder := sortBy, sortOrder
+		if sortBy == "size" {
+			folderSortBy, folderSortOrder = "name", "asc"
+		}
+		folders, err = f.factory.VirtualPath().ListSubFoldersByParentIDSorted(ctx, userID, currentPathID, folderSortBy, folderSortOrder, offset, folderLimit)
 		if err != nil {
 			logger.LOG.Error("查询子目录列表失败", "error", err, "userID", userID, "pathID", currentPathID)
 			return nil, err
@@ -568,7 +577,7 @@ func (f *FileService) GetFileList(req *request.FileListRequest, userID string) (
 		// 如果还有剩余空间，查询文件（直接从user_files表查询，避免file_id重复问题）
 		remaining := req.PageSize - len(folders)
 		if remaining > 0 {
-			userFiles, err = f.factory.UserFiles().ListByVirtualPath(ctx, userID, virtualPathIDStr, 0, remaining)
+			userFiles, err = f.factory.UserFiles().ListByVirtualPathSorted(ctx, userID, virtualPathIDStr, sortBy, sortOrder, 0, remaining)
 			if err != nil {
 				logger.LOG.Error("查询文件列表失败", "error", err, "userID", userID, "virtualPath", virtualPathIDStr)
 				return nil, err
@@ -577,7 +586,7 @@ func (f *FileService) GetFileList(req *request.FileListRequest, userID string) (
 	} else {
 		// 当前页只包含文件（直接从user_files表查询，避免file_id重复问题）
 		fileOffset := offset - int(folderCount)
-		userFiles, err = f.factory.UserFiles().ListByVirtualPath(ctx, userID, virtualPathIDStr, fileOffset, req.PageSize)
+		userFiles, err = f.factory.UserFiles().ListByVirtualPathSorted(ctx, userID, virtualPathIDStr, sortBy, sortOrder, fileOffset, req.PageSize)
 		if err != nil {
 			logger.LOG.Error("查询文件列表失败", "error", err, "userID", userID, "virtualPath", virtualPathIDStr)
 			return nil, err
@@ -634,6 +643,18 @@ func (f *FileService) GetFileList(req *request.FileListRequest, userID string) (
 	}
 
 	return models.NewJsonResponse(200, "获取成功", resp), nil
+}
+
+func normalizeFileSort(sortBy, sortOrder string) (string, string) {
+	switch sortBy {
+	case "name", "size", "time":
+	default:
+		sortBy = "time"
+	}
+	if sortOrder != "asc" && sortOrder != "desc" {
+		sortOrder = "desc"
+	}
+	return sortBy, sortOrder
 }
 
 // buildBreadcrumbs 构建面包屑导航（只展示当前、上级、上上级）
@@ -726,20 +747,9 @@ func (f *FileService) MakeDir(req *request.MakeDirRequest, userID string) (*mode
 
 // MoveFile 移动文件
 func (f *FileService) MoveFile(req *request.MoveFileRequest, userID string) (*models.JsonResponse, error) {
-	ctx := context.Background()
-	userFile, err := f.factory.UserFiles().GetByUserIDAndUfID(ctx, userID, req.FileID)
-	if err != nil {
-		logger.LOG.Error("获取文件失败", "error", err)
-		return nil, err
-	}
-	userFile.UserID = userID
-	userFile.VirtualPath = req.TargetPath
-	err = f.factory.UserFiles().Update(ctx, userFile)
-	if err != nil {
-		logger.LOG.Error("移动文件失败", "error", err)
-		return nil, err
-	}
-	return models.NewJsonResponse(200, "移动文件成功", nil), nil
+	return f.MoveItems(&request.MoveItemsRequest{
+		FileIDs: []string{req.FileID}, TargetPath: req.TargetPath,
+	}, userID)
 }
 
 // GetVirtualPath 获取虚拟路径
@@ -951,7 +961,7 @@ func (f *FileService) SetFilePublic(req *request.SetFilePublicRequest, userID st
 }
 
 // DeleteDir 删除目录（递归删除目录下的所有文件和子目录）
-func (f *FileService) DeleteDir(req *request.DeleteDirRequest, userID string) (*models.JsonResponse, error) {
+func (f *FileService) deleteDirLegacy(req *request.DeleteDirRequest, userID string) (*models.JsonResponse, error) {
 	ctx := context.Background()
 
 	// 1. 获取目录信息
@@ -1125,80 +1135,7 @@ func (f *FileService) collectSubDirs(ctx context.Context, userID string, parentD
 
 // DeleteFiles 删除文件（移动到回收站）
 func (f *FileService) DeleteFiles(req *request.DeleteFileRequest, userID string) (*models.JsonResponse, error) {
-	ctx := context.Background()
-
-	successCount := 0
-	failedCount := 0
-	var errors []string
-
-	for _, fileID := range req.FileIDs {
-		// 验证用户是否拥有该文件
-		userFile, err := f.factory.UserFiles().GetByUserIDAndUfID(ctx, userID, fileID)
-		if err != nil {
-			logger.LOG.Warn("用户不拥有该文件", "userID", userID, "fileID", fileID)
-			errors = append(errors, fmt.Sprintf("文件 %s 不存在或无权访问", fileID))
-			failedCount++
-			continue
-		}
-
-		// 检查是否已在回收站
-		_, err = f.factory.Recycled().GetByUserIDAndFileID(ctx, userID, fileID)
-		if err == nil {
-			logger.LOG.Warn("文件已在回收站", "fileID", fileID)
-			errors = append(errors, fmt.Sprintf("文件 %s 已在回收站中", fileID))
-			failedCount++
-			continue
-		}
-
-		// 在事务中执行：1. 软删除 user_files、 2. 创建回收站记录
-		err = f.factory.DB().Transaction(func(tx *gorm.DB) error {
-			txFactory := f.factory.WithTx(tx)
-
-			// 软删除 user_files 记录
-			if err := tx.Where("user_id = ? AND uf_id = ?", userID, fileID).Delete(&models.UserFiles{}).Error; err != nil {
-				return fmt.Errorf("软删除用户文件失败: %w", err)
-			}
-
-			// 创建回收站记录
-			recycled := &models.Recycled{
-				ID:        uuid.Must(uuid.NewV7()).String(),
-				FileID:    fileID,
-				UserID:    userID,
-				CreatedAt: custom_type.Now(),
-			}
-
-			if err := txFactory.Recycled().Create(ctx, recycled); err != nil {
-				return fmt.Errorf("创建回收站记录失败: %w", err)
-			}
-
-			return nil
-		})
-
-		if err != nil {
-			logger.LOG.Error("删除文件失败", "error", err, "fileID", fileID, "userID", userID)
-			errors = append(errors, fmt.Sprintf("删除文件 %s 失败: %v", fileID, err))
-			failedCount++
-			continue
-		}
-
-		successCount++
-		logger.LOG.Info("文件已移动到回收站", "fileID", fileID, "userID", userID, "fileName", userFile.FileName)
-	}
-
-	message := fmt.Sprintf("成功删除 %d 个文件", successCount)
-	if failedCount > 0 {
-		message = fmt.Sprintf("%s，失败 %d 个", message, failedCount)
-	}
-
-	result := map[string]interface{}{
-		"success": successCount,
-		"failed":  failedCount,
-	}
-	if len(errors) > 0 {
-		result["errors"] = errors
-	}
-
-	return models.NewJsonResponse(200, message, result), nil
+	return f.DeleteItems(&request.DeleteItemsRequest{FileIDs: req.FileIDs}, userID)
 }
 
 // UploadFile 文件上传处理

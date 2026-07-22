@@ -6,6 +6,9 @@ import type { ApiResponse } from '@/types'
 // 回收站文件项
 export interface RecycledItem {
   recycled_id: string
+  item_type: 'file' | 'folder'
+  item_name: string
+  item_count: number
   file_id: string
   file_name: string
   file_size: number

@@ -34,6 +34,8 @@ export const API_ENDPOINTS = {
     DELETE: '/file/delete',
     RENAME: '/file/rename',
     MOVE: '/file/move',
+    MOVE_BATCH: '/file/moveBatch',
+    DELETE_BATCH: '/file/deleteBatch',
     COPY: '/file/copy',
     INFO: '/file/info',
     PREVIEW: '/file/preview',

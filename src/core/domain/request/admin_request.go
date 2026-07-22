@@ -144,8 +144,10 @@ type AdminUpdateSystemConfigRequest struct {
 
 // PackageCreateRequest 创建打包下载请求
 type PackageCreateRequest struct {
-	FileIDs     []string `json:"file_ids" binding:"required,min=1"`
-	PackageName string   `json:"package_name"`
+	FileIDs      []string `json:"file_ids"`
+	DirIDs       []int    `json:"dir_ids"`
+	FilePassword string   `json:"file_password"`
+	PackageName  string   `json:"package_name"`
 }
 
 // PackageProgressRequest 获取打包进度请求

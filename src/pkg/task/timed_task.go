@@ -3,6 +3,7 @@ package task
 import (
 	"context"
 	"fmt"
+	"myobj/src/core/service"
 	"myobj/src/internal/repository/impl"
 	"myobj/src/pkg/logger"
 	"myobj/src/pkg/models"
@@ -11,8 +12,6 @@ import (
 	"path/filepath"
 	"strings"
 	"time"
-
-	"gorm.io/gorm"
 )
 
 // RecycledTask 回收站 定时任务
@@ -75,97 +74,7 @@ func (t *RecycledTask) CleanupExpiredFiles(days int) error {
 
 // processExpiredRecord 处理单个过期记录
 func (t *RecycledTask) processExpiredRecord(ctx context.Context, record *models.Recycled) error {
-	// 1. 检查文件是否被其他用户持有
-	refCount, err := t.factory.Recycled().CountFileReferences(ctx, record.FileID)
-	if err != nil {
-		return fmt.Errorf("统计文件引用数失败: %w", err)
-	}
-
-	// 2. 如果有其他用户持有，只删除回收站记录，不删除物理文件
-	if refCount > 1 {
-		logger.LOG.Debug("文件被其他用户持有，仅删除回收站记录",
-			"file_id", record.FileID,
-			"ref_count", refCount)
-		return t.factory.Recycled().Delete(ctx, record.ID)
-	}
-
-	// 3. 获取文件信息
-	fileInfo, err := t.factory.FileInfo().GetByID(ctx, record.FileID)
-	if err != nil {
-		// 如果文件信息不存在，直接删除回收站记录
-		if err == gorm.ErrRecordNotFound {
-			logger.LOG.Warn("文件信息不存在，直接删除回收站记录", "file_id", record.FileID)
-			return t.factory.Recycled().Delete(ctx, record.ID)
-		}
-		return fmt.Errorf("获取文件信息失败: %w", err)
-	}
-
-	// 4. 获取用户信息（用于空间归还）
-	user, err := t.factory.User().GetByID(ctx, record.UserID)
-	if err != nil {
-		return fmt.Errorf("获取用户信息失败: %w", err)
-	}
-
-	// 5. 在事务中执行删除操作
-	err = t.factory.DB().Transaction(func(tx *gorm.DB) error {
-		txFactory := t.factory.WithTx(tx)
-
-		// 5.1 删除物理文件（普通文件或加密文件）
-		if err := t.deletePhysicalFile(fileInfo); err != nil {
-			logger.LOG.Warn("删除物理文件失败", "error", err)
-			// 物理文件删除失败不阻塞事务，继续执行
-		}
-
-		// 5.2 删除缩略图
-		if fileInfo.ThumbnailImg != "" {
-			if err := t.deleteThumbnail(fileInfo.ThumbnailImg); err != nil {
-				logger.LOG.Warn("删除缩略图失败", "error", err)
-			}
-		}
-
-		// 5.3 如果是分片文件，删除所有分片记录
-		if fileInfo.IsChunk {
-			if err := txFactory.FileChunk().DeleteByFileID(ctx, record.FileID); err != nil {
-				return fmt.Errorf("删除文件分片记录失败: %w", err)
-			}
-		}
-
-		// 5.4 删除FileInfo记录
-		if err := txFactory.FileInfo().Delete(ctx, record.FileID); err != nil {
-			return fmt.Errorf("删除文件信息记录失败: %w", err)
-		}
-
-		// 5.5 删除回收站记录
-		if err := txFactory.Recycled().Delete(ctx, record.ID); err != nil {
-			return fmt.Errorf("删除回收站记录失败: %w", err)
-		}
-
-		// 5.6 归还用户空间（只对非无限空间用户）
-		if user.Space > 0 {
-			user.FreeSpace += int64(fileInfo.Size)
-			if err := txFactory.User().Update(ctx, user); err != nil {
-				return fmt.Errorf("更新用户空间失败: %w", err)
-			}
-			logger.LOG.Debug("归还用户空间",
-				"user_id", user.ID,
-				"returned_size", fileInfo.Size,
-				"new_free_space", user.FreeSpace)
-		}
-
-		return nil
-	})
-
-	if err != nil {
-		return fmt.Errorf("事务执行失败: %w", err)
-	}
-
-	logger.LOG.Info("成功删除过期文件",
-		"record_id", record.ID,
-		"file_id", record.FileID,
-		"user_id", record.UserID,
-		"file_size", fileInfo.Size)
-
-	return nil
+	return service.NewRecycledService(t.factory, nil).PurgeRecord(ctx, record)
 }
 
 // deletePhysicalFile 删除物理文件

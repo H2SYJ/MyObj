@@ -131,12 +131,14 @@ type UserFilesRepository interface {
 	SearchPublicFiles(ctx context.Context, keyword string, offset, limit int) ([]*models.UserFiles, error)
 	CountPublicFilesByKeyword(ctx context.Context, keyword string) (int64, error)
 	SearchUserFiles(ctx context.Context, userID, keyword string, offset, limit int) ([]*models.UserFiles, error)
+	SearchUserFilesSorted(ctx context.Context, userID, keyword, sortBy, sortOrder string, offset, limit int) ([]*models.UserFiles, error)
 	CountUserFilesByKeyword(ctx context.Context, userID, keyword string) (int64, error)
 	GetByUserIDAndUfID(ctx context.Context, userID, ufID string) (*models.UserFiles, error)
 	// GetByUfID 通过 uf_id 查询文件（用于公开文件访问，不要求 user_id）
 	GetByUfID(ctx context.Context, ufID string) (*models.UserFiles, error)
 	// ListByVirtualPath 查询指定虚拟路径下的user_files记录（避免file_id重复问题）
 	ListByVirtualPath(ctx context.Context, userID, virtualPath string, offset, limit int) ([]*models.UserFiles, error)
+	ListByVirtualPathSorted(ctx context.Context, userID, virtualPath, sortBy, sortOrder string, offset, limit int) ([]*models.UserFiles, error)
 }
 
 // VirtualPathRepository 虚拟路径仓储接口
@@ -150,6 +152,7 @@ type VirtualPathRepository interface {
 	Count(ctx context.Context, userID string) (int64, error)
 	// ListSubFolders 查询指定父目录ID下的子目录
 	ListSubFoldersByParentID(ctx context.Context, userID string, parentID int, offset, limit int) ([]*models.VirtualPath, error)
+	ListSubFoldersByParentIDSorted(ctx context.Context, userID string, parentID int, sortBy, sortOrder string, offset, limit int) ([]*models.VirtualPath, error)
 	// CountSubFolders 统计指定父目录ID下的子目录数量
 	CountSubFoldersByParentID(ctx context.Context, userID string, parentID int) (int64, error)
 	// GetRootPath 获取用户根目录

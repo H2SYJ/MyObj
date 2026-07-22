@@ -60,8 +60,29 @@ func InitDataBase() {
 		logger.LOG.Error("迁移插件订阅表失败", "error", err)
 		panic(fmt.Sprintf("迁移插件订阅表失败: %v", err))
 	}
+	if err := migrateRecycledSchema(databasePool); err != nil {
+		logger.LOG.Error("迁移回收站目录结构失败", "error", err)
+		panic(fmt.Sprintf("迁移回收站目录结构失败: %v", err))
+	}
 
 	logger.LOG.Info("[数据库] 数据库连接池初始化成功 ✓")
+}
+
+// migrateRecycledSchema 补齐整目录回收所需字段和关联表，旧文件记录保持兼容。
+func migrateRecycledSchema(db *gorm.DB) error {
+	if err := db.AutoMigrate(
+		&models.Recycled{},
+		&models.RecycledDirectoryNode{},
+		&models.RecycledDirectoryFile{},
+	); err != nil {
+		return err
+	}
+	return db.Model(&models.Recycled{}).
+		Where("item_type IS NULL OR item_type = ''").
+		Updates(map[string]interface{}{
+			"item_type":  models.RecycledItemTypeFile,
+			"item_count": 1,
+		}).Error
 }
 
 func migrateSubscriptionSchema(db *gorm.DB) error {

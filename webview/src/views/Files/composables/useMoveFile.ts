@@ -1,9 +1,11 @@
-import { moveFile, getVirtualPathTree } from '@/api/file'
+import { moveItems, getVirtualPathTree } from '@/api/file'
 import { useI18n } from '@/composables'
 
 export function useMoveFile(
   currentPath: Ref<string>,
   selectedFileIds: Ref<string[]>,
+  selectedFolderIds: Ref<number[]>,
+  clearSelection: () => void,
   loadFileList: () => Promise<void>
 ) {
   const { proxy } = getCurrentInstance() as ComponentInternalInstance
@@ -33,6 +35,17 @@ export function useMoveFile(
       }>
 
       const pathMap = new Map<string, any>()
+      const rawPathMap = new Map(virtualPaths.map(path => [path.id, path]))
+      const selectedDirSet = new Set(selectedFolderIds.value)
+      const isBlockedTarget = (path: (typeof virtualPaths)[number]) => {
+        let current: typeof path | undefined = path
+        while (current) {
+          if (selectedDirSet.has(current.id)) return true
+          const parentID = Number(current.parent_level)
+          current = parentID > 0 ? rawPathMap.get(parentID) : undefined
+        }
+        return false
+      }
       const rootNodes: any[] = []
 
       virtualPaths.forEach(vp => {
@@ -40,6 +53,7 @@ export function useMoveFile(
         pathMap.set(nodeId, {
           value: nodeId,
           label: vp.path.replace(/^\//, '') || t('files.rootDir'),
+          disabled: isBlockedTarget(vp),
           children: [],
           _raw: vp
         })
@@ -88,8 +102,8 @@ export function useMoveFile(
   }
 
   const handleMoveFile = async () => {
-    if (selectedFileIds.value.length === 0) {
-      proxy?.$modal.msgWarning(t('files.selectFilesFirst'))
+    if (selectedFileIds.value.length === 0 && selectedFolderIds.value.length === 0) {
+      proxy?.$modal.msgWarning(t('files.selectItemsFirst'))
       return
     }
 
@@ -111,23 +125,21 @@ export function useMoveFile(
 
     moving.value = true
     try {
-      for (const fileId of selectedFileIds.value) {
-        const res = await moveFile({
-          file_id: fileId,
-          source_path: currentPath.value,
-          target_path: targetFolderId.value
-        })
-
-        if (res.code !== 200) {
-          proxy?.$modal.msgError(t('files.moveFileFailed') + `: ${res.message}`)
-          return
-        }
+      const count = selectedFileIds.value.length + selectedFolderIds.value.length
+      const res = await moveItems({
+        file_ids: selectedFileIds.value,
+        dir_ids: selectedFolderIds.value,
+        target_path: targetFolderId.value
+      })
+      if (res.code !== 200) {
+        proxy?.$modal.msgError(res.message || t('files.moveFileFailed'))
+        return
       }
 
-      proxy?.$modal.msgSuccess(t('files.moveFilesSuccess', { count: selectedFileIds.value.length }))
+      proxy?.$modal.msgSuccess(t('files.moveItemsSuccess', { count }))
       showMoveDialog.value = false
-      selectedFileIds.value = []
-      loadFileList()
+      clearSelection()
+      await loadFileList()
     } catch (error: any) {
       proxy?.$modal.msgError(error.message || t('files.moveFileFailed'))
     } finally {

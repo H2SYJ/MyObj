@@ -1,6 +1,13 @@
 import { getFileList, getThumbnail } from '@/api/file'
 import { useI18n } from '@/composables'
 import type { FileListResponse } from '@/types'
+import cache from '@/plugins/cache'
+
+export type FileSortBy = 'name' | 'size' | 'time'
+export type FileSortOrder = 'asc' | 'desc'
+
+const SORT_BY_KEY = 'files.sortBy'
+const SORT_ORDER_KEY = 'files.sortOrder'
 
 export function useFileList() {
   const { proxy } = getCurrentInstance() as ComponentInternalInstance
@@ -23,6 +30,12 @@ export function useFileList() {
   const currentPath = ref<string>('')
   const thumbnailCache = ref<Map<string, string>>(new Map())
   const loading = ref(false)
+  const cachedSortBy = cache.local.get(SORT_BY_KEY)
+  const cachedSortOrder = cache.local.get(SORT_ORDER_KEY)
+  const sortBy = ref<FileSortBy>(
+    ['name', 'size', 'time'].includes(cachedSortBy || '') ? (cachedSortBy as FileSortBy) : 'time'
+  )
+  const sortOrder = ref<FileSortOrder>(cachedSortOrder === 'asc' ? 'asc' : 'desc')
 
   const breadcrumbs = computed(() => fileListData.value.breadcrumbs)
 
@@ -40,6 +53,8 @@ export function useFileList() {
     try {
       const res = await getFileList({
         virtualPath: currentPath.value,
+        sortBy: sortBy.value,
+        sortOrder: sortOrder.value,
         page: currentPage.value,
         pageSize: pageSize.value
       })
@@ -107,15 +122,29 @@ export function useFileList() {
     loadFileList()
   }
 
-  // 监听路由变化，支持浏览器前进/后退
+  const setSorting = (nextSortBy: FileSortBy, nextSortOrder: FileSortOrder = sortOrder.value) => {
+    sortBy.value = nextSortBy
+    sortOrder.value = nextSortOrder
+    cache.local.set(SORT_BY_KEY, nextSortBy)
+    cache.local.set(SORT_ORDER_KEY, nextSortOrder)
+  }
+
+  let initialized = false
+
+  // 监听路由变化，支持首次加载及浏览器前进/后退
   watch(
     () => route.query.virtualPath,
     newPath => {
       const pathValue = newPath && typeof newPath === 'string' ? newPath : ''
-      // 只有当路径真正改变时才更新
-      if (currentPath.value !== pathValue) {
+      const pathChanged = currentPath.value !== pathValue
+
+      if (pathChanged) {
         currentPath.value = pathValue
         currentPage.value = 1
+      }
+
+      if (!initialized || pathChanged) {
+        initialized = true
         loadFileList()
       }
     },
@@ -134,6 +163,9 @@ export function useFileList() {
     getThumbnailUrl,
     handlePageChange,
     handleSizeChange,
-    loading
+    loading,
+    sortBy,
+    sortOrder,
+    setSorting
   }
 }

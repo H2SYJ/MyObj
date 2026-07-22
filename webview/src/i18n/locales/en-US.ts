@@ -71,7 +71,8 @@ export default {
     export: 'Export',
     columnSetting: 'Column Settings',
     selectedCount: '{count} selected',
-    clearSelection: 'Clear Selection'
+    clearSelection: 'Clear Selection',
+    more: 'More actions'
   },
   menu: {
     files: 'Files',
@@ -272,10 +273,25 @@ export default {
     dirNameLength: 'Directory name length must be between 1 and 50 characters',
     dirNameInvalidChars: 'Directory name cannot contain special characters: \\ / : * ? " < > pipe',
     sameDirName: 'New directory name is the same as old directory name',
-    confirmDeleteDir:
-      'Are you sure to delete directory "{dirName}"? All files and subdirectories will be deleted and cannot be recovered.',
+    confirmDeleteDir: 'Delete directory "{dirName}"? The directory and its contents will be moved to Trash.',
     dirDeleteSuccess: 'Directory deleted successfully',
-    dirDeleteFailed: 'Failed to delete directory'
+    dirDeleteFailed: 'Failed to delete directory',
+    open: 'Open',
+    pageActions: 'Page Actions',
+    selectedItems: 'Selected Items',
+    selectItemsFirst: 'Please select files or folders first',
+    moveItemsSuccess: 'Successfully moved {count} items',
+    confirmDeleteItems: 'Delete the selected {count} items? They will be moved to Trash.',
+    sortName: 'Sort by Name',
+    sortTime: 'Sort by Time',
+    sortSize: 'Sort by Size',
+    sortAsc: 'Ascending',
+    sortDesc: 'Descending',
+    dropUpload: 'Drop to upload to this folder',
+    folderUploadUnsupported: 'Folder upload is not supported yet',
+    packagePasswordTip: 'The selection contains encrypted files. Enter the file password.',
+    packageFolderPasswordTip:
+      'If the folder contains encrypted files, enter their shared password. Leave blank otherwise.'
   },
   share: {
     title: 'Share File',
@@ -515,6 +531,7 @@ export default {
     readTorrentFailed: 'Failed to read torrent file'
   },
   trash: {
+    folderItems: '{count} items',
     title: 'Trash',
     restore: 'Restore',
     permanentDelete: 'Permanent Delete',
@@ -884,7 +901,7 @@ export default {
         },
         'user:update:password': { name: 'User Password Change', description: 'Change user own password' },
         'file:update:filePassword': { name: 'User File Password', description: 'Set and modify file password' },
-        'file:move': { name: 'Move File', description: 'Move files to other virtual directories' },
+        'file:move': { name: 'Move Files/Folders', description: 'Move files or folders to other virtual directories' },
         'file:delete': { name: 'Delete File', description: 'Delete files (move to trash)' },
         'webdav:access': { name: 'WebDAV Access', description: 'Allow access to file system via WebDAV protocol' }
       }

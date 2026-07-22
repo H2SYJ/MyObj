@@ -5,6 +5,9 @@ import "myobj/src/pkg/custom_type"
 // RecycledItem 回收站文件项
 type RecycledItem struct {
 	RecycledID   string               `json:"recycled_id"`
+	ItemType     string               `json:"item_type"`
+	ItemName     string               `json:"item_name"`
+	ItemCount    int                  `json:"item_count"`
 	FileID       string               `json:"file_id"`
 	FileName     string               `json:"file_name"`
 	FileSize     int64                `json:"file_size"`

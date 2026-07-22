@@ -63,9 +63,11 @@
         <template #default="{ row }">
           <div class="file-name-cell">
             <div class="list-file-icon">
+              <el-icon v-if="isFolder(row)" :size="26" class="folder-icon"><Folder /></el-icon>
               <file-icon
+                v-else
                 :mime-type="row.mime_type"
-                :file-name="row.file_name"
+                :file-name="itemName(row)"
                 :thumbnail-url="getThumbnailUrl(row.file_id)"
                 :show-thumbnail="row.has_thumbnail"
                 :icon-size="24"
@@ -74,8 +76,11 @@
               />
             </div>
             <div class="file-name-content">
-              <file-name-tooltip :file-name="row.file_name" view-mode="table" />
+              <file-name-tooltip :file-name="itemName(row)" view-mode="table" />
               <div class="file-name-tags">
+                <el-tag v-if="isFolder(row)" size="small" type="primary" effect="plain">
+                  {{ t('trash.folderItems', { count: row.item_count }) }}
+                </el-tag>
                 <el-tag v-if="row.is_enc" size="small" type="warning" class="enc-tag-inline">
                   <el-icon :size="12"><Lock /></el-icon>
                   {{ t('trash.encrypted') }}
@@ -166,9 +171,11 @@
               class="trash-checkbox"
             />
             <div class="list-file-icon">
+              <el-icon v-if="isFolder(row)" :size="28" class="folder-icon"><Folder /></el-icon>
               <file-icon
+                v-else
                 :mime-type="row.mime_type"
-                :file-name="row.file_name"
+                :file-name="itemName(row)"
                 :thumbnail-url="getThumbnailUrl(row.file_id)"
                 :show-thumbnail="row.has_thumbnail"
                 :icon-size="24"
@@ -177,9 +184,12 @@
               />
             </div>
             <div class="trash-name-wrapper">
-              <file-name-tooltip :file-name="row.file_name" view-mode="list" custom-class="trash-name" />
+              <file-name-tooltip :file-name="itemName(row)" view-mode="list" custom-class="trash-name" />
               <div class="trash-meta">
                 <span class="trash-size">{{ formatSize(row.file_size) }}</span>
+                <el-tag v-if="isFolder(row)" size="small" type="primary" effect="plain">
+                  {{ t('trash.folderItems', { count: row.item_count }) }}
+                </el-tag>
                 <el-tag v-if="row.is_enc" size="small" type="warning" effect="plain" class="enc-tag">
                   <el-icon :size="10"><Lock /></el-icon>
                   {{ t('trash.encrypted') }}
@@ -216,12 +226,7 @@
     </div>
 
     <!-- 空状态 -->
-    <EmptyState
-      v-if="!loading && fileList.length === 0"
-      type="trash"
-      :show-actions="false"
-      compact
-    />
+    <EmptyState v-if="!loading && fileList.length === 0" type="trash" :show-actions="false" compact />
 
     <!-- 分页 -->
     <pagination
@@ -255,6 +260,8 @@
   const currentPage = ref(1)
   const pageSize = ref(20)
   const selectedIds = ref<string[]>([])
+  const isFolder = (item: RecycledItem) => item.item_type === 'folder'
+  const itemName = (item: RecycledItem) => item.item_name || item.file_name
 
   // 回收站保留天数（后端配置为30天）
   const RECYCLED_RETENTION_DAYS = 30
@@ -384,7 +391,7 @@
   // 还原单个文件
   const handleRestoreFile = async (item: RecycledItem) => {
     try {
-      await proxy?.$modal.confirm(t('trash.confirmRestoreFile', { fileName: item.file_name }))
+      await proxy?.$modal.confirm(t('trash.confirmRestoreFile', { fileName: itemName(item) }))
       const res = await restoreFile(item.recycled_id)
       if (res.code === 200) {
         proxy?.$modal.msgSuccess(t('trash.restoreSuccess'))
@@ -445,7 +452,7 @@
   // 永久删除单个文件
   const handleDeleteFilepermanently = async (item: RecycledItem) => {
     try {
-      await proxy?.$modal.confirm(t('trash.confirmPermanentDeleteFile', { fileName: item.file_name }))
+      await proxy?.$modal.confirm(t('trash.confirmPermanentDeleteFile', { fileName: itemName(item) }))
       const res = await deleteFilePermanently(item.recycled_id)
       if (res.code === 200) {
         proxy?.$modal.msgSuccess(t('trash.deleteSuccess'))
@@ -577,6 +584,10 @@
   .list-file-icon {
     flex-shrink: 0;
     margin-top: 2px;
+  }
+
+  .folder-icon {
+    color: var(--el-color-primary);
   }
 
   .file-name-content {

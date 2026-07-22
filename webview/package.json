@@ -10,6 +10,7 @@
     "build:prod": "vite build --mode production",
     "preview": "vite preview",
     "type-check": "tsc --noEmit",
+    "test:unit": "vitest run --config vitest.config.ts",
     "lint": "eslint . --ext .vue,.js,.jsx,.cjs,.mjs,.ts,.tsx,.cts,.mts --fix --ignore-path .eslintignore",
     "lint:check": "eslint . --ext .vue,.js,.jsx,.cjs,.mjs,.ts,.tsx,.cts,.mts --ignore-path .eslintignore",
     "format": "prettier --write \"src/**/*.{js,ts,jsx,tsx,vue,json,css,scss,md}\" --ignore-path .prettierignore",
@@ -47,6 +48,7 @@
     "unplugin-auto-import": "^20.3.0",
     "unplugin-vue-components": "^30.0.0",
     "vite": "^7.2.2",
+    "vitest": "^3.2.4",
     "vite-plugin-compression": "^0.5.1"
   }
 }

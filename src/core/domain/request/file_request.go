@@ -17,11 +17,12 @@ type UploadPrecheckRequest struct {
 
 // FileSearchRequest 文件搜索请求
 type FileSearchRequest struct {
-	Keyword  string `form:"keyword" binding:"required"`
-	Type     string `form:"type"`
-	SortBy   string `form:"sortBy"`
-	Page     int    `form:"page"`
-	PageSize int    `form:"pageSize"`
+	Keyword   string `form:"keyword" binding:"required"`
+	Type      string `form:"type"`
+	SortBy    string `form:"sortBy"`
+	SortOrder string `form:"sortOrder"`
+	Page      int    `form:"page"`
+	PageSize  int    `form:"pageSize"`
 }
 
 // FileListRequest 文件列表请求
@@ -32,6 +33,8 @@ type FileListRequest struct {
 	Type string `form:"type"`
 	// 排序字段（name, size, time）
 	SortBy string `form:"sortBy"`
+	// 排序方向（asc, desc）
+	SortOrder string `form:"sortOrder"`
 	// 页码（从1开始）
 	Page int `form:"page" binding:"required,min=1"`
 	// 每页数量
@@ -54,6 +57,19 @@ type MoveFileRequest struct {
 	SourcePath string `json:"source_path"`
 	// 目标文件路径
 	TargetPath string `json:"target_path"`
+}
+
+// MoveItemsRequest 批量移动文件和目录。
+type MoveItemsRequest struct {
+	FileIDs    []string `json:"file_ids"`
+	DirIDs     []int    `json:"dir_ids"`
+	TargetPath string   `json:"target_path" binding:"required"`
+}
+
+// DeleteItemsRequest 批量将文件和目录移动到回收站。
+type DeleteItemsRequest struct {
+	FileIDs []string `json:"file_ids"`
+	DirIDs  []int    `json:"dir_ids"`
 }
 
 // DeleteFileRequest 删除文件请求

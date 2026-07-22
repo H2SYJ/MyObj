@@ -92,10 +92,16 @@ func (r *userFilesRepository) CountPublicFilesByKeyword(ctx context.Context, key
 
 // SearchUserFiles 搜索用户文件（根据文件名）
 func (r *userFilesRepository) SearchUserFiles(ctx context.Context, userID, keyword string, offset, limit int) ([]*models.UserFiles, error) {
+	return r.SearchUserFilesSorted(ctx, userID, keyword, "time", "desc", offset, limit)
+}
+
+func (r *userFilesRepository) SearchUserFilesSorted(ctx context.Context, userID, keyword, sortBy, sortOrder string, offset, limit int) ([]*models.UserFiles, error) {
 	var userFiles []*models.UserFiles
 	err := r.db.WithContext(ctx).
+		Select("user_files.*").
 		Joins("JOIN file_info ON user_files.file_id = file_info.id").
 		Where("user_files.user_id = ? AND user_files.file_name LIKE ?", userID, "%"+keyword+"%").
+		Order(userFileOrder(sortBy, sortOrder)).
 		Offset(offset).Limit(limit).
 		Find(&userFiles).Error
 	return userFiles, err
@@ -106,7 +112,7 @@ func (r *userFilesRepository) CountUserFilesByKeyword(ctx context.Context, userI
 	var count int64
 	err := r.db.WithContext(ctx).Model(&models.UserFiles{}).
 		Joins("JOIN file_info ON user_files.file_id = file_info.id").
-		Where("user_files.user_id = ? AND file_info.name LIKE ?", userID, "%"+keyword+"%").
+		Where("user_files.user_id = ? AND user_files.file_name LIKE ?", userID, "%"+keyword+"%").
 		Count(&count).Error
 	return count, err
 }
@@ -134,11 +140,34 @@ func (r *userFilesRepository) GetByUfID(ctx context.Context, ufID string) (*mode
 // ListByVirtualPath 查询指定虚拟路径下的user_files记录（避免file_id重复问题）
 // 直接从 user_files 表查询，每个uf_id都是唯一的，避免了秒传场景下同一file_id有多条记录的问题
 func (r *userFilesRepository) ListByVirtualPath(ctx context.Context, userID, virtualPath string, offset, limit int) ([]*models.UserFiles, error) {
+	return r.ListByVirtualPathSorted(ctx, userID, virtualPath, "time", "desc", offset, limit)
+}
+
+func (r *userFilesRepository) ListByVirtualPathSorted(ctx context.Context, userID, virtualPath, sortBy, sortOrder string, offset, limit int) ([]*models.UserFiles, error) {
 	var userFiles []*models.UserFiles
 	err := r.db.WithContext(ctx).
-		Where("user_id = ? AND virtual_path = ?", userID, virtualPath).
-		Order("created_at DESC").
+		Select("user_files.*").
+		Joins("JOIN file_info ON user_files.file_id = file_info.id").
+		Where("user_files.user_id = ? AND user_files.virtual_path = ?", userID, virtualPath).
+		Order(userFileOrder(sortBy, sortOrder)).
 		Offset(offset).Limit(limit).
 		Find(&userFiles).Error
 	return userFiles, err
+}
+
+func userFileOrder(sortBy, sortOrder string) string {
+	direction := "DESC"
+	if sortOrder == "asc" {
+		direction = "ASC"
+	}
+	column := "user_files.created_at"
+	switch sortBy {
+	case "name":
+		column = "user_files.file_name"
+	case "size":
+		column = "file_info.size"
+	case "time":
+		column = "user_files.created_at"
+	}
+	return column + " " + direction + ", user_files.uf_id ASC"
 }
