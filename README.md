@@ -574,6 +574,10 @@ curl -X GET http://localhost:8080/api/file/list \
 
 详细的 WebDAV 配置和使用指南，请参阅：[WebDAV 使用文档](docs/WEBDAV_USAGE.md)
 
+### 订阅插件开发
+
+MyObj 支持使用 TinyGo 在独立项目中开发可安装的 WASM 订阅插件。插件可以发现 HTTP/HLS 条目、指定虚拟保存目录和缩略图、提供离线下载请求头，并在授权后查询当前用户文件元数据。请参阅：[插件开发手册](docs/plugin-development.md)
+
 ---
 
 ## 📁 项目结构
@@ -652,6 +656,7 @@ myobj/
 │
 ├── docs/                         # 文档
 │   ├── WEBDAV_USAGE.md          # WebDAV 使用文档
+│   ├── plugin-development.md    # WASM 订阅插件开发手册
 │   ├── swagger.json              # Swagger API 定义
 │   └── swagger.yaml
 │
