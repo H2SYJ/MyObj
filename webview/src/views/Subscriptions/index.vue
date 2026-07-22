@@ -254,7 +254,7 @@
   }
   const openEdit = (row: Subscription) => {
     editingId.value = row.id
-    configuredSecrets.value = [...row.secret_fields_configured]
+    configuredSecrets.value = [...(row.secret_fields_configured || [])]
     Object.assign(form, { ...row, config: { ...(row.config || {}) } })
     dialogVisible.value = true
   }

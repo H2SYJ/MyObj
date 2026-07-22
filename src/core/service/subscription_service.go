@@ -318,7 +318,11 @@ func (s *SubscriptionService) List(ctx context.Context, userID string, page, pag
 	}
 	views := make([]subscriptionView, 0, len(rows))
 	for _, row := range rows {
-		view := subscriptionView{Subscription: row, GrantedPermissions: decodePermissions(row.GrantedPermissions)}
+		view := subscriptionView{
+			Subscription:           row,
+			GrantedPermissions:     decodePermissions(row.GrantedPermissions),
+			SecretFieldsConfigured: make([]string, 0),
+		}
 		configValue, decryptErr := decryptSubscriptionConfig(row.ID, row.UserID, row.ConfigEncrypted)
 		if decryptErr == nil {
 			_, manifest, _, pluginErr := s.pluginService.Get(ctx, row.PluginID)
