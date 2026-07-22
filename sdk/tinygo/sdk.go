@@ -23,12 +23,13 @@ type InvocationRequest struct {
 }
 
 type DownloadableItem struct {
-	ID             string            `json:"id,omitempty"`
-	Title          string            `json:"title,omitempty"`
-	URL            string            `json:"url"`
-	PublishedAt    *time.Time        `json:"published_at,omitempty"`
-	DownloadType   string            `json:"download_type"`
-	FileName       string            `json:"file_name,omitempty"`
+	ID           string     `json:"id,omitempty"`
+	Title        string     `json:"title,omitempty"`
+	URL          string     `json:"url"`
+	PublishedAt  *time.Time `json:"published_at,omitempty"`
+	DownloadType string     `json:"download_type"`
+	FileName     string     `json:"file_name,omitempty"`
+	// SavePath 是订阅保存目录下以 / 开头的根相对目录，空值或 / 表示保存目录本身。
 	SavePath       string            `json:"save_path,omitempty"`
 	ThumbnailURL   string            `json:"thumbnail_url,omitempty"`
 	RequestHeaders map[string]string `json:"request_headers,omitempty"`
@@ -122,6 +123,7 @@ func HTTPRequest(request HTTPRequestInput) (HTTPResponse, error) {
 }
 
 type FileQuery struct {
+	// Path 是订阅保存目录下的根相对目录，空值或 / 表示保存目录本身。
 	Path          string     `json:"path,omitempty"`
 	Recursive     bool       `json:"recursive,omitempty"`
 	NameContains  string     `json:"name_contains,omitempty"`

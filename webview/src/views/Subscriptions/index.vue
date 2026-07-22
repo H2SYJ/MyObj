@@ -21,7 +21,7 @@
           ></el-table-column
         >
         <el-table-column prop="schedule_time" label="每日时间" width="100" />
-        <el-table-column prop="default_path" label="默认目录" min-width="180" />
+        <el-table-column prop="default_path" label="保存目录" min-width="180" />
         <el-table-column label="状态" width="150"
           ><template #default="{ row }"
             ><el-tag :type="statusType(row.status)">{{ row.status }}</el-tag></template
@@ -87,7 +87,7 @@
         <el-form-item label="执行时间"
           ><el-time-picker v-model="form.schedule_time" value-format="HH:mm" format="HH:mm"
         /></el-form-item>
-        <el-form-item label="默认目录"
+        <el-form-item label="保存目录" required
           ><el-input v-model="form.default_path" placeholder="/离线下载/订阅"
         /></el-form-item>
         <el-form-item label="首次下载"
@@ -260,6 +260,7 @@
   }
   const save = async () => {
     if (!form.name || !form.plugin_id || !form.schedule_time) return ElMessage.warning('请填写名称、插件和执行时间')
+    if (!form.default_path.trim()) return ElMessage.warning('请填写保存目录')
     saving.value = true
     try {
       const result = editingId.value

@@ -182,7 +182,7 @@ func (h handler) Fetch(request myobjplugin.InvocationRequest) ([]myobjplugin.Dow
             Title:        "示例文件",
             URL:          "https://downloads.example.com/files/example.zip",
             DownloadType: "http",
-            SavePath:     "/离线下载/示例插件",
+            SavePath:     "/示例插件",
         },
     }, nil
 }
@@ -446,7 +446,7 @@ MyObj 会按 `published_at` 从新到旧稳定排序，无时间的条目排在�
 | `published_at` | 否 | RFC 3339 时间。用于首次抓取时优先选择最新条目。 |
 | `download_type` | 是 | 只能是 `http` 或 `hls`，使用小写。 |
 | `file_name` | 否 | 输出文件名，不得含路径分隔符或 NUL，UTF-8 字节数不超过 255。HTTP 留空时由响应或 URL 推断；HLS 最终总是规范化为 `.mp4`。 |
-| `save_path` | 否 | 用户虚拟空间绝对目录。留空时使用订阅默认目录。 |
+| `save_path` | 否 | 订阅保存目录下的根相对目录，必须以 `/` 开头；留空或 `/` 时直接使用订阅保存目录。 |
 | `thumbnail_url` | 否 | 公网 HTTP/HTTPS 图片地址；不共享主文件请求头。 |
 | `request_headers` | 否 | 当前下载条目的自定义 HTTP 请求头字符串对象，需要 `downloads.custom_headers`。 |
 | `header_hosts` | 否 | 可注入上述请求头的额外精确主机名数组；下载 URL 自身主机自动加入。 |
@@ -463,7 +463,7 @@ item := myobjplugin.DownloadableItem{
     PublishedAt:  &published,
     DownloadType: "hls",
     FileName:     "示例视频.mp4",
-    SavePath:     "/订阅/示例频道/2026",
+    SavePath:     "/示例频道/2026",
     ThumbnailURL: "https://images.example.com/av123.webp",
     RequestHeaders: map[string]string{
         "Authorization": "Bearer " + token,
@@ -608,11 +608,11 @@ JSON 对象中以下写法也会被拒绝，因为名称大小写不敏感重复
 
 ## 10. 保存目录
 
-`save_path` 是用户虚拟空间的目录，不是服务端物理路径。
+创建订阅时必须配置“保存目录”。`save_path` 是保存目录下的根相对目录，不是用户空间完整路径，更不是服务端物理路径。宿主会先规范化保存目录和 `save_path`，再将二者拼接并校验最终目录。
 
 规则：
 
-- 必须以 `/` 开头；`/` 表示用户根目录。
+- 非空时必须以 `/` 开头；`/` 表示订阅保存目录。
 - 允许中文。
 - 不允许相对路径、`//` 开头、盘符、UNC、URI、反斜杠、`.`、`..` 和控制字符。
 - 最多 20 层。
@@ -623,15 +623,15 @@ JSON 对象中以下写法也会被拒绝，因为名称大小写不敏感重复
 示例：
 
 ```text
-/                         有效，用户根目录
-/订阅/电影/2026           有效
-/订阅//电影/              有效，规范化为 /订阅/电影
-订阅/电影                 无效，不是绝对路径
+/                         有效，直接使用订阅保存目录
+/电影/2026                有效，保存到“保存目录/电影/2026”
+/电影//国产/              有效，规范化后保存到“保存目录/电影/国产”
+电影/2026                 无效，必须以/开头
 C:\Downloads              无效，物理路径和反斜杠
-/订阅/../私密              无效，包含 ..
+/电影/../私密              无效，包含 ..
 ```
 
-插件不需要提前创建目录。MyObj 只在主文件下载成功并准备入库时逐级、并发幂等地创建目录；失败下载不会留下空目录。条目未提供 `save_path` 时使用订阅默认目录。已完成条目后来改变目录不会移动现有文件。
+例如订阅保存目录为 `/离线下载/订阅`，插件返回 `/电影/2026` 时，最终目录为 `/离线下载/订阅/电影/2026`。插件不需要提前创建目录。MyObj 只在主文件下载成功并准备入库时逐级、并发幂等地创建目录；失败下载不会留下空目录。条目未提供 `save_path` 时直接使用订阅保存目录。已创建下载任务和已完成文件不会因后来修改保存目录而移动；再次发现的未提交、可重试条目会按当前保存目录刷新路径。
 
 ## 11. 缩略图
 
@@ -655,7 +655,7 @@ C:\Downloads              无效，物理路径和反斜杠
 
 manifest 必须声明 `files.read_metadata`，并由用户为订阅授权。
 
-插件只能看到订阅所属用户、未删除且不在回收站中的文件。无法查询其他用户、公开广场或管理员全局文件。`uf_id` 是用户级文件 ID，不是底层 `file_info.id`。
+插件只能看到当前订阅保存目录及其子目录中、属于订阅用户、未删除且不在回收站中的文件。无法查询保存目录外的同用户文件、其他用户、公开广场或管理员全局文件。`uf_id` 是用户级文件 ID，不是底层 `file_info.id`。
 
 ### 12.1 FileGet
 
@@ -669,7 +669,7 @@ if err != nil {
 }
 ```
 
-不存在、已删除或不属于当前用户都返回 `not_found`。
+不存在、已删除、不属于当前用户或位于当前订阅保存目录之外都返回 `not_found`。
 
 ### 12.2 FilesQuery
 
@@ -678,7 +678,7 @@ encrypted := false
 hasThumbnail := true
 
 result, err := myobjplugin.FilesQuery(myobjplugin.FileQuery{
-    Path:         "/订阅/视频",
+    Path:         "/视频",
     Recursive:    true,
     NameContains: "第100期",
     MIMEPrefix:   "video/",
@@ -697,7 +697,7 @@ for _, file := range result.Files {
 
 if result.NextCursor != "" {
     next, err := myobjplugin.FilesQuery(myobjplugin.FileQuery{
-        Path:      "/订阅/视频",
+        Path:      "/视频",
         Recursive: true,
         Cursor:    result.NextCursor,
         Limit:     100,
@@ -711,8 +711,8 @@ if result.NextCursor != "" {
 
 | Go 字段 / JSON 字段 | 说明 |
 | --- | --- |
-| `Path` / `path` | 用户虚拟绝对目录；目录不存在时结果为空。 |
-| `Recursive` / `recursive` | `false` 只查当前目录，`true` 包含后代目录。仅在设置 `path` 时有意义。 |
+| `Path` / `path` | 订阅保存目录下的根相对目录；空值或 `/` 表示保存目录本身，目录不存在时结果为空。 |
+| `Recursive` / `recursive` | `false` 只查目标目录，`true` 包含后代目录；空 `path` 时目标目录仍为订阅保存目录。 |
 | `NameContains` / `name_contains` | 文件名包含匹配。具体大小写行为受数据库排序规则影响，不应依赖跨数据库一致的大小写折叠。 |
 | `MIMEPrefix` / `mime_prefix` | MIME 前缀，例如 `image/`、`video/`。 |
 | `IsEncrypted` / `is_encrypted` | 指针布尔值；`nil` 表示不筛选。 |
@@ -733,7 +733,7 @@ if result.NextCursor != "" {
 | --- | --- |
 | `uf_id` | 当前用户范围内的文件 ID。 |
 | `file_name` | 文件名。 |
-| `virtual_path` | 文件所在的用户虚拟目录绝对路径。 |
+| `virtual_path` | 文件所在的用户虚拟目录完整绝对路径；返回值一定处于当前订阅保存目录内。 |
 | `file_size` | 字节数。 |
 | `mime_type` | MIME 类型。 |
 | `created_at` | 用户文件记录创建时间。 |
@@ -975,7 +975,7 @@ files_query(request_ptr: u32, request_len: u32, output_ptr: u32, output_cap: u32
 - 为条目设计稳定 ID，并把短期凭据与身份分离。
 - 使用 `request_headers` 传认证信息，避免把秘密放在 URL 查询参数。
 - `header_hosts` 只列出确实需要认证的精确域名。
-- 不根据远端响应拼接物理路径；`save_path` 始终是受限的用户虚拟路径。
+- 不根据远端响应拼接物理路径；`save_path` 始终是受限于订阅保存目录的根相对路径。
 - 把插件视为会被随时取消：不要依赖 finally 阶段提交远端事务。
 - 对可选权限做降级；对必需权限返回明确错误。
 - 发布前保存 `.myobj-plugin`、包 SHA-256、WASM SHA-256和对应源码标签，便于审计与复现。

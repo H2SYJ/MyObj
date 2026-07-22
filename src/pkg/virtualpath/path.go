@@ -62,6 +62,29 @@ func Normalize(raw string) (string, error) {
 	return result, nil
 }
 
+// JoinSubscriptionPath 将插件返回的根相对目录拼接到订阅保存目录下。
+// 插件目录为空或为 / 时，结果就是订阅保存目录。
+func JoinSubscriptionPath(saveRoot, pluginPath string) (string, error) {
+	normalizedRoot, err := Normalize(saveRoot)
+	if err != nil {
+		return "", err
+	}
+	if strings.TrimSpace(pluginPath) == "" {
+		return normalizedRoot, nil
+	}
+	normalizedPluginPath, err := Normalize(pluginPath)
+	if err != nil {
+		return "", err
+	}
+	if normalizedPluginPath == "/" {
+		return normalizedRoot, nil
+	}
+	if normalizedRoot == "/" {
+		return normalizedPluginPath, nil
+	}
+	return Normalize(normalizedRoot + normalizedPluginPath)
+}
+
 func Ensure(ctx context.Context, userID, raw string, factory *impl.RepositoryFactory) (string, error) {
 	normalized, err := Normalize(raw)
 	if err != nil {

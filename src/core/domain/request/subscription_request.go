@@ -6,7 +6,7 @@ type SubscriptionCreateRequest struct {
 	Config             map[string]interface{} `json:"config"`
 	GrantedPermissions []string               `json:"granted_permissions"`
 	ScheduleTime       string                 `json:"schedule_time" binding:"required"`
-	DefaultPath        string                 `json:"default_path"`
+	DefaultPath        string                 `json:"default_path" binding:"required"`
 	InitialLimit       int                    `json:"initial_limit"`
 	MaxItemsPerRun     int                    `json:"max_items_per_run"`
 	Enabled            *bool                  `json:"enabled"`
