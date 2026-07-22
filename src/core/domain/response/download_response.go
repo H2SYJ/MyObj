@@ -32,7 +32,7 @@ type DownloadTaskResponse struct {
 	SupportRange bool `json:"support_range"`
 	// 是否启用加密存储
 	EnableEncryption bool `json:"enable_encryption"`
-	// 恢复任务时是否需要重新输入密码
+	// 恢复或重试任务时是否需要重新输入密码
 	RequiresPassword bool `json:"requires_password"`
 	// 是否已配置HLS自定义请求头
 	HasRequestHeaders bool `json:"has_request_headers"`

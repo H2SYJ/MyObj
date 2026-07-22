@@ -90,6 +90,7 @@ export const API_ENDPOINTS = {
     DELETE: '/download/delete',
     PAUSE: '/download/pause',
     RESUME: '/download/resume',
+    RETRY: '/download/retry',
     LOCAL_CREATE: '/download/local/create',
     LOCAL_FILE: '/download/local/file'
   },

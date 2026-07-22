@@ -95,6 +95,23 @@ export const resumeDownload = (
 }
 
 /**
+ * 重试失败或已取消的离线下载任务
+ */
+export const retryDownload = (
+  taskId: string,
+  filePassword?: string,
+  requestHeaders?: Record<string, string>,
+  headerHosts?: string[]
+) => {
+  return post<ApiResponse>(API_ENDPOINTS.DOWNLOAD.RETRY, {
+    task_id: taskId,
+    file_password: filePassword,
+    request_headers: requestHeaders,
+    header_hosts: headerHosts
+  })
+}
+
+/**
  * 取消下载任务
  */
 export const cancelDownload = (taskId: string) => {

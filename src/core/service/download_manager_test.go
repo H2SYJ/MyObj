@@ -2,12 +2,14 @@ package service
 
 import (
 	"context"
+	"fmt"
 	"myobj/src/internal/repository/impl"
 	"myobj/src/pkg/custom_type"
 	"myobj/src/pkg/download"
 	"myobj/src/pkg/enum"
 	"myobj/src/pkg/models"
 	"testing"
+	"time"
 
 	"github.com/glebarez/sqlite"
 	"gorm.io/gorm"
@@ -173,5 +175,84 @@ func TestEncryptedResumeRequiresPassword(t *testing.T) {
 	latest, _ := factory.DownloadTask().GetByID(context.Background(), task.ID)
 	if latest.State != enum.DownloadTaskStateInit.Value() {
 		t.Fatalf("任务未重新排队: %#v", latest)
+	}
+}
+
+func TestRetryTerminalTaskResetsExecutionState(t *testing.T) {
+	factory := newManagerTestFactory(t)
+	manager := NewDownloadManager(factory, t.TempDir())
+	nextRetryAt := time.Now().Add(time.Minute)
+	leaseExpiresAt := time.Now().Add(time.Minute)
+	for _, state := range []int{enum.DownloadTaskStateFailed.Value(), enum.DownloadTaskStateCanceled.Value()} {
+		taskID := fmt.Sprintf("task-%d", state)
+		userID := fmt.Sprintf("user-%d", state)
+		user := &models.UserInfo{
+			ID: userID, Name: userID, UserName: userID, Password: "password", Email: userID + "@example.com",
+			CreatedAt: custom_type.Now(), Space: 1024, FreeSpace: 960,
+		}
+		if err := factory.User().Create(context.Background(), user); err != nil {
+			t.Fatal(err)
+		}
+		task := &models.DownloadTask{
+			ID: taskID, UserID: userID, Type: enum.DownloadTaskTypeHttp.Value(), State: state,
+			FileID: "file-id", DownloadedSize: 64, Progress: 50, Speed: 12, Path: "old-path",
+			ErrorMsg: "旧错误", RetryCount: 3, NextRetryAt: &nextRetryAt, RunToken: "old-run",
+			WorkerID: "old-worker", LeaseExpiresAt: &leaseExpiresAt, ReservedSize: 64, FinishTime: custom_type.Now(),
+		}
+		if err := factory.DownloadTask().Create(context.Background(), task); err != nil {
+			t.Fatal(err)
+		}
+		if err := manager.Retry(task, "", nil); err != nil {
+			t.Fatalf("状态%d任务重试失败: %v", state, err)
+		}
+		latest, err := factory.DownloadTask().GetByID(context.Background(), taskID)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if latest.State != enum.DownloadTaskStateInit.Value() || latest.FileID != "" || latest.DownloadedSize != 0 ||
+			latest.Progress != 0 || latest.Speed != 0 || latest.Path != "" || latest.ErrorMsg != "" ||
+			latest.RetryCount != 0 || latest.NextRetryAt != nil || latest.RunToken != "" || latest.WorkerID != "" ||
+			latest.LeaseExpiresAt != nil || latest.ReservedSize != 0 || !latest.FinishTime.IsZero() {
+			t.Fatalf("状态%d任务未完整清零: %#v", state, latest)
+		}
+		latestUser, err := factory.User().GetByID(context.Background(), userID)
+		if err != nil || latestUser.FreeSpace != 1024 {
+			t.Fatalf("状态%d任务预留空间未释放: user=%#v err=%v", state, latestUser, err)
+		}
+		updated, err := factory.DownloadTask().UpdateIfRunToken(context.Background(), taskID, "old-run", map[string]interface{}{"state": enum.DownloadTaskStateFailed.Value()})
+		if err != nil || updated {
+			t.Fatalf("状态%d任务仍可被旧执行令牌覆盖: updated=%v err=%v", state, updated, err)
+		}
+	}
+}
+
+func TestRetryRejectsInvalidStateAndRequiresEncryptionPassword(t *testing.T) {
+	factory := newManagerTestFactory(t)
+	manager := NewDownloadManager(factory, t.TempDir())
+	queued := &models.DownloadTask{ID: "queued", UserID: "u", Type: enum.DownloadTaskTypeHttp.Value(), State: enum.DownloadTaskStateInit.Value()}
+	encrypted := &models.DownloadTask{ID: "encrypted-retry", UserID: "u", Type: enum.DownloadTaskTypeHttp.Value(), State: enum.DownloadTaskStateFailed.Value(), EnableEncryption: true}
+	for _, task := range []*models.DownloadTask{queued, encrypted} {
+		if err := factory.DownloadTask().Create(context.Background(), task); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := manager.Retry(queued, "", nil); err == nil {
+		t.Fatal("排队任务不应允许重试")
+	}
+	if err := manager.Retry(encrypted, "", nil); err == nil {
+		t.Fatal("加密任务缺少密码时不应允许重试")
+	}
+	unchanged, _ := factory.DownloadTask().GetByID(context.Background(), encrypted.ID)
+	if unchanged.State != enum.DownloadTaskStateFailed.Value() {
+		t.Fatalf("缺少密码时任务状态被修改: %#v", unchanged)
+	}
+	if err := manager.Retry(encrypted, "secret", nil); err != nil {
+		t.Fatalf("提供密码后重试失败: %v", err)
+	}
+	manager.mu.Lock()
+	secret := manager.secrets[encrypted.ID]
+	manager.mu.Unlock()
+	if secret != "secret" {
+		t.Fatal("重试密码未保存在本次运行内存中")
 	}
 }

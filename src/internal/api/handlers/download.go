@@ -50,6 +50,8 @@ func (h *DownloadHandler) Router(c *gin.RouterGroup) {
 		downloadGroup.POST("/pause", middleware.PowerVerify("file:offLine"), h.PauseTask)
 		// 恢复下载任务
 		downloadGroup.POST("/resume", middleware.PowerVerify("file:offLine"), h.ResumeTask)
+		// 重试失败或已取消的下载任务
+		downloadGroup.POST("/retry", middleware.PowerVerify("file:offLine"), h.RetryTask)
 		// 取消下载任务
 		downloadGroup.POST("/cancel", middleware.PowerVerify("file:offLine"), h.CancelTask)
 		// 删除下载任务
@@ -151,6 +153,24 @@ func (h *DownloadHandler) ResumeTask(c *gin.Context) {
 	result, err := h.service.ResumeTask(req, userID)
 	if err != nil {
 		c.JSON(200, models.NewJsonResponse(500, "恢复失败", err.Error()))
+		return
+	}
+
+	c.JSON(200, result)
+}
+
+// RetryTask 重试失败或已取消的下载任务
+func (h *DownloadHandler) RetryTask(c *gin.Context) {
+	req := new(request.TaskOperationRequest)
+	if err := c.ShouldBindJSON(req); err != nil {
+		c.JSON(200, models.NewJsonResponse(400, "参数错误", err.Error()))
+		return
+	}
+
+	userID := c.GetString("userID")
+	result, err := h.service.RetryTask(req, userID)
+	if err != nil {
+		c.JSON(200, models.NewJsonResponse(500, "重试失败", err.Error()))
 		return
 	}
 

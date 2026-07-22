@@ -533,13 +533,59 @@ func (d *DownloadService) ResumeTask(req *request.TaskOperationRequest, userID s
 	if !isManagedOfflineType(task.Type) {
 		return nil, fmt.Errorf("该任务类型不支持恢复")
 	}
-	resumeUpdates := map[string]interface{}{}
+	resumeUpdates, err := d.buildTaskRequestUpdates(task, req)
+	if err != nil {
+		return nil, err
+	}
+	if err := d.manager.Resume(task, req.FilePassword, resumeUpdates); err != nil {
+		logger.LOG.Error("恢复下载任务失败", "error", err, "taskID", req.TaskID)
+		return nil, fmt.Errorf("恢复任务失败: %w", err)
+	}
+
+	logger.LOG.Info("下载任务已恢复", "taskID", req.TaskID, "userID", userID)
+	return models.NewJsonResponse(200, "任务已恢复", nil), nil
+}
+
+// RetryTask 重试失败或已取消的下载任务。
+func (d *DownloadService) RetryTask(req *request.TaskOperationRequest, userID string) (*models.JsonResponse, error) {
+	ctx := context.Background()
+	task, err := d.factory.DownloadTask().GetByID(ctx, req.TaskID)
+	if err != nil {
+		logger.LOG.Error("获取下载任务失败", "error", err, "taskID", req.TaskID)
+		return nil, fmt.Errorf("任务不存在")
+	}
+	if task.UserID != userID {
+		logger.LOG.Warn("用户尝试操作他人任务", "userID", userID, "taskID", req.TaskID, "taskOwner", task.UserID)
+		return nil, fmt.Errorf("无权操作此任务")
+	}
+	if !isManagedOfflineType(task.Type) {
+		return nil, fmt.Errorf("该任务类型不支持重试")
+	}
+	if task.State != enum.DownloadTaskStateFailed.Value() && task.State != enum.DownloadTaskStateCanceled.Value() {
+		return nil, fmt.Errorf("只有失败或已取消任务可以重试")
+	}
+	retryUpdates, err := d.buildTaskRequestUpdates(task, req)
+	if err != nil {
+		return nil, err
+	}
+	if err := d.manager.Retry(task, req.FilePassword, retryUpdates); err != nil {
+		logger.LOG.Error("重试下载任务失败", "error", err, "taskID", req.TaskID)
+		return nil, fmt.Errorf("重试任务失败: %w", err)
+	}
+
+	logger.LOG.Info("下载任务已重新排队", "taskID", req.TaskID, "userID", userID)
+	return models.NewJsonResponse(200, "任务已重新排队", nil), nil
+}
+
+func (d *DownloadService) buildTaskRequestUpdates(task *models.DownloadTask, req *request.TaskOperationRequest) (map[string]interface{}, error) {
+	updates := map[string]interface{}{}
 	if task.Type == enum.DownloadTaskTypeHLS.Value() || task.Type == enum.DownloadTaskTypeHttp.Value() {
 		if task.RequiresHeaders && req.RequestHeaders == nil {
-			return nil, fmt.Errorf("该任务需要更新请求头后才能恢复")
+			return nil, fmt.Errorf("该任务需要更新请求头后才能继续")
 		}
 		if req.RequestHeaders != nil || req.HeaderHosts != nil {
 			secret := ""
+			var err error
 			if config.CONFIG != nil {
 				secret = config.CONFIG.Auth.Secret
 			}
@@ -573,18 +619,12 @@ func (d *DownloadService) ResumeTask(req *request.TaskOperationRequest, userID s
 			if encodeErr != nil {
 				return nil, encodeErr
 			}
-			resumeUpdates["request_headers_encrypted"] = encrypted
-			resumeUpdates["header_hosts_json"] = hostsJSON
-			resumeUpdates["requires_headers"] = false
+			updates["request_headers_encrypted"] = encrypted
+			updates["header_hosts_json"] = hostsJSON
+			updates["requires_headers"] = false
 		}
 	}
-	if err := d.manager.Resume(task, req.FilePassword, resumeUpdates); err != nil {
-		logger.LOG.Error("恢复下载任务失败", "error", err, "taskID", req.TaskID)
-		return nil, fmt.Errorf("恢复任务失败: %w", err)
-	}
-
-	logger.LOG.Info("下载任务已恢复", "taskID", req.TaskID, "userID", userID)
-	return models.NewJsonResponse(200, "任务已恢复", nil), nil
+	return updates, nil
 }
 
 // CancelTask 取消下载任务
@@ -671,21 +711,22 @@ func (d *DownloadService) convertTaskToResponse(task *models.DownloadTask) *resp
 	typeText := d.getTypeText(task.Type)
 
 	return &response.DownloadTaskResponse{
-		ID:                task.ID,
-		URL:               task.URL,
-		FileName:          task.FileName,
-		FileSize:          task.FileSize,
-		DownloadedSize:    task.DownloadedSize,
-		Progress:          task.Progress,
-		Speed:             task.Speed,
-		Type:              task.Type,
-		TypeText:          typeText,
-		State:             task.State,
-		StateText:         stateText,
-		VirtualPath:       task.VirtualPath,
-		SupportRange:      task.SupportRange,
-		EnableEncryption:  task.EnableEncryption,
-		RequiresPassword:  task.EnableEncryption && task.State == enum.DownloadTaskStatePaused.Value(),
+		ID:               task.ID,
+		URL:              task.URL,
+		FileName:         task.FileName,
+		FileSize:         task.FileSize,
+		DownloadedSize:   task.DownloadedSize,
+		Progress:         task.Progress,
+		Speed:            task.Speed,
+		Type:             task.Type,
+		TypeText:         typeText,
+		State:            task.State,
+		StateText:        stateText,
+		VirtualPath:      task.VirtualPath,
+		SupportRange:     task.SupportRange,
+		EnableEncryption: task.EnableEncryption,
+		RequiresPassword: task.EnableEncryption && (task.State == enum.DownloadTaskStatePaused.Value() ||
+			task.State == enum.DownloadTaskStateFailed.Value() || task.State == enum.DownloadTaskStateCanceled.Value()),
 		HasRequestHeaders: task.RequestHeadersEncrypted != "",
 		RequiresHeaders:   task.RequiresHeaders,
 		ErrorMsg:          task.ErrorMsg,

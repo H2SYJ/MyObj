@@ -82,7 +82,7 @@
           </template>
         </el-table-column>
 
-        <el-table-column :label="t('tasks.operation')" width="200" fixed="right" class-name="mobile-actions-column">
+        <el-table-column :label="t('tasks.operation')" width="250" fixed="right" class-name="mobile-actions-column">
           <template #default="{ row }">
             <div class="action-buttons">
               <el-button
@@ -114,6 +114,16 @@
                 size="small"
               >
                 {{ t('tasks.cancel') }}
+              </el-button>
+              <el-button
+                v-if="row.state === 4 || row.state === 5"
+                link
+                icon="RefreshRight"
+                type="primary"
+                @click="retryTask(row)"
+                size="small"
+              >
+                {{ t('tasks.retry') }}
               </el-button>
               <el-button
                 v-if="row.state === 3 || row.state === 4 || row.state === 5"
@@ -173,6 +183,15 @@
                 class="action-btn"
               >
                 <el-icon><Close /></el-icon>
+              </el-button>
+              <el-button
+                v-if="row.state === 4 || row.state === 5"
+                link
+                type="primary"
+                @click.stop="retryTask(row)"
+                class="action-btn"
+              >
+                <el-icon><RefreshRight /></el-icon>
               </el-button>
               <el-button
                 v-if="row.state === 3 || row.state === 4 || row.state === 5"
@@ -507,7 +526,11 @@
       </template>
     </el-dialog>
 
-    <el-dialog v-model="showResumeHeadersDialog" :title="t('offline.updateHeadersTitle')" width="680px">
+    <el-dialog
+      v-model="showResumeHeadersDialog"
+      :title="headerDialogMode === 'retry' ? t('offline.updateHeadersRetryTitle') : t('offline.updateHeadersTitle')"
+      width="680px"
+    >
       <el-form label-width="110px">
         <el-form-item :label="t('offline.requestHeaders')">
           <div class="hls-header-editor">
@@ -544,7 +567,7 @@
       <template #footer>
         <el-button @click="showResumeHeadersDialog = false">{{ t('common.cancel') }}</el-button>
         <el-button type="primary" :loading="resumingWithHeaders" @click="confirmResumeWithHeaders">
-          {{ t('tasks.resume') }}
+          {{ headerDialogMode === 'retry' ? t('tasks.retry') : t('tasks.resume') }}
         </el-button>
       </template>
     </el-dialog>
@@ -557,6 +580,7 @@
     createOfflineDownload,
     pauseDownload,
     resumeDownload,
+    retryDownload,
     cancelDownload,
     deleteDownload,
     parseTorrent,
@@ -601,6 +625,7 @@
   const resumeHeaderHosts = ref<string[]>([])
   const resumeFilePassword = ref('')
   const resumingWithHeaders = ref(false)
+  const headerDialogMode = ref<'resume' | 'retry'>('resume')
 
   const downloadFormRef = ref<FormInstance>()
   const torrentUploadRef = ref()
@@ -1008,11 +1033,7 @@
   const resumeTask = async (task: OfflineDownloadTask) => {
     try {
       if (task.requires_headers) {
-        resumeTargetTask.value = task
-        resumeHeaderRows.value = [createHeaderRow()]
-        resumeHeaderHosts.value = []
-        resumeFilePassword.value = ''
-        showResumeHeadersDialog.value = true
+        openHeadersDialog(task, 'resume')
         return
       }
       let filePassword: string | undefined
@@ -1032,6 +1053,40 @@
     }
   }
 
+  // 重试失败或已取消任务
+  const retryTask = async (task: OfflineDownloadTask) => {
+    try {
+      if (task.requires_headers) {
+        openHeadersDialog(task, 'retry')
+        return
+      }
+      let filePassword: string | undefined
+      if (task.requires_password) {
+        const promptResult: any = await proxy?.$modal.prompt(t('offline.retryPasswordPrompt'))
+        filePassword = promptResult?.value
+        if (!filePassword) {
+          proxy?.$modal.msgWarning(t('offline.passwordRequired'))
+          return
+        }
+      }
+      await retryDownload(task.id, filePassword)
+      proxy?.$modal.msgSuccess(t('tasks.retrySuccess'))
+      loadTaskList()
+    } catch (error: any) {
+      if (error === 'cancel' || error?.message === 'cancel') return
+      proxy?.$modal.msgError(error.message || t('tasks.retryFailed'))
+    }
+  }
+
+  const openHeadersDialog = (task: OfflineDownloadTask, mode: 'resume' | 'retry') => {
+    resumeTargetTask.value = task
+    resumeHeaderRows.value = [createHeaderRow()]
+    resumeHeaderHosts.value = []
+    resumeFilePassword.value = ''
+    headerDialogMode.value = mode
+    showResumeHeadersDialog.value = true
+  }
+
   const confirmResumeWithHeaders = async () => {
     if (!resumeTargetTask.value) return
     if (resumeTargetTask.value.requires_password && !resumeFilePassword.value) {
@@ -1041,17 +1096,19 @@
     try {
       const headers = validateHeaderRows(resumeHeaderRows.value)
       resumingWithHeaders.value = true
-      await resumeDownload(
-        resumeTargetTask.value.id,
-        resumeTargetTask.value.requires_password ? resumeFilePassword.value : undefined,
-        headers,
-        resumeHeaderHosts.value
-      )
+      const filePassword = resumeTargetTask.value.requires_password ? resumeFilePassword.value : undefined
+      if (headerDialogMode.value === 'retry') {
+        await retryDownload(resumeTargetTask.value.id, filePassword, headers, resumeHeaderHosts.value)
+      } else {
+        await resumeDownload(resumeTargetTask.value.id, filePassword, headers, resumeHeaderHosts.value)
+      }
       showResumeHeadersDialog.value = false
-      proxy?.$modal.msgSuccess(t('tasks.resumeSuccess'))
+      proxy?.$modal.msgSuccess(headerDialogMode.value === 'retry' ? t('tasks.retrySuccess') : t('tasks.resumeSuccess'))
       loadTaskList()
     } catch (error: any) {
-      proxy?.$modal.msgError(error.message || t('tasks.resumeFailed'))
+      proxy?.$modal.msgError(
+        error.message || (headerDialogMode.value === 'retry' ? t('tasks.retryFailed') : t('tasks.resumeFailed'))
+      )
     } finally {
       resumingWithHeaders.value = false
     }

@@ -484,6 +484,74 @@ func (m *DownloadManager) Resume(task *models.DownloadTask, filePassword string,
 	return nil
 }
 
+// Retry 将失败或已取消任务清零后重新排队。
+func (m *DownloadManager) Retry(task *models.DownloadTask, filePassword string, taskUpdates map[string]interface{}) error {
+	if task.EnableEncryption && filePassword == "" {
+		return fmt.Errorf("加密任务重试时必须输入文件密码")
+	}
+	m.mu.Lock()
+	if _, active := m.active[task.ID]; active {
+		m.mu.Unlock()
+		return fmt.Errorf("任务正在停止，请稍后重试")
+	}
+	latest, err := m.factory.DownloadTask().GetByID(context.Background(), task.ID)
+	if err != nil {
+		m.mu.Unlock()
+		return err
+	}
+	if latest.State != enum.DownloadTaskStateFailed.Value() && latest.State != enum.DownloadTaskStateCanceled.Value() {
+		m.mu.Unlock()
+		return fmt.Errorf("任务状态不允许重试")
+	}
+	if filePassword != "" {
+		m.secrets[task.ID] = filePassword
+	}
+
+	// 终态任务通常已经完成清理；这里再次幂等释放，兼容服务重启后的遗留状态。
+	if err := m.releaseReservation(task.ID); err != nil {
+		delete(m.secrets, task.ID)
+		m.mu.Unlock()
+		return fmt.Errorf("释放任务预留空间失败: %w", err)
+	}
+	m.cleanupTaskTemp(latest)
+	updates := map[string]interface{}{
+		"file_id":          "",
+		"downloaded_size":  0,
+		"progress":         0,
+		"speed":            0,
+		"path":             "",
+		"error_msg":        "",
+		"retry_count":      0,
+		"next_retry_at":    nil,
+		"run_token":        "",
+		"worker_id":        "",
+		"lease_expires_at": nil,
+		"reserved_size":    0,
+		"finish_time":      nil,
+	}
+	if isTorrentTask(task.Type) {
+		// 重试单个种子文件时使用新批次，确保不复用旧批次的临时会话和数据。
+		updates["batch_id"] = uuid.NewString()
+	}
+	for key, value := range taskUpdates {
+		updates[key] = value
+	}
+	transitioned, err := m.factory.DownloadTask().Transition(context.Background(), task.ID,
+		[]int{enum.DownloadTaskStateFailed.Value(), enum.DownloadTaskStateCanceled.Value()},
+		enum.DownloadTaskStateInit.Value(), updates)
+	if err != nil || !transitioned {
+		delete(m.secrets, task.ID)
+		m.mu.Unlock()
+		if err != nil {
+			return err
+		}
+		return fmt.Errorf("任务状态不允许重试")
+	}
+	m.mu.Unlock()
+	m.Notify("", "")
+	return nil
+}
+
 func (m *DownloadManager) Cancel(taskID string) error {
 	task, getErr := m.factory.DownloadTask().GetByID(context.Background(), taskID)
 	if getErr != nil {
@@ -620,7 +688,7 @@ func (m *DownloadManager) ensureReservation(task *models.DownloadTask, requiredS
 	return requiredSize, nil
 }
 
-func (m *DownloadManager) releaseReservation(taskID string) {
+func (m *DownloadManager) releaseReservation(taskID string) error {
 	err := m.factory.DB().Transaction(func(tx *gorm.DB) error {
 		var task models.DownloadTask
 		if err := tx.Where("id = ?", taskID).First(&task).Error; err != nil {
@@ -648,6 +716,7 @@ func (m *DownloadManager) releaseReservation(taskID string) {
 	if err != nil {
 		logger.LOG.Warn("释放下载任务预留空间失败", "taskID", taskID, "error", err)
 	}
+	return err
 }
 
 func (m *DownloadManager) recoverInterruptedTasks() error {

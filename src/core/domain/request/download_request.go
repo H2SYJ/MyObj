@@ -83,11 +83,11 @@ type DownloadTaskListRequest struct {
 	PageSize int `form:"pageSize" binding:"required,min=1,max=100"`
 }
 
-// TaskOperationRequest 任务操作请求（暂停、恢复、取消）
+// TaskOperationRequest 任务操作请求（暂停、恢复、重试、取消）
 type TaskOperationRequest struct {
 	// 任务ID
 	TaskID string `json:"task_id" binding:"required"`
-	// 加密任务恢复密码，仅恢复操作使用且不会持久化
+	// 加密任务恢复或重试密码，不会持久化
 	FilePassword string `json:"file_password"`
 	// 更新HLS自定义请求头；未传递时继续使用原值
 	RequestHeaders *UniqueHTTPHeaders `json:"request_headers"`
