@@ -3,7 +3,9 @@ package plugin
 import (
 	"bytes"
 	"context"
+	"crypto/sha256"
 	"encoding/base64"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -66,11 +68,12 @@ func NewRuntime(ctx context.Context) (*Runtime, error) {
 func (r *Runtime) Close(ctx context.Context) error { return r.runtime.Close(ctx) }
 
 func (r *Runtime) ValidateModule(ctx context.Context, wasm []byte) error {
-	compiled, err := r.runtime.CompileModule(ctx, wasm)
+	digest := sha256.Sum256(wasm)
+	_, err := r.compiledModule(ctx, hex.EncodeToString(digest[:]), wasm)
 	if err != nil {
-		return fmt.Errorf("编译WASM插件失败: %w", err)
+		return err
 	}
-	return compiled.Close(ctx)
+	return nil
 }
 
 func (r *Runtime) Invoke(ctx context.Context, cacheKey string, wasm []byte, request InvocationRequest, host *InvocationHost) (*InvocationResponse, string, error) {
