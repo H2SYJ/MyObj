@@ -157,6 +157,7 @@ type FileQuery struct {
 	// Path 是订阅保存目录下的根相对目录，空值或 / 表示保存目录本身。
 	Path          string     `json:"path,omitempty"`
 	Recursive     bool       `json:"recursive,omitempty"`
+	NameEquals    string     `json:"name_equals,omitempty"`
 	NameContains  string     `json:"name_contains,omitempty"`
 	MIMEPrefix    string     `json:"mime_prefix,omitempty"`
 	IsEncrypted   *bool      `json:"is_encrypted,omitempty"`

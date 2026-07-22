@@ -2,8 +2,23 @@ package myobjplugin
 
 import (
 	"encoding/base64"
+	"encoding/json"
 	"testing"
 )
+
+func TestFileQueryMarshalsNameEquals(t *testing.T) {
+	encoded, err := json.Marshal(FileQuery{NameEquals: "目标影片.mp4"})
+	if err != nil {
+		t.Fatalf("编码文件查询失败: %v", err)
+	}
+	var wire map[string]interface{}
+	if err := json.Unmarshal(encoded, &wire); err != nil {
+		t.Fatalf("解析文件查询失败: %v", err)
+	}
+	if wire["name_equals"] != "目标影片.mp4" {
+		t.Fatalf("name_equals = %#v", wire["name_equals"])
+	}
+}
 
 func TestHTTPResponseCapacity(t *testing.T) {
 	tests := []struct {

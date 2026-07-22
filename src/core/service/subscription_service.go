@@ -816,6 +816,9 @@ func (s *SubscriptionService) queryFilesInternal(ctx context.Context, userID, sa
 		limit = 100
 	}
 	query := scopedQuery
+	if request.NameEquals != "" {
+		query = query.Where("user_files.file_name = ?", request.NameEquals)
+	}
 	if request.NameContains != "" {
 		query = query.Where("user_files.file_name LIKE ?", "%"+request.NameContains+"%")
 	}

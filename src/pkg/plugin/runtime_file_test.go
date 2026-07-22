@@ -25,10 +25,13 @@ func TestHostFileQueryHasNoCallCountLimit(t *testing.T) {
 			if request.Operation != "query" {
 				t.Fatalf("文件操作 = %q，期望 query", request.Operation)
 			}
+			if request.NameEquals != "目标影片.mp4" {
+				t.Fatalf("精确文件名 = %q，期望 目标影片.mp4", request.NameEquals)
+			}
 			return FileQueryResponse{}, nil
 		},
 	}
-	requestBytes, err := json.Marshal(FileQueryRequest{Limit: 1})
+	requestBytes, err := json.Marshal(FileQueryRequest{NameEquals: "目标影片.mp4", Limit: 1})
 	if err != nil {
 		t.Fatalf("编码文件查询请求失败: %v", err)
 	}

@@ -683,7 +683,7 @@ hasThumbnail := true
 result, err := myobjplugin.FilesQuery(myobjplugin.FileQuery{
     Path:         "/视频",
     Recursive:    true,
-    NameContains: "第100期",
+    NameEquals:   "第100期.mp4",
     MIMEPrefix:   "video/",
     IsEncrypted:  &encrypted,
     HasThumbnail: &hasThumbnail,
@@ -716,6 +716,7 @@ if result.NextCursor != "" {
 | --- | --- |
 | `Path` / `path` | 订阅保存目录下的根相对目录；空值或 `/` 表示保存目录本身，目录不存在时结果为空。 |
 | `Recursive` / `recursive` | `false` 只查目标目录，`true` 包含后代目录；空 `path` 时目标目录仍为订阅保存目录。 |
+| `NameEquals` / `name_equals` | 文件名相等匹配，适合按最终文件名判断文件是否存在。具体大小写行为受数据库排序规则影响，调用方需要区分大小写时应复核返回的 `FileName`。 |
 | `NameContains` / `name_contains` | 文件名包含匹配。具体大小写行为受数据库排序规则影响，不应依赖跨数据库一致的大小写折叠。 |
 | `MIMEPrefix` / `mime_prefix` | MIME 前缀，例如 `image/`、`video/`。 |
 | `IsEncrypted` / `is_encrypted` | 指针布尔值；`nil` 表示不筛选。 |

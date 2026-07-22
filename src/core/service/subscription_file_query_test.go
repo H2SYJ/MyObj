@@ -87,6 +87,14 @@ func TestSubscriptionFileQueriesAreLimitedToSaveRoot(t *testing.T) {
 	if err != nil || len(channelRecursive.Files) != 2 {
 		t.Fatalf("子目录递归查询失败: response=%+v err=%v", channelRecursive, err)
 	}
+	exact, err := service.queryFilesInternal(ctx, "user-a", "/保存", pluginpkg.FileQueryRequest{Operation: "query", Path: "/频道", NameEquals: "uf-channel.txt"})
+	if err != nil || len(exact.Files) != 1 || exact.Files[0].UFID != "uf-channel" {
+		t.Fatalf("精确文件名查询失败: response=%+v err=%v", exact, err)
+	}
+	exactMissing, err := service.queryFilesInternal(ctx, "user-a", "/保存", pluginpkg.FileQueryRequest{Operation: "query", Path: "/频道", NameEquals: "uf-channel"})
+	if err != nil || len(exactMissing.Files) != 0 {
+		t.Fatalf("精确文件名查询不应返回部分匹配: response=%+v err=%v", exactMissing, err)
+	}
 	missing, err := service.queryFilesInternal(ctx, "user-a", "/保存", pluginpkg.FileQueryRequest{Operation: "query", Path: "/不存在", Recursive: true})
 	if err != nil || len(missing.Files) != 0 {
 		t.Fatalf("不存在的子目录应返回空结果: response=%+v err=%v", missing, err)
