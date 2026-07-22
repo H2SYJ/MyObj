@@ -55,8 +55,8 @@
         class="offline-table desktop-table"
         @selection-change="handleTaskSelectionChange"
       >
-        <el-table-column type="selection" width="55" :reserve-selection="true" />
-        <el-table-column :label="t('tasks.fileName')" min-width="300" class-name="mobile-name-column">
+        <el-table-column type="selection" width="44" :reserve-selection="true" />
+        <el-table-column :label="t('tasks.fileName')" min-width="180" class-name="mobile-name-column">
           <template #default="{ row }">
             <div class="file-name-cell">
               <el-icon :size="24" class="offline-icon"><Document /></el-icon>
@@ -72,13 +72,13 @@
           </template>
         </el-table-column>
 
-        <el-table-column :label="t('tasks.status')" width="120" class-name="mobile-hide">
+        <el-table-column :label="t('tasks.status')" width="105" class-name="mobile-hide">
           <template #default="{ row }">
             <el-tag :type="getStatusType(row.state)">{{ row.state_text }}</el-tag>
           </template>
         </el-table-column>
 
-        <el-table-column :label="t('tasks.progress')" width="200" class-name="mobile-progress-column">
+        <el-table-column :label="t('tasks.progress')" width="160" class-name="mobile-progress-column">
           <template #default="{ row }">
             <div class="progress-cell">
               <el-progress
@@ -96,20 +96,20 @@
           </template>
         </el-table-column>
 
-        <el-table-column :label="t('offline.speed')" width="120" class-name="mobile-hide">
+        <el-table-column :label="t('offline.speed')" width="80" class-name="mobile-hide">
           <template #default="{ row }">
             <span v-if="row.state === 1">{{ formatSpeed(row.speed) }}</span>
             <span v-else>-</span>
           </template>
         </el-table-column>
 
-        <el-table-column :label="t('tasks.createTime')" width="180" class-name="mobile-hide">
+        <el-table-column :label="t('tasks.createTime')" width="145" class-name="mobile-hide">
           <template #default="{ row }">
             {{ formatDate(row.create_time) }}
           </template>
         </el-table-column>
 
-        <el-table-column :label="t('offline.errorInfo')" min-width="200" class-name="mobile-hide">
+        <el-table-column :label="t('offline.errorInfo')" min-width="95" class-name="mobile-hide">
           <template #default="{ row }">
             <el-tooltip v-if="row.error_msg" :content="row.error_msg" placement="top">
               <span class="error-msg-text">{{ row.error_msg }}</span>
@@ -118,7 +118,7 @@
           </template>
         </el-table-column>
 
-        <el-table-column :label="t('tasks.operation')" width="250" fixed="right" class-name="mobile-actions-column">
+        <el-table-column :label="t('tasks.operation')" width="180" class-name="mobile-actions-column">
           <template #default="{ row }">
             <div class="action-buttons">
               <el-button
@@ -1703,16 +1703,16 @@
   }
 
   .offline-table :deep(.mobile-name-column) {
-    min-width: 200px;
+    min-width: 180px;
   }
 
   .offline-table :deep(.mobile-progress-column) {
-    min-width: 180px;
+    min-width: 150px;
   }
 
   .offline-table :deep(.mobile-actions-column) {
     width: auto;
-    min-width: 120px;
+    min-width: 170px;
   }
 
   /* 移动端卡片列表 */
@@ -1838,7 +1838,7 @@
   }
 
   /* 移动端响应式 */
-  @media (max-width: 1024px) {
+  @media (max-width: 1280px) {
     .desktop-table {
       display: none !important;
     }
