@@ -978,8 +978,8 @@ func (s *SubscriptionService) lookupPathID(ctx context.Context, userID, raw stri
 		return id, nil
 	}
 	for _, part := range strings.Split(strings.TrimPrefix(normalized, "/"), "/") {
-		var path models.VirtualPath
-		err = s.factory.DB().WithContext(ctx).Where("user_id = ? AND parent_level = ? AND path = ?", userID, id, "/"+part).First(&path).Error
+		path, findErr := virtualpath.FindChildDirectory(ctx, userID, id, part, s.factory)
+		err = findErr
 		if err != nil {
 			return "", err
 		}

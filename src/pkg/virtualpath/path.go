@@ -85,6 +85,26 @@ func JoinSubscriptionPath(saveRoot, pluginPath string) (string, error) {
 	return Normalize(normalizedRoot + normalizedPluginPath)
 }
 
+// FindChildDirectory 查找指定父目录下的子目录，兼容历史数据中不带前导 / 的目录名称。
+// 新格式优先，避免历史记录与规范记录同时存在时选择不确定。
+func FindChildDirectory(ctx context.Context, userID, parentID, name string, factory *impl.RepositoryFactory) (*models.VirtualPath, error) {
+	canonicalName := "/" + strings.TrimPrefix(name, "/")
+	legacyName := strings.TrimPrefix(canonicalName, "/")
+	for _, candidate := range []string{canonicalName, legacyName} {
+		var path models.VirtualPath
+		err := factory.DB().WithContext(ctx).
+			Where("user_id = ? AND parent_level = ? AND path = ? AND is_dir = ?", userID, parentID, candidate, true).
+			First(&path).Error
+		if err == nil {
+			return &path, nil
+		}
+		if !errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, err
+		}
+	}
+	return nil, gorm.ErrRecordNotFound
+}
+
 func Ensure(ctx context.Context, userID, raw string, factory *impl.RepositoryFactory) (string, error) {
 	normalized, err := Normalize(raw)
 	if err != nil {
@@ -104,10 +124,7 @@ func Ensure(ctx context.Context, userID, raw string, factory *impl.RepositoryFac
 	defer lock.Unlock()
 	parentID := strconv.Itoa(root.ID)
 	for _, part := range strings.Split(strings.TrimPrefix(normalized, "/"), "/") {
-		var current models.VirtualPath
-		err := factory.DB().WithContext(ctx).
-			Where("user_id = ? AND parent_level = ? AND path = ? AND is_dir = ?", userID, parentID, "/"+part, true).
-			First(&current).Error
+		current, err := FindChildDirectory(ctx, userID, parentID, part, factory)
 		if err == nil {
 			parentID = strconv.Itoa(current.ID)
 			continue
@@ -115,11 +132,11 @@ func Ensure(ctx context.Context, userID, raw string, factory *impl.RepositoryFac
 		if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
 			return "", err
 		}
-		current = models.VirtualPath{UserID: userID, Path: "/" + part, IsDir: true, ParentLevel: parentID, CreatedTime: custom_type.Now(), UpdateTime: custom_type.Now()}
-		if err := factory.VirtualPath().Create(ctx, &current); err != nil {
+		created := models.VirtualPath{UserID: userID, Path: "/" + part, IsDir: true, ParentLevel: parentID, CreatedTime: custom_type.Now(), UpdateTime: custom_type.Now()}
+		if err := factory.VirtualPath().Create(ctx, &created); err != nil {
 			return "", err
 		}
-		parentID = strconv.Itoa(current.ID)
+		parentID = strconv.Itoa(created.ID)
 	}
 	return parentID, nil
 }

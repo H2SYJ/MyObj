@@ -38,6 +38,7 @@ func TestSubscriptionFileQueriesAreLimitedToSaveRoot(t *testing.T) {
 		{ID: 3, UserID: "user-a", Path: "/频道", IsDir: true, ParentLevel: "2", CreatedTime: now, UpdateTime: now},
 		{ID: 4, UserID: "user-a", Path: "/深层", IsDir: true, ParentLevel: "3", CreatedTime: now, UpdateTime: now},
 		{ID: 5, UserID: "user-a", Path: "/其他", IsDir: true, ParentLevel: "1", CreatedTime: now, UpdateTime: now},
+		{ID: 6, UserID: "user-a", Path: "旧频道", IsDir: true, ParentLevel: "2", CreatedTime: now, UpdateTime: now},
 		{ID: 10, UserID: "user-b", Path: "/", IsDir: true, CreatedTime: now, UpdateTime: now},
 		{ID: 11, UserID: "user-b", Path: "/保存", IsDir: true, ParentLevel: "10", CreatedTime: now, UpdateTime: now},
 	}
@@ -55,6 +56,7 @@ func TestSubscriptionFileQueriesAreLimitedToSaveRoot(t *testing.T) {
 		{userID: "user-a", pathID: 3, ufID: "uf-channel"},
 		{userID: "user-a", pathID: 4, ufID: "uf-deep"},
 		{userID: "user-a", pathID: 5, ufID: "uf-outside"},
+		{userID: "user-a", pathID: 6, ufID: "uf-legacy"},
 		{userID: "user-b", pathID: 11, ufID: "uf-user-b"},
 	}
 	for index, entry := range files {
@@ -76,7 +78,7 @@ func TestSubscriptionFileQueriesAreLimitedToSaveRoot(t *testing.T) {
 		t.Fatalf("空路径应只查询保存目录直属文件: response=%+v err=%v", direct, err)
 	}
 	recursive, err := service.queryFilesInternal(ctx, "user-a", "/保存", pluginpkg.FileQueryRequest{Operation: "query", Path: "/", Recursive: true})
-	if err != nil || len(recursive.Files) != 3 {
+	if err != nil || len(recursive.Files) != 4 {
 		t.Fatalf("保存目录递归查询范围错误: response=%+v err=%v", recursive, err)
 	}
 	channel, err := service.queryFilesInternal(ctx, "user-a", "/保存", pluginpkg.FileQueryRequest{Operation: "query", Path: "/频道"})
@@ -94,6 +96,10 @@ func TestSubscriptionFileQueriesAreLimitedToSaveRoot(t *testing.T) {
 	exactMissing, err := service.queryFilesInternal(ctx, "user-a", "/保存", pluginpkg.FileQueryRequest{Operation: "query", Path: "/频道", NameEquals: "uf-channel"})
 	if err != nil || len(exactMissing.Files) != 0 {
 		t.Fatalf("精确文件名查询不应返回部分匹配: response=%+v err=%v", exactMissing, err)
+	}
+	legacy, err := service.queryFilesInternal(ctx, "user-a", "/保存", pluginpkg.FileQueryRequest{Operation: "query", Path: "/旧频道", NameEquals: "uf-legacy.txt"})
+	if err != nil || len(legacy.Files) != 1 || legacy.Files[0].UFID != "uf-legacy" {
+		t.Fatalf("历史目录名称查询失败: response=%+v err=%v", legacy, err)
 	}
 	missing, err := service.queryFilesInternal(ctx, "user-a", "/保存", pluginpkg.FileQueryRequest{Operation: "query", Path: "/不存在", Recursive: true})
 	if err != nil || len(missing.Files) != 0 {

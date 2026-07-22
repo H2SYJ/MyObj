@@ -1,8 +1,16 @@
 package virtualpath
 
 import (
+	"context"
 	"strings"
 	"testing"
+
+	"github.com/glebarez/sqlite"
+	"gorm.io/gorm"
+
+	"myobj/src/internal/repository/impl"
+	"myobj/src/pkg/custom_type"
+	"myobj/src/pkg/models"
 )
 
 func TestNormalizeVirtualPath(t *testing.T) {
@@ -63,5 +71,32 @@ func TestJoinSubscriptionPathRejectsInvalidOrOversizedResult(t *testing.T) {
 	pluginPath := "/" + strings.Join([]string{childSegment, childSegment, childSegment, childSegment, childSegment, childSegment}, "/")
 	if _, err := JoinSubscriptionPath(saveRoot, pluginPath); err == nil {
 		t.Fatal("超过最终长度限制的拼接目录未被拒绝")
+	}
+}
+
+func TestEnsureReusesLegacyDirectoryName(t *testing.T) {
+	db, err := gorm.Open(sqlite.Open("file:"+t.Name()+"?mode=memory&cache=shared"), &gorm.Config{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := db.AutoMigrate(&models.VirtualPath{}); err != nil {
+		t.Fatal(err)
+	}
+	now := custom_type.Now()
+	paths := []models.VirtualPath{
+		{ID: 1, UserID: "user-a", Path: "home", IsDir: true, CreatedTime: now, UpdateTime: now},
+		{ID: 2, UserID: "user-a", Path: "保存", IsDir: true, ParentLevel: "1", CreatedTime: now, UpdateTime: now},
+	}
+	if err := db.Create(&paths).Error; err != nil {
+		t.Fatal(err)
+	}
+	factory := impl.NewRepositoryFactory(db)
+	pathID, err := Ensure(context.Background(), "user-a", "/保存", factory)
+	if err != nil || pathID != "2" {
+		t.Fatalf("历史目录未被复用: pathID=%q err=%v", pathID, err)
+	}
+	var count int64
+	if err := db.Model(&models.VirtualPath{}).Where("user_id = ?", "user-a").Count(&count).Error; err != nil || count != 2 {
+		t.Fatalf("历史目录被重复创建: count=%d err=%v", count, err)
 	}
 }
