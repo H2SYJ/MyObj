@@ -504,7 +504,8 @@ response, err := myobjplugin.HTTPRequest(myobjplugin.HTTPRequestInput{
         "Authorization": "Bearer " + token,
         "Content-Type":  "application/json",
     },
-    Body: []byte(`{"query":"{ items { id url } }"}`),
+    Body:             []byte(`{"query":"{ items { id url } }"}`),
+    MaxResponseBytes: 512 * 1024,
 })
 if err != nil {
     return nil, fmt.Errorf("请求数据源失败: %w", err)
@@ -524,7 +525,9 @@ if err != nil {
 
 - 仅支持 `GET`、`HEAD`、`POST`。
 - 请求 body 最多 1 MiB。
-- 单个响应 body 最多 10 MiB。
+- 新 SDK 默认允许 2 MiB 响应，可通过 `MaxResponseBytes` 调整为 64 KiB 至 4 MiB；应按数据源实际大小设置尽可能小的值。
+- 宿主为旧版插件保留 10 MiB 全局硬上限，但旧 SDK 的固定大缓冲区可能耗尽 WASM 内存，应重新构建插件。
+- 响应头序列化后最多 64 KiB。
 - 最多 32 个请求头，请求头名称和值合计不超过 32 KiB。
 - 请求头值不能含 CR/LF。
 - 目标和每次重定向必须通过公网 URL 安全检查。
@@ -889,7 +892,9 @@ GOFLAGS=-buildvcs=false tinygo build -target=wasip1 -opt=z -o plugin.wasm .
 | 错误 | 含义 | 建议处理 |
 | --- | --- | --- |
 | `permission_denied` | manifest 未声明、订阅未授权或运行中权限被撤销 | 停止当前能力；可选能力应降级，必需能力返回清晰错误 |
-| `response_too_large` | HTTP 响应超过 10 MiB | 使用源端分页或请求更小字段集 |
+| `response_too_large` | HTTP 响应超过插件声明的 `MaxResponseBytes` 或宿主硬上限 | 调整为合理上限，或使用源端分页和更小字段集 |
+| `response_headers_too_large` | HTTP 响应头序列化后超过 64 KiB | 减少上游响应头，或更换数据源接口 |
+| `invalid_response_limit` | `max_response_bytes` 为负数或超过宿主 10 MiB 硬上限 | 使用 SDK 支持的 64 KiB 至 4 MiB 范围 |
 | `method_not_allowed` | 使用了 GET/HEAD/POST 以外方法 | 调整数据源协议或通过 POST 表达操作 |
 | `invalid_url` | URL 无效或未通过公网安全策略 | 检查 scheme、DNS 和重定向目标 |
 | `invalid_header` | 数据源请求头名称、值、数量或大小不合法 | 移除逐跳头并检查 CR/LF |
@@ -962,7 +967,7 @@ files_query(request_ptr: u32, request_len: u32, output_ptr: u32, output_cap: u32
 
 调用方把 UTF-8 JSON 写入线性内存的 request 区域，并提供 output 缓冲区。返回值非负时表示写入的 JSON 字节数；负值表示低层调用失败。业务错误通常仍以 `{"error":"..."}` JSON 返回。
 
-`http_request` 的 body 字段是 `body_base64`；响应同样使用 `body_base64`。`file_get` 请求为 `{"uf_id":"..."}`；`files_query` 使用第 12 节过滤字段。
+`http_request` 的 body 字段是 `body_base64`，可选的响应限制字段是 `max_response_bytes`；响应同样使用 `body_base64`。`file_get` 请求为 `{"uf_id":"..."}`；`files_query` 使用第 12 节过滤字段。
 
 自行实现绑定仍必须满足 stdout 单一 JSON、执行时间、内存和权限限制。ABI v1 不承诺 Go SDK 内部细节，第三方绑定应针对真实 MyObj 版本运行兼容测试。
 

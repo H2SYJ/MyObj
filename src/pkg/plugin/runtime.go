@@ -22,9 +22,10 @@ import (
 )
 
 const (
-	MaxInvocationOutput = 2 * 1024 * 1024
-	MaxInvocationLog    = 256 * 1024
-	MaxHTTPResponse     = 10 * 1024 * 1024
+	MaxInvocationOutput       = 2 * 1024 * 1024
+	MaxInvocationLog          = 256 * 1024
+	MaxHTTPResponse           = 10 * 1024 * 1024
+	MaxHTTPResponseHeaderJSON = 64 * 1024
 )
 
 type FileQueryFunc func(context.Context, FileQueryRequest) (FileQueryResponse, error)
@@ -163,18 +164,40 @@ func (r *Runtime) hostHTTPRequest(ctx context.Context, module api.Module, reques
 		}
 		req.Header.Set(name, value)
 	}
+	responseLimit, ok := pluginHTTPResponseLimit(pluginRequest.MaxResponseBytes)
+	if !ok {
+		return writeHostError(module, outputPtr, outputCap, "invalid_response_limit")
+	}
 	resp, err := host.HTTPClient.Do(req)
 	if err != nil {
 		return writeHostJSON(module, outputPtr, outputCap, HTTPResponse{Error: redactHTTPClientError(err)})
 	}
 	defer resp.Body.Close()
-	responseBody, err := io.ReadAll(io.LimitReader(resp.Body, MaxHTTPResponse+1))
-	if err != nil || len(responseBody) > MaxHTTPResponse {
+	if !validPluginHTTPResponseHeaders(resp.Header) {
+		return writeHostError(module, outputPtr, outputCap, "response_headers_too_large")
+	}
+	responseBody, err := io.ReadAll(io.LimitReader(resp.Body, int64(responseLimit)+1))
+	if err != nil || len(responseBody) > responseLimit {
 		return writeHostError(module, outputPtr, outputCap, "response_too_large")
 	}
 	return writeHostJSON(module, outputPtr, outputCap, HTTPResponse{
 		StatusCode: resp.StatusCode, Headers: resp.Header, Body: base64.StdEncoding.EncodeToString(responseBody),
 	})
+}
+
+func pluginHTTPResponseLimit(requested int) (int, bool) {
+	if requested == 0 {
+		return MaxHTTPResponse, true
+	}
+	if requested < 0 || requested > MaxHTTPResponse {
+		return 0, false
+	}
+	return requested, true
+}
+
+func validPluginHTTPResponseHeaders(headers http.Header) bool {
+	data, err := json.Marshal(headers)
+	return err == nil && len(data) <= MaxHTTPResponseHeaderJSON
 }
 
 func redactHTTPClientError(err error) string {

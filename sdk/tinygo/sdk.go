@@ -11,9 +11,12 @@ import (
 )
 
 const (
-	maxInputBytes      = 2 * 1024 * 1024
-	maxHTTPOutputBytes = 16 * 1024 * 1024
-	maxFileOutputBytes = 2 * 1024 * 1024
+	maxInputBytes                = 2 * 1024 * 1024
+	defaultHTTPResponseBytes     = 2 * 1024 * 1024
+	minimumHTTPResponseBytes     = 64 * 1024
+	maximumHTTPResponseBytes     = 4 * 1024 * 1024
+	maxHTTPResponseMetadataBytes = 128 * 1024
+	maxFileOutputBytes           = 2 * 1024 * 1024
 )
 
 type InvocationRequest struct {
@@ -86,17 +89,19 @@ func writeResponse(response InvocationResponse) {
 }
 
 type HTTPRequestInput struct {
-	Method  string            `json:"method"`
-	URL     string            `json:"url"`
-	Headers map[string]string `json:"headers,omitempty"`
-	Body    []byte            `json:"-"`
+	Method           string            `json:"method"`
+	URL              string            `json:"url"`
+	Headers          map[string]string `json:"headers,omitempty"`
+	Body             []byte            `json:"-"`
+	MaxResponseBytes int               `json:"-"`
 }
 
 type httpRequestWire struct {
-	Method  string            `json:"method"`
-	URL     string            `json:"url"`
-	Headers map[string]string `json:"headers,omitempty"`
-	Body    string            `json:"body_base64,omitempty"`
+	Method           string            `json:"method"`
+	URL              string            `json:"url"`
+	Headers          map[string]string `json:"headers,omitempty"`
+	Body             string            `json:"body_base64,omitempty"`
+	MaxResponseBytes int               `json:"max_response_bytes,omitempty"`
 }
 
 type HTTPResponse struct {
@@ -111,15 +116,41 @@ func (r HTTPResponse) Body() ([]byte, error) {
 }
 
 func HTTPRequest(request HTTPRequestInput) (HTTPResponse, error) {
-	wire := httpRequestWire{Method: request.Method, URL: request.URL, Headers: request.Headers, Body: base64.StdEncoding.EncodeToString(request.Body)}
+	responseLimit, outputCapacity, err := httpResponseCapacity(request.MaxResponseBytes)
+	if err != nil {
+		return HTTPResponse{}, err
+	}
+	wire := httpRequestWire{
+		Method:           request.Method,
+		URL:              request.URL,
+		Headers:          request.Headers,
+		Body:             base64.StdEncoding.EncodeToString(request.Body),
+		MaxResponseBytes: responseLimit,
+	}
 	var response HTTPResponse
-	if err := callHTTPRequest(wire, &response, maxHTTPOutputBytes); err != nil {
+	if err := callHTTPRequest(wire, &response, outputCapacity); err != nil {
 		return response, err
 	}
 	if response.Error != "" {
 		return response, fmt.Errorf("%s", response.Error)
 	}
 	return response, nil
+}
+
+func httpResponseCapacity(requested int) (int, int, error) {
+	limit := requested
+	if limit == 0 {
+		limit = defaultHTTPResponseBytes
+	}
+	if limit < minimumHTTPResponseBytes || limit > maximumHTTPResponseBytes {
+		return 0, 0, fmt.Errorf("http_response_limit_out_of_range")
+	}
+	encodedBodyBytes := base64.StdEncoding.EncodedLen(limit)
+	maxInt := int(^uint(0) >> 1)
+	if encodedBodyBytes > maxInt-maxHTTPResponseMetadataBytes {
+		return 0, 0, fmt.Errorf("http_response_limit_overflow")
+	}
+	return limit, encodedBodyBytes + maxHTTPResponseMetadataBytes, nil
 }
 
 type FileQuery struct {

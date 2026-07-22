@@ -97,10 +97,11 @@ type InvocationResponse struct {
 }
 
 type HTTPRequest struct {
-	Method  string            `json:"method"`
-	URL     string            `json:"url"`
-	Headers map[string]string `json:"headers,omitempty"`
-	Body    string            `json:"body_base64,omitempty"`
+	Method           string            `json:"method"`
+	URL              string            `json:"url"`
+	Headers          map[string]string `json:"headers,omitempty"`
+	Body             string            `json:"body_base64,omitempty"`
+	MaxResponseBytes int               `json:"max_response_bytes,omitempty"`
 }
 
 type HTTPResponse struct {
