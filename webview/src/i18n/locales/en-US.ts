@@ -928,7 +928,7 @@ export default {
       enableWebDAV: 'Enable WebDAV',
       enableWebDAVTip: 'After enabling, users can access files through the WebDAV protocol',
       offlineDownloadProxy: 'Offline Download Proxy',
-      offlineDownloadProxyPlaceholder: 'e.g. http://127.0.0.1:7890 or socks5://user:password@host:port',
+      offlineDownloadProxyPlaceholder: "e.g. http://127.0.0.1:7890 or socks5://user:password{'@'}host:port",
       offlineDownloadProxyTip:
         'Used only for HTTP/HTTPS direct downloads. Leave empty for direct access; BT and magnet traffic stays direct.',
       offlineDownloadSpeedLimit: 'Total Download Speed Limit',

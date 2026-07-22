@@ -918,7 +918,7 @@ export default {
       enableWebDAV: '启用 WebDAV',
       enableWebDAVTip: '启用后，用户可以通过 WebDAV 协议访问文件',
       offlineDownloadProxy: '离线下载代理',
-      offlineDownloadProxyPlaceholder: '例如：http://127.0.0.1:7890 或 socks5://用户名:密码@主机:端口',
+      offlineDownloadProxyPlaceholder: "例如：http://127.0.0.1:7890 或 socks5://用户名:密码{'@'}主机:端口",
       offlineDownloadProxyTip: '仅用于 HTTP/HTTPS 直链下载，留空表示直连；BT、磁力及其发现流量不使用代理',
       offlineDownloadSpeedLimit: '离线下载总限速',
       offlineDownloadSpeedLimitTip: 'HTTP 直链与 BT/磁力共享的全局下载速度上限，0 表示不限速',
