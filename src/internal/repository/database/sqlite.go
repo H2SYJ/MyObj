@@ -19,7 +19,10 @@ func (sql *SQLite) InitDatabase() {
 	if strings.Contains(host, "?") {
 		separator = "&"
 	}
-	host += separator + "_pragma=busy_timeout(5000)&_pragma=journal_mode(WAL)&_pragma=synchronous(NORMAL)"
+	// 写事务从开始时就申请写锁，避免 WAL 模式下读事务升级为写事务时触发
+	// SQLITE_BUSY_SNAPSHOT（database is locked (517)）。其他写事务会按
+	// busy_timeout 排队，普通读查询仍可并发执行。
+	host += separator + "_txlock=immediate&_pragma=busy_timeout(5000)&_pragma=journal_mode(WAL)&_pragma=synchronous(NORMAL)"
 	db, err := gorm.Open(sqlite.Open(host), &gorm.Config{
 		Logger: &GormSlogAdapter{
 			level: logLevel(config.CONFIG.Log.Level),
