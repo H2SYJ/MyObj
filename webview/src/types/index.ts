@@ -203,3 +203,5 @@ export interface SetFilePasswordRequest {
   passwd: string
   challenge: string
 }
+
+export * from './desktop'

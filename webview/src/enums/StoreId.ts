@@ -6,6 +6,5 @@ export enum StoreId {
   User = 'user-store',
   Auth = 'auth-store',
   App = 'app-store',
-  Layout = 'layout-store',
-  TagsView = 'tags-view-store'
+  Layout = 'layout-store'
 }

@@ -1,46 +1,35 @@
 <template>
-  <el-main class="layout-main">
+  <main class="desktop-main" aria-live="polite">
     <router-view v-slot="{ Component }">
-      <transition name="fade-scale" mode="out-in">
+      <transition name="desktop-page-fade" mode="out-in">
         <component :is="Component" />
       </transition>
     </router-view>
-  </el-main>
+  </main>
 </template>
 
-<script setup lang="ts">
-  // AppMain component for main content area
-</script>
-
 <style scoped>
-  .layout-main {
-    padding: 24px;
-    background: var(--bg-color);
-    overflow-y: auto;
-    height: 100%;
-    flex: 1;
+  .desktop-main {
+    grid-area: main;
+    min-width: 0;
+    min-height: 0;
+    overflow: auto;
+    background: var(--desktop-surface-muted);
+    scrollbar-gutter: stable;
   }
 
-  @media (min-width: 768px) and (max-width: 991px) {
-    .layout-main {
-      padding: 16px;
-    }
-  }
-
-  .fade-scale-enter-active,
-  .fade-scale-leave-active {
+  .desktop-page-fade-enter-active,
+  .desktop-page-fade-leave-active {
     transition:
-      opacity 0.3s ease,
-      transform 0.3s ease;
+      opacity 140ms ease,
+      transform 140ms ease;
   }
-
-  .fade-scale-enter-from {
+  .desktop-page-fade-enter-from {
     opacity: 0;
-    transform: scale(0.98);
+    transform: translateY(4px);
   }
-
-  .fade-scale-leave-to {
+  .desktop-page-fade-leave-to {
     opacity: 0;
-    transform: scale(1.02);
+    transform: translateY(-2px);
   }
 </style>

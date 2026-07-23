@@ -28,7 +28,13 @@ export const routes: RouteRecordRaw[] = [
         path: '/files',
         name: 'Files',
         component: () => import('@/views/Files/index.vue'),
-        meta: { title: '我的文件', i18nKey: 'route.files', mobileTab: 'files', mobileSearch: true }
+        meta: {
+          title: '我的文件',
+          i18nKey: 'route.files',
+          desktopSearch: 'files',
+          mobileTab: 'files',
+          mobileSearch: true
+        }
       },
       {
         path: '/shares',
@@ -64,7 +70,13 @@ export const routes: RouteRecordRaw[] = [
         path: '/square',
         name: 'Square',
         component: () => import('@/views/Square/index.vue'),
-        meta: { title: '文件广场', i18nKey: 'route.square', mobileTab: 'square', mobileSearch: true }
+        meta: {
+          title: '文件广场',
+          i18nKey: 'route.square',
+          desktopSearch: 'square',
+          mobileTab: 'square',
+          mobileSearch: true
+        }
       },
       {
         path: '/me',

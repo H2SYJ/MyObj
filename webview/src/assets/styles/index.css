@@ -25,5 +25,8 @@
 /* 统一加载状态样式 */
 @import './loading.css';
 
+/* PC V2 设计系统 */
+@import './desktop.css';
+
 /* 响应式样式（移动端和平板端） */
 @import './responsive.css';

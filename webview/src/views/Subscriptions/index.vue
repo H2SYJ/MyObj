@@ -1,48 +1,48 @@
 <template>
-  <div class="subscriptions-page">
+  <div class="subscriptions-page desktop-content-page">
     <el-card shadow="never" class="subscriptions-header-card">
       <div class="header">
         <div>
-          <h2>订阅管理</h2>
-          <span>每天定时调用已安装插件，并自动提交到离线下载。</span>
+          <h2>{{ t('subscriptions.title') }}</h2>
+          <span>{{ t('subscriptions.description') }}</span>
         </div>
         <div>
-          <el-button type="primary" icon="Plus" @click="openCreate">新建订阅</el-button
-          ><el-button icon="Refresh" @click="load">刷新</el-button>
+          <el-button type="primary" icon="Plus" @click="openCreate">{{ t('subscriptions.create') }}</el-button
+          ><el-button icon="Refresh" @click="load">{{ t('common.refresh') }}</el-button>
         </div>
       </div>
     </el-card>
     <el-card v-if="!isHandheld" shadow="never">
       <el-table :data="subscriptions" v-loading="loading">
-        <el-table-column prop="name" label="订阅" min-width="180" />
-        <el-table-column label="插件" min-width="160"
+        <el-table-column prop="name" :label="t('subscriptions.subscription')" min-width="180" />
+        <el-table-column :label="t('subscriptions.plugin')" min-width="160"
           ><template #default="{ row }"
             >{{ pluginName(row.plugin_id) }} v{{ row.plugin_version }}</template
           ></el-table-column
         >
-        <el-table-column prop="schedule_time" label="每日时间" width="100" />
-        <el-table-column prop="save_path" label="保存目录" min-width="180" />
-        <el-table-column label="状态" width="150"
+        <el-table-column prop="schedule_time" :label="t('subscriptions.dailyTime')" width="100" />
+        <el-table-column prop="save_path" :label="t('subscriptions.savePath')" min-width="180" />
+        <el-table-column :label="t('subscriptions.status')" width="150"
           ><template #default="{ row }"
-            ><el-tag :type="statusType(row.status)">{{ row.status }}</el-tag></template
+            ><el-tag :type="statusType(row.status)">{{ statusLabel(row.status) }}</el-tag></template
           ></el-table-column
         >
-        <el-table-column label="启用" width="80"
+        <el-table-column :label="t('subscriptions.enabled')" width="80"
           ><template #default="{ row }"
             ><el-switch
               :model-value="row.enabled"
               :disabled="row.status === 'needs_permission'"
               @change="value => toggle(row, !!value)" /></template
         ></el-table-column>
-        <el-table-column label="操作" width="300" fixed="right">
+        <el-table-column :label="t('subscriptions.operation')" width="300" fixed="right">
           <template #default="{ row }">
-            <el-button link type="primary" @click="run(row)">立即运行</el-button>
-            <el-button link @click="showHistory(row)">记录</el-button>
-            <el-button link @click="openEdit(row)">编辑</el-button>
-            <el-button v-if="row.status === 'needs_permission'" link type="warning" @click="confirmPermissions(row)"
-              >确认权限</el-button
-            >
-            <el-button link type="danger" @click="remove(row)">删除</el-button>
+            <el-button link type="primary" @click="run(row)">{{ t('subscriptions.runNow') }}</el-button>
+            <el-button link @click="showHistory(row)">{{ t('subscriptions.history') }}</el-button>
+            <el-button link @click="openEdit(row)">{{ t('common.edit') }}</el-button>
+            <el-button v-if="row.status === 'needs_permission'" link type="warning" @click="confirmPermissions(row)">{{
+              t('subscriptions.confirmPermissions')
+            }}</el-button>
+            <el-button link type="danger" @click="remove(row)">{{ t('common.delete') }}</el-button>
           </template>
         </el-table-column>
       </el-table>
@@ -62,27 +62,37 @@
           />
         </div>
         <div class="subscription-meta">
-          <span><el-icon><Clock /></el-icon>{{ subscription.schedule_time }}</span>
-          <span><el-icon><Folder /></el-icon>{{ subscription.save_path }}</span>
+          <span
+            ><el-icon><Clock /></el-icon>{{ subscription.schedule_time }}</span
+          >
+          <span
+            ><el-icon><Folder /></el-icon>{{ subscription.save_path }}</span
+          >
         </div>
         <div class="subscription-card-foot">
-          <el-tag :type="statusType(subscription.status)" size="small">{{ subscription.status }}</el-tag>
+          <el-tag :type="statusType(subscription.status)" size="small">{{ statusLabel(subscription.status) }}</el-tag>
           <div>
-            <el-button type="primary" link @click="run(subscription)">立即运行</el-button>
-            <el-button link @click="openMobileActions(subscription)">更多</el-button>
+            <el-button type="primary" link @click="run(subscription)">{{ t('subscriptions.runNow') }}</el-button>
+            <el-button link @click="openMobileActions(subscription)">{{ t('common.more') }}</el-button>
           </div>
         </div>
       </article>
-      <el-empty v-if="!loading && subscriptions.length === 0" description="暂无订阅" />
+      <el-empty v-if="!loading && subscriptions.length === 0" :description="t('subscriptions.empty')" />
     </div>
 
-    <button v-if="isHandheld" type="button" class="subscription-fab" aria-label="新建订阅" @click="openCreate">
+    <button
+      v-if="isHandheld"
+      type="button"
+      class="subscription-fab"
+      :aria-label="t('subscriptions.create')"
+      @click="openCreate"
+    >
       <el-icon><Plus /></el-icon>
     </button>
 
     <MobileActionSheet
       v-model="mobileActionsVisible"
-      title="订阅操作"
+      :title="t('subscriptions.actionsTitle')"
       :actions="mobileActions"
       history-key="subscription-actions"
       @select="handleMobileAction"
@@ -90,13 +100,13 @@
 
     <el-dialog
       v-model="dialogVisible"
-      :title="editingId ? '编辑订阅' : '新建订阅'"
+      :title="editingId ? t('subscriptions.editTitle') : t('subscriptions.createTitle')"
       width="640px"
       :fullscreen="isHandheld"
     >
       <el-form label-width="120px">
-        <el-form-item label="名称"><el-input v-model="form.name" /></el-form-item>
-        <el-form-item label="插件">
+        <el-form-item :label="t('subscriptions.name')"><el-input v-model="form.name" /></el-form-item>
+        <el-form-item :label="t('subscriptions.plugin')">
           <el-select v-model="form.plugin_id" :disabled="!!editingId" style="width: 100%" @change="pluginChanged">
             <el-option
               v-for="plugin in plugins"
@@ -123,25 +133,27 @@
               v-model="form.config[field.key]"
               :type="field.type"
               :placeholder="
-                field.secret && configuredSecrets.includes(field.key) ? '已配置，留空保持不变' : field.description
+                field.secret && configuredSecrets.includes(field.key)
+                  ? t('subscriptions.secretConfigured')
+                  : field.description
               "
               :show-password="field.type === 'password'"
             />
           </el-form-item>
         </template>
-        <el-form-item label="执行时间"
+        <el-form-item :label="t('subscriptions.executionTime')"
           ><el-time-picker v-model="form.schedule_time" value-format="HH:mm" format="HH:mm"
         /></el-form-item>
-        <el-form-item label="保存目录" required
+        <el-form-item :label="t('subscriptions.savePath')" required
           ><el-input v-model="form.save_path" placeholder="/离线下载/订阅"
         /></el-form-item>
-        <el-form-item label="首次下载"
+        <el-form-item :label="t('subscriptions.initialLimit')"
           ><el-input-number v-model="form.initial_limit" :min="1" :max="100"
         /></el-form-item>
-        <el-form-item label="单次上限"
+        <el-form-item :label="t('subscriptions.runLimit')"
           ><el-input-number v-model="form.max_items_per_run" :min="1" :max="500"
         /></el-form-item>
-        <el-form-item label="插件权限">
+        <el-form-item :label="t('subscriptions.pluginPermissions')">
           <el-checkbox-group v-model="form.granted_permissions">
             <el-checkbox
               v-for="permission in selectedPlugin?.permissions || []"
@@ -154,43 +166,48 @@
           </el-checkbox-group>
           <el-alert
             v-if="selectedPlugin?.permissions.includes('downloads.custom_headers')"
-            title="自定义头会加密保存，只向精确白名单主机发送；界面永不回显头值。"
+            :title="t('subscriptions.customHeadersWarning')"
             type="warning"
             :closable="false"
           />
         </el-form-item>
       </el-form>
       <template #footer
-        ><el-button @click="dialogVisible = false">取消</el-button
-        ><el-button type="primary" :loading="saving" @click="save">保存</el-button></template
+        ><el-button @click="dialogVisible = false">{{ t('common.cancel') }}</el-button
+        ><el-button type="primary" :loading="saving" @click="save">{{ t('common.save') }}</el-button></template
       >
     </el-dialog>
 
     <el-drawer
       v-model="historyVisible"
-      :title="`${historyTarget?.name || ''} · 执行与条目`"
+      :title="t('subscriptions.historyTitle', { name: historyTarget?.name || '' })"
       :size="isHandheld ? '100%' : '75%'"
     >
-      <el-tabs v-model="historyTab" @tab-change="loadHistory">
-        <el-tab-pane label="下载条目" name="items">
+      <el-tabs v-model="historyTab" v-loading="historyLoading" @tab-change="loadHistory">
+        <el-tab-pane :label="t('subscriptions.items')" name="items">
           <el-table v-if="!isHandheld" :data="items" size="small">
-            <el-table-column prop="title" label="标题" min-width="180" />
-            <el-table-column prop="save_path" label="保存目录" min-width="160" />
-            <el-table-column prop="status" label="提交状态" width="120" />
-            <el-table-column label="请求头" min-width="180"
+            <el-table-column prop="title" :label="t('subscriptions.itemTitle')" min-width="180" />
+            <el-table-column prop="save_path" :label="t('subscriptions.savePath')" min-width="160" />
+            <el-table-column prop="status" :label="t('subscriptions.submissionStatus')" width="120" />
+            <el-table-column :label="t('subscriptions.requestHeaders')" min-width="180"
               ><template #default="{ row }"
-                ><span v-if="row.has_request_headers"
-                  >已配置：{{ row.request_header_names.join(', ') || '值不可解密' }}</span
+                ><span v-if="row.has_request_headers">{{
+                  t('subscriptions.headersConfigured', {
+                    names: row.request_header_names.join(', ') || t('subscriptions.valueUnavailable')
+                  })
+                }}</span
                 ><span v-else>-</span
-                ><el-tag v-if="row.requires_headers" type="danger" size="small">等待凭据</el-tag></template
+                ><el-tag v-if="row.requires_headers" type="danger" size="small">{{
+                  t('subscriptions.waitingCredentials')
+                }}</el-tag></template
               ></el-table-column
             >
-            <el-table-column label="缩略图" min-width="150"
+            <el-table-column :label="t('subscriptions.thumbnail')" min-width="150"
               ><template #default="{ row }"
                 ><el-tag size="small">{{ row.thumbnail_status }}</el-tag
-                ><el-button v-if="row.thumbnail_status === 'failed'" link @click="retryThumbnail(row)"
-                  >重试</el-button
-                ></template
+                ><el-button v-if="row.thumbnail_status === 'failed'" link @click="retryThumbnail(row)">{{
+                  t('error.retry')
+                }}</el-button></template
               ></el-table-column
             >
           </el-table>
@@ -198,28 +215,47 @@
             <article v-for="item in items" :key="item.id" class="history-card">
               <strong>{{ item.title }}</strong>
               <span>{{ item.save_path }}</span>
-              <div><el-tag size="small">{{ item.status }}</el-tag><el-tag size="small">{{ item.thumbnail_status }}</el-tag></div>
-              <small v-if="item.has_request_headers">请求头：{{ item.request_header_names.join(', ') || '值不可解密' }}</small>
+              <div>
+                <el-tag size="small">{{ item.status }}</el-tag
+                ><el-tag size="small">{{ item.thumbnail_status }}</el-tag>
+              </div>
+              <small v-if="item.has_request_headers">{{
+                t('subscriptions.requestHeadersValue', {
+                  names: item.request_header_names.join(', ') || t('subscriptions.valueUnavailable')
+                })
+              }}</small>
             </article>
           </div>
         </el-tab-pane>
-        <el-tab-pane label="执行记录" name="runs">
+        <el-tab-pane :label="t('subscriptions.runs')" name="runs">
           <el-table v-if="!isHandheld" :data="runs" size="small"
-            ><el-table-column prop="created_at" label="时间" width="180" /><el-table-column
+            ><el-table-column prop="created_at" :label="t('subscriptions.time')" width="180" /><el-table-column
               prop="trigger"
-              label="触发"
-              width="100" /><el-table-column prop="status" label="状态" width="120" /><el-table-column
+              :label="t('subscriptions.trigger')"
+              width="100" /><el-table-column
+              prop="status"
+              :label="t('subscriptions.status')"
+              width="120" /><el-table-column
               prop="items_found"
-              label="发现"
-              width="80" /><el-table-column prop="tasks_created" label="提交" width="80" /><el-table-column
-              prop="error_msg"
-              label="错误"
-              min-width="220"
+              :label="t('subscriptions.found')"
+              width="80" /><el-table-column
+              prop="tasks_created"
+              :label="t('subscriptions.submitted')"
+              width="80" /><el-table-column prop="error_msg" :label="t('subscriptions.error')" min-width="220"
           /></el-table>
           <div v-else class="mobile-history-list">
             <article v-for="runItem in runs" :key="runItem.id" class="history-card">
-              <div class="history-title"><strong>{{ runItem.created_at }}</strong><el-tag size="small">{{ runItem.status }}</el-tag></div>
-              <span>{{ runItem.trigger }} · 发现 {{ runItem.items_found }} · 提交 {{ runItem.tasks_created }}</span>
+              <div class="history-title">
+                <strong>{{ runItem.created_at }}</strong
+                ><el-tag size="small">{{ runItem.status }}</el-tag>
+              </div>
+              <span>{{
+                t('subscriptions.runSummary', {
+                  trigger: runItem.trigger,
+                  found: runItem.items_found,
+                  submitted: runItem.tasks_created
+                })
+              }}</span>
               <small v-if="runItem.error_msg" class="history-error">{{ runItem.error_msg }}</small>
             </article>
           </div>
@@ -233,7 +269,8 @@
   import { ElMessage, ElMessageBox } from 'element-plus'
   import type { TabsPaneContext } from 'element-plus'
   import { MobileActionSheet, type MobileSheetAction } from '@/components/mobile'
-  import { useMobileLayerHistory, useResponsive } from '@/composables'
+  import { useI18n, useMobileLayerHistory, useResponsive } from '@/composables'
+  import { useLatestRequest } from '@/composables/core/useLatestRequest'
   import type { InstalledPlugin } from '@/api/plugin'
   import {
     availablePlugins,
@@ -251,11 +288,13 @@
   import type { Subscription, SubscriptionItem, SubscriptionPayload, SubscriptionRun } from '@/api/subscription'
 
   const plugins = ref<InstalledPlugin[]>([])
+  const { t } = useI18n()
   const { isHandheld } = useResponsive()
   const subscriptions = ref<Subscription[]>([])
   const items = ref<SubscriptionItem[]>([])
   const runs = ref<SubscriptionRun[]>([])
   const loading = ref(false)
+  const historyLoading = ref(false)
   const saving = ref(false)
   const dialogVisible = ref(false)
   const historyVisible = ref(false)
@@ -265,6 +304,8 @@
   const mobileActionsVisible = ref(false)
   const mobileActionTarget = ref<Subscription>()
   const configuredSecrets = ref<string[]>([])
+  const listRequest = useLatestRequest()
+  const historyRequest = useLatestRequest()
   const form = reactive<SubscriptionPayload>({
     name: '',
     plugin_id: '',
@@ -278,12 +319,19 @@
   })
   const selectedPlugin = computed(() => plugins.value.find(plugin => plugin.id === form.plugin_id))
   const mobileActions = computed<MobileSheetAction[]>(() => [
-    { key: 'history', label: '执行与条目', icon: 'Document' },
-    { key: 'edit', label: '编辑订阅', icon: 'Edit' },
+    { key: 'history', label: t('subscriptions.historyItems'), icon: 'Document' },
+    { key: 'edit', label: t('subscriptions.editTitle'), icon: 'Edit' },
     ...(mobileActionTarget.value?.status === 'needs_permission'
-      ? [{ key: 'permissions', label: '确认权限', icon: 'Lock', tone: 'primary' as const }]
+      ? [
+          {
+            key: 'permissions',
+            label: t('subscriptions.confirmPermissions'),
+            icon: 'Lock',
+            tone: 'primary' as const
+          }
+        ]
       : []),
-    { key: 'delete', label: '删除订阅', icon: 'Delete', tone: 'danger' }
+    { key: 'delete', label: t('subscriptions.deleteTitle'), icon: 'Delete', tone: 'danger' }
   ])
   useMobileLayerHistory(dialogVisible, 'subscription-edit', isHandheld)
   useMobileLayerHistory(historyVisible, 'subscription-history', isHandheld)
@@ -303,23 +351,35 @@
   }
 
   const load = async () => {
+    const requestTicket = listRequest.begin()
     loading.value = true
     try {
-      const [pluginResult, subscriptionResult] = await Promise.all([availablePlugins(), listSubscriptions()])
+      const [pluginResult, subscriptionResult] = await Promise.all([
+        availablePlugins({ signal: requestTicket.signal }),
+        listSubscriptions(1, 100, { signal: requestTicket.signal })
+      ])
+      if (!requestTicket.isCurrent()) return
       plugins.value = pluginResult.data || []
       subscriptions.value = subscriptionResult.data?.subscriptions || []
+    } catch (error: any) {
+      if (requestTicket.isCurrent()) ElMessage.error(error.message || t('subscriptions.loadFailed'))
     } finally {
-      loading.value = false
+      if (requestTicket.isCurrent()) loading.value = false
     }
   }
   const pluginName = (id: string) => plugins.value.find(plugin => plugin.id === id)?.name || id
   const statusType = (status: string) =>
     status === 'ready' ? 'success' : status === 'needs_permission' ? 'warning' : 'danger'
+  const statusLabel = (status: string) => {
+    const key = `subscriptions.statuses.${status}`
+    const translated = t(key)
+    return translated === key ? status : translated
+  }
   const permissionLabel = (value: string) =>
     ({
-      'network.public_http': '访问公网 HTTP',
-      'files.read_metadata': '查询我的文件元数据',
-      'downloads.custom_headers': '提供离线下载自定义头'
+      'network.public_http': t('subscriptions.permissions.publicHttp'),
+      'files.read_metadata': t('subscriptions.permissions.fileMetadata'),
+      'downloads.custom_headers': t('subscriptions.permissions.customHeaders')
     })[value] || value
   const pluginChanged = () => {
     form.config = {}
@@ -352,15 +412,17 @@
     dialogVisible.value = true
   }
   const save = async () => {
-    if (!form.name || !form.plugin_id || !form.schedule_time) return ElMessage.warning('请填写名称、插件和执行时间')
-    if (!form.save_path.trim()) return ElMessage.warning('请填写保存目录')
+    if (!form.name || !form.plugin_id || !form.schedule_time) {
+      return ElMessage.warning(t('subscriptions.requiredFields'))
+    }
+    if (!form.save_path.trim()) return ElMessage.warning(t('subscriptions.savePathRequired'))
     saving.value = true
     try {
       const result = editingId.value
         ? await updateSubscription({ ...form, id: editingId.value })
         : await createSubscription(form)
       if (result.code !== 200) return ElMessage.error(result.message)
-      ElMessage.success('订阅已保存')
+      ElMessage.success(t('subscriptions.saveSuccess'))
       dialogVisible.value = false
       await load()
     } finally {
@@ -374,11 +436,13 @@
   }
   const run = async (row: Subscription) => {
     const result = await runSubscription(row.id)
-    if (result.code === 200) ElMessage.success('已开始运行')
+    if (result.code === 200) ElMessage.success(t('subscriptions.runStarted'))
     else ElMessage.error(result.message)
   }
   const remove = async (row: Subscription) => {
-    await ElMessageBox.confirm(`确定删除“${row.name}”吗？`, '删除订阅', { type: 'warning' })
+    await ElMessageBox.confirm(t('subscriptions.deleteConfirm', { name: row.name }), t('subscriptions.deleteTitle'), {
+      type: 'warning'
+    })
     const result = await deleteSubscription(row.id)
     if (result.code !== 200) return ElMessage.error(result.message)
     await load()
@@ -387,8 +451,8 @@
     const plugin = plugins.value.find(value => value.id === row.plugin_id)
     if (!plugin) return
     await ElMessageBox.confirm(
-      `插件需要权限：${plugin.permissions.map(permissionLabel).join('、')}`,
-      '重新确认插件权限',
+      t('subscriptions.permissionsConfirm', { permissions: plugin.permissions.map(permissionLabel).join(', ') }),
+      t('subscriptions.permissionsTitle'),
       { type: 'warning' }
     )
     const result = await updateSubscriptionPermissions(row.id, plugin.permissions)
@@ -403,9 +467,23 @@
   }
   const loadHistory = async (_pane?: TabsPaneContext | string) => {
     if (!historyTarget.value) return
-    if (historyTab.value === 'items')
-      items.value = (await listSubscriptionItems(historyTarget.value.id)).data?.items || []
-    else runs.value = (await listSubscriptionRuns(historyTarget.value.id)).data?.items || []
+    const requestTicket = historyRequest.begin()
+    const subscriptionId = historyTarget.value.id
+    const tab = historyTab.value
+    historyLoading.value = true
+    try {
+      if (tab === 'items') {
+        const result = await listSubscriptionItems(subscriptionId, 1, 50, { signal: requestTicket.signal })
+        if (requestTicket.isCurrent()) items.value = result.data?.items || []
+      } else {
+        const result = await listSubscriptionRuns(subscriptionId, 1, 50, { signal: requestTicket.signal })
+        if (requestTicket.isCurrent()) runs.value = result.data?.items || []
+      }
+    } catch (error: any) {
+      if (requestTicket.isCurrent()) ElMessage.error(error.message || t('subscriptions.historyLoadFailed'))
+    } finally {
+      if (requestTicket.isCurrent()) historyLoading.value = false
+    }
   }
   const retryThumbnail = async (row: SubscriptionItem) => {
     const result = await retrySubscriptionThumbnail(row.id)
@@ -414,6 +492,9 @@
   }
 
   onMounted(load)
+  watch(historyVisible, visible => {
+    if (!visible) historyRequest.cancel()
+  })
 </script>
 
 <style scoped>
@@ -489,7 +570,9 @@
     font-size: 12px;
     overflow-wrap: anywhere;
   }
-  .history-error { color: var(--danger-color) !important; }
+  .history-error {
+    color: var(--danger-color) !important;
+  }
   .subscription-fab {
     position: fixed;
     right: 18px;
@@ -508,9 +591,19 @@
   }
 
   @media (max-width: 767px) {
-    .subscriptions-page { min-height: 100%; padding: 12px 12px 86px; gap: 12px; }
-    .subscriptions-header-card { display: none; }
-    :deep(.el-drawer__header) { padding-top: calc(16px + env(safe-area-inset-top)); }
-    :deep(.el-drawer__body) { padding-bottom: calc(16px + env(safe-area-inset-bottom)); }
+    .subscriptions-page {
+      min-height: 100%;
+      padding: 12px 12px 86px;
+      gap: 12px;
+    }
+    .subscriptions-header-card {
+      display: none;
+    }
+    :deep(.el-drawer__header) {
+      padding-top: calc(16px + env(safe-area-inset-top));
+    }
+    :deep(.el-drawer__body) {
+      padding-bottom: calc(16px + env(safe-area-inset-bottom));
+    }
   }
 </style>

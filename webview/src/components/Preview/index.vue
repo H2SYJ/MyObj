@@ -33,134 +33,60 @@
       <el-button type="primary" @click="handleRetry">{{ t('preview.error.retry') }}</el-button>
     </div>
 
-    <!-- 图片预览 -->
-    <div v-else-if="previewType === 'image'" class="preview-image-container">
-      <div class="image-wrapper" @wheel="handleImageWheel" @dblclick="resetImageZoom">
-        <img
-          :src="imageUrl"
-          :style="imageStyle"
-          class="preview-image"
-          :alt="currentFile?.file_name"
-          @load="handleImageLoad"
-          @error="handleImageError"
-          @mousedown="handleImageMouseDown"
-        />
-        <!-- 图片导航提示 -->
-        <div v-if="imageZoom > 1" class="image-nav-hint">
-          <el-icon><InfoFilled /></el-icon>
-          <span>{{ t('preview.image.hint') }}</span>
-        </div>
-      </div>
-      <!-- 图片工具栏 -->
-      <div class="preview-toolbar">
-        <div class="toolbar-left">
-          <el-button-group>
-            <el-button icon="ZoomIn" @click="zoomImage(0.1)">{{ t('preview.image.zoomIn') }}</el-button>
-            <el-button icon="ZoomOut" @click="zoomImage(-0.1)">{{ t('preview.image.zoomOut') }}</el-button>
-            <el-button icon="RefreshRight" @click="rotateImage(90)">{{ t('preview.image.rotate') }}</el-button>
-            <el-button icon="Refresh" @click="resetImageZoom">{{ t('preview.image.reset') }}</el-button>
-          </el-button-group>
-        </div>
-        <div class="toolbar-right">
-          <el-button-group>
-            <el-button v-if="canPrint" icon="Printer" @click="handlePrint">{{ t('preview.image.print') }}</el-button>
-            <el-button icon="Download" @click="handleDownload">{{ t('preview.image.download') }}</el-button>
-            <el-button @click="toggleFullscreen">
-              <el-icon><FullScreen /></el-icon>
-              {{ t('preview.image.fullscreen') }}
-            </el-button>
-          </el-button-group>
-        </div>
-      </div>
-    </div>
+    <ImagePreviewRenderer
+      v-else-if="previewType === 'image'"
+      :url="imageUrl"
+      :file-name="currentFile?.file_name"
+      :image-style="imageStyle"
+      :zoom="imageZoom"
+      :can-print="canPrint"
+      @wheel="handleImageWheel"
+      @reset="resetImageZoom"
+      @load="handleImageLoad"
+      @error="handleImageError"
+      @mouse-down="handleImageMouseDown"
+      @zoom="zoomImage"
+      @rotate="rotateImage"
+      @print="handlePrint"
+      @download="handleDownload"
+      @fullscreen="toggleFullscreen"
+    />
 
-    <!-- 视频预览 -->
-    <div v-else-if="previewType === 'video'" class="preview-video-container">
-      <plyr-player
-        v-if="videoUrl"
-        :src="videoUrl"
-        :autoplay="options.autoplay"
-        :loop="options.loop"
-        class="preview-video-plyr"
-        @ready="handleVideoReady"
-        @error="handleVideoError"
-      />
-      <div class="preview-toolbar">
-        <el-button v-if="canPrint" icon="Printer" @click="handlePrint">{{ t('preview.video.print') }}</el-button>
-        <el-button icon="Download" @click="handleDownload">{{ t('preview.video.download') }}</el-button>
-      </div>
-    </div>
+    <MediaPreviewRenderer
+      v-else-if="previewType === 'video' || previewType === 'audio'"
+      :type="previewType"
+      :url="previewType === 'video' ? videoUrl : audioUrl"
+      :file-name="currentFile?.file_name"
+      :autoplay="Boolean(options.autoplay)"
+      :loop="Boolean(options.loop)"
+      :controls="options.controls !== false"
+      :can-print="canPrint"
+      @ready="previewType === 'video' ? handleVideoReady() : handleAudioLoad()"
+      @error="previewType === 'video' ? handleVideoError($event) : handleAudioError()"
+      @print="handlePrint"
+      @download="handleDownload"
+    />
 
-    <!-- 音频预览 -->
-    <div v-else-if="previewType === 'audio'" class="preview-audio-container">
-      <div class="audio-wrapper">
-        <el-icon :size="64" color="var(--primary-color)"><Headset /></el-icon>
-        <p class="audio-filename">{{ currentFile?.file_name }}</p>
-        <audio
-          :src="audioUrl"
-          :autoplay="options.autoplay"
-          :loop="options.loop"
-          :controls="options.controls"
-          class="preview-audio"
-          @loadstart="handleAudioLoad"
-          @error="handleAudioError"
-        >
-          {{ t('preview.audio.notSupported') }}
-        </audio>
-      </div>
-      <div class="preview-toolbar">
-        <el-button icon="Download" @click="handleDownload">{{ t('preview.audio.download') }}</el-button>
-      </div>
-    </div>
+    <DocumentPreviewRenderer
+      v-else-if="previewType === 'pdf' || previewType === 'text' || previewType === 'code'"
+      :type="previewType"
+      :url="pdfUrl"
+      :content="textContent"
+      :language="codeLanguage"
+      :can-print="canPrint"
+      @load="handlePdfLoad"
+      @error="handlePdfError"
+      @print="handlePrint"
+      @download="handleDownload"
+    />
 
-    <!-- PDF 预览 -->
-    <div v-else-if="previewType === 'pdf'" class="preview-pdf-container">
-      <el-alert
-        :title="t('preview.pdf.title')"
-        :description="t('preview.pdf.description')"
-        type="info"
-        :closable="false"
-        class="mb-4"
-      />
-      <iframe :src="pdfUrl" class="preview-pdf" @load="handlePdfLoad" @error="handlePdfError"></iframe>
-      <div class="preview-toolbar">
-        <el-button v-if="canPrint" icon="Printer" @click="handlePrint">{{ t('preview.pdf.print') }}</el-button>
-        <el-button icon="Download" @click="handleDownload">{{ t('preview.pdf.download') }}</el-button>
-      </div>
-    </div>
-
-    <!-- 文本/代码预览 -->
-    <div v-else-if="previewType === 'text' || previewType === 'code'" class="preview-text-container">
-      <div class="preview-text-header">
-        <span class="text-type-label">
-          {{ previewType === 'code' ? t('preview.code.title') : t('preview.text.title') }}
-        </span>
-        <el-button-group>
-          <el-button v-if="canPrint" icon="Printer" size="small" @click="handlePrint">{{
-            t('preview.text.print')
-          }}</el-button>
-          <el-button icon="Download" size="small" @click="handleDownload">{{ t('preview.text.download') }}</el-button>
-        </el-button-group>
-      </div>
-      <pre
-        :class="['preview-text-content', previewType === 'code' ? `language-${codeLanguage}` : '']"
-      ><code>{{ textContent }}</code></pre>
-    </div>
-
-    <!-- 不支持预览 -->
-    <div v-else class="preview-unsupported">
-      <el-icon :size="64" class="unsupported-icon"><Document /></el-icon>
-      <p class="unsupported-title">{{ t('preview.notSupported.title') }}</p>
-      <p class="unsupported-desc">
-        {{ t('preview.notSupported.mimeType') }}: {{ currentFile?.mime_type || t('preview.notSupported.unknown') }}
-      </p>
-      <div class="unsupported-actions">
-        <el-button v-if="canPrint" type="primary" icon="Printer" @click="handlePrint">{{
-          t('preview.notSupported.print')
-        }}</el-button>
-        <el-button icon="Download" @click="handleDownload">{{ t('preview.notSupported.download') }}</el-button>
-      </div>
-    </div>
+    <UnsupportedPreviewRenderer
+      v-else
+      :mime-type="currentFile?.mime_type"
+      :can-print="canPrint"
+      @print="handlePrint"
+      @download="handleDownload"
+    />
 
     <!-- 下载密码对话框 -->
     <el-dialog
@@ -206,8 +132,13 @@
     isPrintableType,
     isOfficeDocument
   } from '@/utils/ui/print'
-  import { Lock, InfoFilled, FullScreen } from '@element-plus/icons-vue'
+  import { Lock } from '@element-plus/icons-vue'
   import { useI18n } from '@/composables/core/useI18n'
+  import ImagePreviewRenderer from './renderers/ImagePreviewRenderer.vue'
+  import MediaPreviewRenderer from './renderers/MediaPreviewRenderer.vue'
+  import DocumentPreviewRenderer from './renderers/DocumentPreviewRenderer.vue'
+  import UnsupportedPreviewRenderer from './renderers/UnsupportedPreviewRenderer.vue'
+  import { usePreviewObjectUrls, type PreviewUrlKind } from './usePreviewObjectUrls'
 
   const { t } = useI18n()
 
@@ -265,12 +196,11 @@
     confirmDownloadPassword
   } = useFileDownload()
 
-  const imageUrl = ref('')
-  const videoUrl = ref('')
-  const audioUrl = ref('')
-  const pdfUrl = ref('')
+  const { imageUrl, videoUrl, audioUrl, pdfUrl, setPreviewUrl, releaseUncommittedUrl, clearPreviewUrls } =
+    usePreviewObjectUrls()
   const textContent = ref('')
   const codeLanguage = ref('')
+  let loadVersion = 0
 
   // 加载视频内容
   const loadVideoContent = async (fileId: string) => {
@@ -280,7 +210,7 @@
         // 获取 JWT token 并添加到 URL 参数中
         const jwtToken = proxy?.$cache.local.get('token')
         // 构建视频流 URL（包含 playToken 和 JWT token）
-        videoUrl.value = getVideoStreamUrl(res.data.play_token, jwtToken || undefined)
+        return getVideoStreamUrl(res.data.play_token, jwtToken || undefined)
       } else {
         throw new Error(res.message || t('preview.video.getTokenFailed'))
       }
@@ -288,6 +218,15 @@
       const errorMessage = err?.response?.data?.message || err?.message || t('preview.video.loadFailed')
       throw new Error(errorMessage)
     }
+  }
+
+  const commitPreviewUrl = (kind: PreviewUrlKind, url: string, requestVersion: number) => {
+    if (requestVersion !== loadVersion || !visible.value) {
+      releaseUncommittedUrl(url)
+      return false
+    }
+    setPreviewUrl(kind, url)
+    return true
   }
 
   // 图片位置和缩放状态
@@ -411,6 +350,11 @@
   const loadFileContent = async () => {
     if (!currentFile.value) return
 
+    const requestVersion = ++loadVersion
+    clearPreviewUrls()
+    textContent.value = ''
+    codeLanguage.value = ''
+
     // 如果文件已加密，不加载预览
     if (currentFile.value.is_enc) {
       loading.value = false
@@ -439,47 +383,55 @@
               })
               if (response.ok) {
                 const blob = await response.blob()
-                imageUrl.value = window.URL.createObjectURL(blob)
+                commitPreviewUrl('image', window.URL.createObjectURL(blob), requestVersion)
               } else {
                 // 缩略图获取失败，使用预览URL
-                imageUrl.value = await getFilePreviewUrl(fileId)
+                commitPreviewUrl('image', await getFilePreviewUrl(fileId), requestVersion)
               }
             } catch (err) {
               // 缩略图获取失败，使用预览URL
-              imageUrl.value = await getFilePreviewUrl(fileId)
+              commitPreviewUrl('image', await getFilePreviewUrl(fileId), requestVersion)
             }
           } else {
-            imageUrl.value = await getFilePreviewUrl(fileId)
+            commitPreviewUrl('image', await getFilePreviewUrl(fileId), requestVersion)
           }
           break
         case 'video':
           // 视频使用 Plyr 播放器（支持 Range 请求）
           try {
-            await loadVideoContent(fileId)
+            commitPreviewUrl('video', await loadVideoContent(fileId), requestVersion)
           } catch (err) {
-            error.value = err instanceof Error ? err.message : '加载视频失败'
+            if (requestVersion === loadVersion) {
+              error.value = err instanceof Error ? err.message : '加载视频失败'
+            }
           }
           break
         case 'audio':
-          audioUrl.value = await getFilePreviewUrl(fileId)
+          commitPreviewUrl('audio', await getFilePreviewUrl(fileId), requestVersion)
           break
         case 'pdf':
-          pdfUrl.value = await getFilePreviewUrl(fileId)
+          commitPreviewUrl('pdf', await getFilePreviewUrl(fileId), requestVersion)
           break
         case 'text':
         case 'code':
-          textContent.value = await getFileTextContent(fileId)
-          if (previewType.value === 'code') {
+          {
+            const content = await getFileTextContent(fileId)
+            if (requestVersion !== loadVersion || !visible.value) break
+            textContent.value = content
+          }
+          if (previewType.value === 'code' && requestVersion === loadVersion) {
             codeLanguage.value = getCodeLanguage(file.file_name)
           }
           break
       }
 
-      loading.value = false
+      if (requestVersion === loadVersion) loading.value = false
     } catch (err: any) {
-      loading.value = false
-      error.value = err?.message || '加载文件失败'
-      proxy?.$log.error('加载文件内容失败', err)
+      if (requestVersion === loadVersion) {
+        loading.value = false
+        error.value = err?.message || '加载文件失败'
+        proxy?.$log.error('加载文件内容失败', err)
+      }
     }
   }
 
@@ -604,29 +556,15 @@
 
   // 清理blob URL
   const cleanupBlobUrls = () => {
-    if (imageUrl.value && imageUrl.value.startsWith('blob:')) {
-      window.URL.revokeObjectURL(imageUrl.value)
-    }
-    if (videoUrl.value && videoUrl.value.startsWith('blob:')) {
-      window.URL.revokeObjectURL(videoUrl.value)
-    }
-    if (audioUrl.value && audioUrl.value.startsWith('blob:')) {
-      window.URL.revokeObjectURL(audioUrl.value)
-    }
-    if (pdfUrl.value && pdfUrl.value.startsWith('blob:')) {
-      window.URL.revokeObjectURL(pdfUrl.value)
-    }
+    clearPreviewUrls()
   }
 
   // 关闭预览
   const handleClose = () => {
+    loadVersion++
     cleanupBlobUrls()
     visible.value = false
     // 清理资源
-    imageUrl.value = ''
-    videoUrl.value = ''
-    audioUrl.value = ''
-    pdfUrl.value = ''
     textContent.value = ''
     error.value = undefined
     // 重置选项

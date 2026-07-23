@@ -103,51 +103,32 @@ export default {
     }
   },
   layout: {
-    mode: {
-      title: '布局模式',
-      changed: '布局模式已切换为：{mode}',
-      mobileTip: '移动端暂不支持切换布局模式',
-      recommended: '推荐',
-      default: '默认',
-      vertical: '垂直布局',
-      horizontal: '水平布局',
-      'vertical-mix': '混合布局',
-      'vertical-hybrid-header-first': '垂直混合（头部优先）',
-      'top-hybrid-sidebar-first': '顶部混合（侧边栏优先）',
-      'top-hybrid-header-first': '顶部混合（头部优先）',
-      verticalDesc: '传统的左侧边栏布局，适合大多数场景',
-      horizontalDesc: '顶部导航栏布局，适合宽屏显示',
-      'vertical-mixDesc': '混合布局，结合垂直和水平布局的优点',
-      'vertical-hybrid-header-firstDesc': '垂直混合布局，头部区域突出显示',
-      'top-hybrid-sidebar-firstDesc': '顶部布局，侧边栏在内容区域左侧',
-      'top-hybrid-header-firstDesc': '顶部布局，头部区域突出显示'
-    },
     sidebar: {
-      title: '侧边栏设置',
-      width: '侧边栏宽度',
-      widthChanged: '侧边栏宽度已设置为：{width}px',
-      collapsed: '折叠侧边栏',
-      collapsedEnabled: '侧边栏已折叠',
-      collapsedDisabled: '侧边栏已展开'
-    },
-    tagsView: {
-      title: '标签页设置',
-      visible: '显示标签页',
-      visibleEnabled: '标签页已显示',
-      visibleDisabled: '标签页已隐藏'
-    },
-    config: {
-      title: '配置管理',
-      export: '导出配置',
-      import: '导入配置',
-      reset: '重置配置',
-      exportSuccess: '布局配置导出成功',
-      exportFailed: '布局配置导出失败',
-      importSuccess: '布局配置导入成功',
-      importFailed: '布局配置导入失败，请检查文件格式',
-      resetSuccess: '布局配置已重置为默认值',
-      confirmReset: '确定要重置布局配置吗？这将恢复所有布局设置为默认值。'
+      expand: '展开侧边栏',
+      collapse: '折叠侧边栏'
     }
+  },
+  desktop: {
+    primaryNavigation: '主要导航',
+    searchScope: {
+      files: '搜索我的文件',
+      square: '搜索文件广场'
+    }
+  },
+  me: {
+    title: '账户中心',
+    description: '查看账户资料、存储空间和常用设置',
+    accountLabel: 'MyObj 用户',
+    editProfile: '编辑个人信息',
+    changePassword: '修改密码',
+    storageTitle: '存储空间',
+    usedStorage: '已使用 {used}',
+    unlimitedStorage: '无限容量',
+    quickAccess: '快捷入口',
+    contentAutomation: '内容与自动化',
+    accountSystem: '账户与系统',
+    adminCenter: '管理中心',
+    logout: '退出登录'
   },
   login: {
     title: 'MyObj',
@@ -235,7 +216,6 @@ export default {
     selectDeleteFilesFirst: '请先选择要删除的文件',
     confirmDeleteFile: '确定要删除 "{fileName}" 吗？删除后将移动到回收站。',
     confirmDeleteFiles: '确定要删除 {count} 个文件吗？删除后将移动到回收站。',
-    folderDeletePending: '文件夹删除功能待开发',
     encryptedFileNotPublic: '加密文件不能设置为公开',
     filePublic: '文件已公开',
     filePrivate: '文件已取消公开',
@@ -247,7 +227,6 @@ export default {
     packageReady: '压缩包已创建，开始下载',
     packageFailed: '打包失败',
     packageTimeout: '打包超时，请稍后重试',
-    packageFeaturePending: '打包下载功能开发中',
     createPackageFailed: '创建打包任务失败',
     getPackageProgressFailed: '获取打包进度失败',
     downloadStart: '开始下载',
@@ -345,7 +324,10 @@ export default {
     confirmDeleteShare: '确定要删除该分享吗？',
     confirmBatchDeleteShare: '确定要删除选中的 {count} 个分享吗？',
     loadShareListFailed: '加载分享列表失败',
-    batchDeletePending: '批量删除功能开发中',
+    batchDeleteSuccess: '已删除 {count} 个分享',
+    batchDeletePartial: '已删除 {success} 个分享，{failed} 个失败',
+    batchDeleteFailed: '批量删除分享失败',
+    batchDeleteFailedWithCount: '{count} 个分享删除失败',
     public: '公开',
     password: '密码',
     expire: '过期',
@@ -618,12 +600,15 @@ export default {
     account: '账户信息',
     security: '安全设置',
     appearance: '外观设置',
-    layout: '布局设置',
-    groups: {
-      basic: '基础设置',
-      theme: '主题与颜色',
-      layout: '布局设置'
-    },
+    desktopDescription: '管理账户、安全、外观和接口访问凭据',
+    profileDescription: '昵称、邮箱和联系方式',
+    passwordDescription: '更新账户登录密码',
+    appearanceDescription: '选择浅色、深色或跟随系统主题',
+    apiKeyDescription: '管理第三方接口访问凭据',
+    languageDescription: '选择界面和组件使用的语言',
+    accessibilityDescription: '通过辅助显示模式提高内容辨识度',
+    grayscaleDescription: '将界面转换为灰度显示',
+    colourWeaknessDescription: '增强色彩差异，辅助识别状态',
     theme: '主题',
     light: '浅色',
     dark: '深色',
@@ -631,62 +616,9 @@ export default {
     language: '语言',
     chinese: '中文',
     english: 'English',
-    storage: '存储空间',
-    used: '已使用',
-    total: '总容量',
-    unlimited: '无限容量',
-    themeChanged: '主题已切换',
-    colorUpdated: '主题色已更新',
-    colorReset: '颜色已重置',
-    allColorsReset: '所有颜色已重置',
-    themeColor: '主题色',
-    primaryColor: '主色',
-    successColor: '成功色',
-    warningColor: '警告色',
-    dangerColor: '危险色',
-    reset: '重置',
-    resetAll: '重置所有颜色',
-    backgroundPattern: '背景图案',
-    backgroundPatternChanged: '背景图案已更新为：{pattern}',
-    none: '无',
-    grid: '网格',
-    dots: '点阵',
-    gradient: '渐变',
-    waves: '波浪',
-    particles: '粒子',
     auxiliaryModes: '辅助模式',
     grayscale: '灰度模式',
     colourWeakness: '色弱模式',
-    grayscaleEnabled: '灰度模式已启用',
-    grayscaleDisabled: '灰度模式已禁用',
-    colourWeaknessEnabled: '色弱模式已启用',
-    colourWeaknessDisabled: '色弱模式已禁用',
-    themePreset: '主题预设',
-    presetApplied: '已应用预设：{name}',
-    apply: '应用',
-    applied: '已应用',
-    presets: {
-      default: {
-        name: '默认预设',
-        desc: '系统默认主题预设'
-      },
-      light: {
-        name: '亮色预设',
-        desc: '适用于日间使用的亮色主题预设'
-      },
-      dark: {
-        name: '暗色预设',
-        desc: '适用于夜间使用的暗色主题预设'
-      },
-      grayscale: {
-        name: '灰度预设',
-        desc: '灰度模式，适合打印或特殊场景'
-      },
-      colourWeakness: {
-        name: '色弱预设',
-        desc: '色弱模式，适合色弱用户使用'
-      }
-    },
     userInfo: {
       title: '用户信息',
       username: '用户名',
@@ -784,7 +716,111 @@ export default {
     yesterday: '昨天',
     daysAgo: '{days} 天前'
   },
+  subscriptions: {
+    title: '订阅管理',
+    description: '每天定时调用已安装插件，并自动提交到离线下载。',
+    create: '新建订阅',
+    subscription: '订阅',
+    plugin: '插件',
+    dailyTime: '每日时间',
+    savePath: '保存目录',
+    status: '状态',
+    enabled: '启用',
+    operation: '操作',
+    runNow: '立即运行',
+    history: '记录',
+    confirmPermissions: '确认权限',
+    empty: '暂无订阅',
+    actionsTitle: '订阅操作',
+    editTitle: '编辑订阅',
+    createTitle: '新建订阅',
+    deleteTitle: '删除订阅',
+    name: '名称',
+    secretConfigured: '已配置，留空保持不变',
+    executionTime: '执行时间',
+    initialLimit: '首次下载',
+    runLimit: '单次上限',
+    pluginPermissions: '插件权限',
+    customHeadersWarning: '自定义头会加密保存，只向精确白名单主机发送；界面永不回显头值。',
+    historyTitle: '{name} · 执行与条目',
+    historyItems: '执行与条目',
+    items: '下载条目',
+    itemTitle: '标题',
+    submissionStatus: '提交状态',
+    requestHeaders: '请求头',
+    headersConfigured: '已配置：{names}',
+    valueUnavailable: '值不可解密',
+    waitingCredentials: '等待凭据',
+    thumbnail: '缩略图',
+    requestHeadersValue: '请求头：{names}',
+    runs: '执行记录',
+    time: '时间',
+    trigger: '触发',
+    found: '发现',
+    submitted: '提交',
+    error: '错误',
+    runSummary: '{trigger} · 发现 {found} · 提交 {submitted}',
+    loadFailed: '加载订阅失败',
+    requiredFields: '请填写名称、插件和执行时间',
+    savePathRequired: '请填写保存目录',
+    saveSuccess: '订阅已保存',
+    runStarted: '已开始运行',
+    deleteConfirm: '确定删除“{name}”吗？',
+    permissionsConfirm: '插件需要权限：{permissions}',
+    permissionsTitle: '重新确认插件权限',
+    historyLoadFailed: '加载订阅记录失败',
+    statuses: {
+      ready: '就绪',
+      needs_permission: '待确认权限',
+      disabled: '已停用',
+      running: '运行中',
+      error: '异常'
+    },
+    permissions: {
+      publicHttp: '访问公网 HTTP',
+      fileMetadata: '查询我的文件元数据',
+      customHeaders: '提供离线下载自定义头'
+    }
+  },
   admin: {
+    workspaceDescription: '管理用户、权限、存储、系统配置和扩展插件',
+    nav: {
+      users: '管理账号、状态与存储配额',
+      groups: '配置用户组与权限范围',
+      permissions: '管理系统功能权限',
+      disks: '配置存储磁盘与数据目录',
+      system: '注册、WebDAV 与下载配置',
+      plugins: '安装、启停与审计扩展插件'
+    },
+    plugins: {
+      warning: '插件在 WASM 沙箱中运行，但未签名插件仍需管理员确认来源和权限后信任安装。',
+      install: '安装插件',
+      plugin: '插件',
+      permissions: '权限',
+      trust: '信任',
+      unsignedTrusted: '未签名·管理员信任',
+      status: '状态',
+      incompatible: 'ABI 不兼容',
+      operation: '操作',
+      uninstall: '卸载',
+      empty: '暂无插件',
+      audit: '插件审计记录',
+      time: '时间',
+      result: '结果',
+      summary: '摘要',
+      loadFailed: '加载插件失败',
+      inspectFailed: '校验插件失败',
+      unknown: '未知',
+      none: '无',
+      trustConfirm:
+        '插件：{name} v{version}\n来源：{author}\n权限：{permissions}\n包 SHA-256：{sha256}\n\n该插件未签名，确认信任并安装吗？',
+      trustTitle: '信任安装未签名插件',
+      trustButton: '信任并安装',
+      installSuccess: '插件安装成功',
+      uninstallConfirm: '确定卸载插件“{name}”吗？仍被订阅使用时后端会拒绝。',
+      uninstallTitle: '卸载插件',
+      uninstallSuccess: '插件已卸载'
+    },
     users: {
       title: '用户管理',
       addUser: '添加用户',
@@ -829,7 +865,6 @@ export default {
       cannotEditAdmin: '不能编辑管理员组用户',
       cannotDeleteAdmin: '不能删除管理员组用户',
       cannotOperateAdmin: '不能操作管理员组用户',
-      featureDeveloping: '用户管理功能开发中',
       loadListFailed: '加载用户列表失败',
       usernameRequired: '请输入用户名',
       passwordRequired: '请输入密码',
@@ -865,7 +900,6 @@ export default {
       confirmDelete: '确定要删除组 "{name}" 吗？',
       assignPowerSuccess: '权限分配成功',
       assignPowerFailed: '权限分配失败',
-      featureDeveloping: '组管理功能开发中',
       loadListFailed: '加载组列表失败',
       unlimited: '无限'
     },
@@ -948,7 +982,6 @@ export default {
       noDisksScanned: '未扫描到可用磁盘',
       scanFailed: '扫描磁盘失败',
       confirmDelete: '确定要删除磁盘 "{path}" 吗？',
-      featureDeveloping: '磁盘管理功能开发中',
       loadListFailed: '加载磁盘列表失败'
     },
     system: {
@@ -974,8 +1007,7 @@ export default {
       unknown: '未知',
       configSaveSuccess: '配置保存成功',
       saveFailed: '保存失败',
-      loadConfigFailed: '加载配置失败',
-      featureDeveloping: '系统配置功能开发中'
+      loadConfigFailed: '加载配置失败'
     }
   },
   preview: {
@@ -1012,6 +1044,7 @@ export default {
       play: '播放',
       pause: '暂停',
       download: '下载',
+      loadFailed: '加载音频失败',
       notSupported: '您的浏览器不支持音频播放'
     },
     pdf: {
@@ -1128,6 +1161,8 @@ export default {
     title: 'MyObj 云盘',
     search: '搜索文件',
     logout: '退出登录',
+    userMenu: '用户菜单',
+    account: '账户',
     logoutSuccess: '已退出登录',
     switchToLight: '切换到浅色模式',
     switchToDark: '切换到深色模式',
@@ -1191,14 +1226,6 @@ export default {
     precheckComplete: '预检完成，准备上传...',
     instantUpload: '秒传成功',
     readyToUpload: '准备上传...'
-  },
-  tagsView: {
-    refresh: '刷新页面',
-    closeCurrent: '关闭当前',
-    closeOthers: '关闭其他',
-    closeLeft: '关闭左侧',
-    closeRight: '关闭右侧',
-    closeAll: '全部关闭'
   },
   empty: {
     folder: {

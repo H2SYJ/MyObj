@@ -1,5 +1,5 @@
 <template>
-  <div class="offline-page">
+  <div class="offline-page desktop-content-page">
     <!-- 标题栏 -->
     <el-card shadow="never" class="header-card">
       <div class="page-header">
@@ -648,6 +648,7 @@
   import { getDirectories } from '@/api/file'
   import { formatSize, formatDate, formatSpeed, truncateUrl, getTaskStatusType } from '@/utils'
   import { useResponsive, useI18n, useMobileLayerHistory } from '@/composables'
+  import { useLatestRequest } from '@/composables/core/useLatestRequest'
   import { MobileInfiniteList } from '@/components/mobile'
 
   const { proxy } = getCurrentInstance() as ComponentInternalInstance
@@ -670,6 +671,8 @@
   const showDownloadDialog = ref(false) // 统一的下载对话框
   useMobileLayerHistory(showDownloadDialog, 'offline-create', isMobile)
   let refreshTimer: number | null = null // 支持 setTimeout 和 setInterval
+  let refreshStopped = false
+  const taskRequest = useLatestRequest()
   const loadingTree = ref(false)
   const folderTreeData = ref<any[]>([])
 
@@ -935,6 +938,7 @@
 
   // 加载任务列表
   const loadTaskList = async (append = false) => {
+    const requestTicket = taskRequest.begin()
     // 智能刷新时不显示 loading，避免频繁闪烁
     // 只在手动刷新或首次加载时显示 loading
     const isManualRefresh = !refreshTimer
@@ -946,12 +950,11 @@
       // 查询受下载管理器管理的HTTP、种子、磁力和HLS任务，不包含网盘文件下载。
       const requestPage = append ? taskPage.value : isMobile.value ? 1 : taskPage.value
       const requestSize = !append && isMobile.value ? taskPageSize.value * taskPage.value : taskPageSize.value
-      const res = await getDownloadTaskList({
-        page: requestPage,
-        pageSize: requestSize,
-        state: -1,
-        types: '0,4,5,9'
-      })
+      const res = await getDownloadTaskList(
+        { page: requestPage, pageSize: requestSize, state: -1, types: '0,4,5,9' },
+        { signal: requestTicket.signal }
+      )
+      if (!requestTicket.isCurrent()) return
       if (res.code === 200 && res.data) {
         const newTasks = res.data.tasks || []
         taskTotal.value = res.data.total || 0
@@ -982,6 +985,7 @@
         }
       }
     } catch (error: any) {
+      if (!requestTicket.isCurrent()) return
       // 智能刷新时静默处理错误，避免频繁弹窗
       if (isManualRefresh) {
         proxy?.$modal.msgError(error.message || t('offline.loadTaskListFailed'))
@@ -989,7 +993,7 @@
         proxy?.$log.warn('刷新任务列表失败:', error)
       }
     } finally {
-      if (isManualRefresh) {
+      if ((isManualRefresh || append) && requestTicket.isCurrent()) {
         loading.value = false
       }
     }
@@ -1496,13 +1500,20 @@
 
   // 智能刷新：根据任务状态使用不同的刷新频率
   const startSmartRefresh = () => {
+    refreshStopped = false
     if (refreshTimer) {
       clearTimeout(refreshTimer)
       clearInterval(refreshTimer)
     }
 
     const refresh = async () => {
+      if (refreshStopped) return
+      if (loading.value) {
+        refreshTimer = window.setTimeout(refresh, 1000)
+        return
+      }
       await loadTaskList()
+      if (refreshStopped) return
 
       // 检查是否有正在下载的任务
       const hasActiveTasks = taskList.value.some((task: any) => task.state === 1) // state=1 表示下载中
@@ -1530,6 +1541,7 @@
 
   // 页面销毁时清除定时器
   onBeforeUnmount(() => {
+    refreshStopped = true
     if (refreshTimer) {
       // 支持 setTimeout 和 setInterval
       if (typeof refreshTimer === 'number') {

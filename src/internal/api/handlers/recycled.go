@@ -37,8 +37,12 @@ func (h *RecycledHandler) Router(c *gin.RouterGroup) {
 		recycled.GET("/list", middleware.PowerVerify("file:preview"), h.GetRecycledList)
 		// 还原文件
 		recycled.POST("/restore", middleware.PowerVerify("file:delete"), h.RestoreFile)
+		// 批量还原
+		recycled.POST("/restoreBatch", middleware.PowerVerify("file:delete"), h.BatchRestore)
 		// 永久删除文件
 		recycled.POST("/delete", middleware.PowerVerify("file:delete"), h.DeletePermanently)
+		// 批量永久删除
+		recycled.POST("/deleteBatch", middleware.PowerVerify("file:delete"), h.BatchDeletePermanently)
 		// 清空回收站
 		recycled.POST("/empty", middleware.PowerVerify("file:delete"), h.EmptyRecycled)
 	}
@@ -129,6 +133,34 @@ func (h *RecycledHandler) DeletePermanently(c *gin.Context) {
 	}
 
 	c.JSON(200, result)
+}
+
+// BatchRestore 批量还原回收站记录。
+func (h *RecycledHandler) BatchRestore(c *gin.Context) {
+	req := new(request.BatchRecycledRequest)
+	if err := c.ShouldBindJSON(req); err != nil {
+		c.JSON(200, models.NewJsonResponse(400, "参数错误", err.Error()))
+		return
+	}
+	if err := req.ValidateUniqueLimit(200); err != nil {
+		c.JSON(200, models.NewJsonResponse(400, err.Error(), nil))
+		return
+	}
+	c.JSON(200, h.service.BatchRestore(req, c.GetString("userID")))
+}
+
+// BatchDeletePermanently 批量彻底删除回收站记录。
+func (h *RecycledHandler) BatchDeletePermanently(c *gin.Context) {
+	req := new(request.BatchRecycledRequest)
+	if err := c.ShouldBindJSON(req); err != nil {
+		c.JSON(200, models.NewJsonResponse(400, "参数错误", err.Error()))
+		return
+	}
+	if err := req.ValidateUniqueLimit(200); err != nil {
+		c.JSON(200, models.NewJsonResponse(400, err.Error(), nil))
+		return
+	}
+	c.JSON(200, h.service.BatchDeletePermanently(req, c.GetString("userID")))
 }
 
 // EmptyRecycled godoc

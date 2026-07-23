@@ -52,15 +52,18 @@ export interface DownloadTaskListResponse {
 /**
  * 获取下载任务列表
  */
-export const getDownloadTaskList = (params: {
-  page: number
-  pageSize: number
-  state?: number
-  type?: number
-  types?: string
-}) => {
+export const getDownloadTaskList = (
+  params: {
+    page: number
+    pageSize: number
+    state?: number
+    type?: number
+    types?: string
+  },
+  options: { signal?: AbortSignal } = {}
+) => {
   const filteredParams = filterParams(params)
-  return get<ApiResponse<DownloadTaskListResponse>>(API_ENDPOINTS.DOWNLOAD.LIST, filteredParams)
+  return get<ApiResponse<DownloadTaskListResponse>>(API_ENDPOINTS.DOWNLOAD.LIST, filteredParams, options)
 }
 
 /**

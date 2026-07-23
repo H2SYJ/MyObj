@@ -102,52 +102,32 @@ export default {
     }
   },
   layout: {
-    mode: {
-      title: 'Layout Mode',
-      changed: 'Layout mode changed to: {mode}',
-      mobileTip: 'Layout mode switching is not supported on mobile devices',
-      recommended: 'Recommended',
-      default: 'Default',
-      vertical: 'Vertical Layout',
-      horizontal: 'Horizontal Layout',
-      'vertical-mix': 'Mixed Layout',
-      'vertical-hybrid-header-first': 'Vertical Hybrid (Header First)',
-      'top-hybrid-sidebar-first': 'Top Hybrid (Sidebar First)',
-      'top-hybrid-header-first': 'Top Hybrid (Header First)',
-      verticalDesc: 'Traditional left sidebar layout, suitable for most scenarios',
-      horizontalDesc: 'Top navigation bar layout, suitable for wide screen display',
-      'vertical-mixDesc': 'Mixed layout, combining the advantages of vertical and horizontal layouts',
-      'vertical-hybrid-header-firstDesc': 'Vertical hybrid layout with prominent header area',
-      'top-hybrid-sidebar-firstDesc': 'Top layout with sidebar on the left side of content area',
-      'top-hybrid-header-firstDesc': 'Top layout with prominent header area'
-    },
     sidebar: {
-      title: 'Sidebar Settings',
-      width: 'Sidebar Width',
-      widthChanged: 'Sidebar width set to: {width}px',
-      collapsed: 'Collapse Sidebar',
-      collapsedEnabled: 'Sidebar collapsed',
-      collapsedDisabled: 'Sidebar expanded'
-    },
-    tagsView: {
-      title: 'Tags View Settings',
-      visible: 'Show Tags View',
-      visibleEnabled: 'Tags view enabled',
-      visibleDisabled: 'Tags view disabled'
-    },
-    config: {
-      title: 'Configuration Management',
-      export: 'Export Config',
-      import: 'Import Config',
-      reset: 'Reset Config',
-      exportSuccess: 'Layout configuration exported successfully',
-      exportFailed: 'Failed to export layout configuration',
-      importSuccess: 'Layout configuration imported successfully',
-      importFailed: 'Failed to import layout configuration, please check file format',
-      resetSuccess: 'Layout configuration reset to default values',
-      confirmReset:
-        'Are you sure to reset layout configuration? This will restore all layout settings to default values.'
+      expand: 'Expand sidebar',
+      collapse: 'Collapse sidebar'
     }
+  },
+  desktop: {
+    primaryNavigation: 'Primary navigation',
+    searchScope: {
+      files: 'Search my files',
+      square: 'Search public files'
+    }
+  },
+  me: {
+    title: 'Account Center',
+    description: 'Review your profile, storage, and common settings',
+    accountLabel: 'MyObj user',
+    editProfile: 'Edit Profile',
+    changePassword: 'Change Password',
+    storageTitle: 'Storage',
+    usedStorage: '{used} used',
+    unlimitedStorage: 'Unlimited storage',
+    quickAccess: 'Quick Access',
+    contentAutomation: 'Content & Automation',
+    accountSystem: 'Account & System',
+    adminCenter: 'Admin Center',
+    logout: 'Logout'
   },
   login: {
     title: 'MyObj',
@@ -235,7 +215,6 @@ export default {
     selectDeleteFilesFirst: 'Please select files to delete first',
     confirmDeleteFile: 'Are you sure to delete "{fileName}"? It will be moved to trash.',
     confirmDeleteFiles: 'Are you sure to delete {count} files? They will be moved to trash.',
-    folderDeletePending: 'Folder deletion feature is under development',
     encryptedFileNotPublic: 'Encrypted files cannot be set as public',
     filePublic: 'File is now public',
     filePrivate: 'File is now private',
@@ -247,7 +226,6 @@ export default {
     packageReady: 'Package created, starting download',
     packageFailed: 'Package failed',
     packageTimeout: 'Package timeout, please try again later',
-    packageFeaturePending: 'Package download feature is under development',
     createPackageFailed: 'Failed to create package task',
     getPackageProgressFailed: 'Failed to get package progress',
     downloadStart: 'Download started',
@@ -347,7 +325,10 @@ export default {
     confirmDeleteShare: 'Are you sure to delete this share?',
     confirmBatchDeleteShare: 'Are you sure to delete {count} selected shares?',
     loadShareListFailed: 'Failed to load share list',
-    batchDeletePending: 'Batch delete feature is under development',
+    batchDeleteSuccess: 'Deleted {count} shares',
+    batchDeletePartial: 'Deleted {success} shares; {failed} failed',
+    batchDeleteFailed: 'Failed to delete shares',
+    batchDeleteFailedWithCount: 'Failed to delete {count} shares',
     public: 'Public',
     password: 'Password',
     expire: 'Expire',
@@ -624,12 +605,15 @@ export default {
     account: 'Account',
     security: 'Security',
     appearance: 'Appearance',
-    layout: 'Layout',
-    groups: {
-      basic: 'Basic Settings',
-      theme: 'Theme & Colors',
-      layout: 'Layout Settings'
-    },
+    desktopDescription: 'Manage your account, security, appearance, and API credentials',
+    profileDescription: 'Nickname, email, and contact details',
+    passwordDescription: 'Update your account password',
+    appearanceDescription: 'Choose light, dark, or system appearance',
+    apiKeyDescription: 'Manage credentials for third-party API access',
+    languageDescription: 'Choose the language used by the interface and components',
+    accessibilityDescription: 'Improve content recognition with display aids',
+    grayscaleDescription: 'Render the interface in grayscale',
+    colourWeaknessDescription: 'Increase color differences between interface states',
     theme: 'Theme',
     light: 'Light',
     dark: 'Dark',
@@ -637,62 +621,9 @@ export default {
     language: 'Language',
     chinese: '中文',
     english: 'English',
-    storage: 'Storage',
-    used: 'Used',
-    total: 'Total',
-    unlimited: 'Unlimited',
-    themeChanged: 'Theme changed',
-    colorUpdated: 'Theme color updated',
-    colorReset: 'Color reset',
-    allColorsReset: 'All colors reset',
-    themeColor: 'Theme Color',
-    primaryColor: 'Primary',
-    successColor: 'Success',
-    warningColor: 'Warning',
-    dangerColor: 'Danger',
-    reset: 'Reset',
-    resetAll: 'Reset All Colors',
-    backgroundPattern: 'Background Pattern',
-    backgroundPatternChanged: 'Background pattern changed to: {pattern}',
-    none: 'None',
-    grid: 'Grid',
-    dots: 'Dots',
-    gradient: 'Gradient',
-    waves: 'Waves',
-    particles: 'Particles',
     auxiliaryModes: 'Auxiliary Modes',
     grayscale: 'Grayscale',
     colourWeakness: 'Color Weakness',
-    grayscaleEnabled: 'Grayscale mode enabled',
-    grayscaleDisabled: 'Grayscale mode disabled',
-    colourWeaknessEnabled: 'Color weakness mode enabled',
-    colourWeaknessDisabled: 'Color weakness mode disabled',
-    themePreset: 'Theme Preset',
-    presetApplied: 'Preset applied: {name}',
-    apply: 'Apply',
-    applied: 'Applied',
-    presets: {
-      default: {
-        name: 'Default Preset',
-        desc: 'System default theme preset'
-      },
-      light: {
-        name: 'Light Preset',
-        desc: 'Light theme preset for daytime use'
-      },
-      dark: {
-        name: 'Dark Preset',
-        desc: 'Dark theme preset for nighttime use'
-      },
-      grayscale: {
-        name: 'Grayscale Preset',
-        desc: 'Grayscale mode, suitable for printing or special scenarios'
-      },
-      colourWeakness: {
-        name: 'Color Weakness Preset',
-        desc: 'Color weakness mode, suitable for users with color vision deficiency'
-      }
-    },
     userInfo: {
       title: 'User Information',
       username: 'Username',
@@ -791,7 +722,113 @@ export default {
     yesterday: 'Yesterday',
     daysAgo: '{days} days ago'
   },
+  subscriptions: {
+    title: 'Subscriptions',
+    description: 'Run installed plugins on a daily schedule and submit discovered items to offline downloads.',
+    create: 'New Subscription',
+    subscription: 'Subscription',
+    plugin: 'Plugin',
+    dailyTime: 'Daily Time',
+    savePath: 'Save Path',
+    status: 'Status',
+    enabled: 'Enabled',
+    operation: 'Actions',
+    runNow: 'Run Now',
+    history: 'History',
+    confirmPermissions: 'Confirm Permissions',
+    empty: 'No subscriptions',
+    actionsTitle: 'Subscription Actions',
+    editTitle: 'Edit Subscription',
+    createTitle: 'New Subscription',
+    deleteTitle: 'Delete Subscription',
+    name: 'Name',
+    secretConfigured: 'Configured; leave blank to keep the current value',
+    executionTime: 'Run Time',
+    initialLimit: 'Initial Limit',
+    runLimit: 'Per-run Limit',
+    pluginPermissions: 'Plugin Permissions',
+    customHeadersWarning:
+      'Custom headers are encrypted and sent only to exact allowlisted hosts. Header values are never displayed.',
+    historyTitle: '{name} · Runs and Items',
+    historyItems: 'Runs and Items',
+    items: 'Download Items',
+    itemTitle: 'Title',
+    submissionStatus: 'Submission Status',
+    requestHeaders: 'Request Headers',
+    headersConfigured: 'Configured: {names}',
+    valueUnavailable: 'Value unavailable',
+    waitingCredentials: 'Credentials Required',
+    thumbnail: 'Thumbnail',
+    requestHeadersValue: 'Request headers: {names}',
+    runs: 'Run History',
+    time: 'Time',
+    trigger: 'Trigger',
+    found: 'Found',
+    submitted: 'Submitted',
+    error: 'Error',
+    runSummary: '{trigger} · {found} found · {submitted} submitted',
+    loadFailed: 'Failed to load subscriptions',
+    requiredFields: 'Enter a name, plugin, and run time',
+    savePathRequired: 'Enter a save path',
+    saveSuccess: 'Subscription saved',
+    runStarted: 'Run started',
+    deleteConfirm: 'Delete “{name}”?',
+    permissionsConfirm: 'The plugin requires: {permissions}',
+    permissionsTitle: 'Confirm Plugin Permissions',
+    historyLoadFailed: 'Failed to load subscription history',
+    statuses: {
+      ready: 'Ready',
+      needs_permission: 'Permission Required',
+      disabled: 'Disabled',
+      running: 'Running',
+      error: 'Error'
+    },
+    permissions: {
+      publicHttp: 'Access public HTTP',
+      fileMetadata: 'Read my file metadata',
+      customHeaders: 'Provide custom download headers'
+    }
+  },
   admin: {
+    workspaceDescription: 'Manage users, permissions, storage, system configuration, and plugins',
+    nav: {
+      users: 'Manage accounts, status, and quotas',
+      groups: 'Configure groups and permission scopes',
+      permissions: 'Manage system capabilities',
+      disks: 'Configure disks and data directories',
+      system: 'Registration, WebDAV, and download settings',
+      plugins: 'Install, enable, and audit plugins'
+    },
+    plugins: {
+      warning:
+        'Plugins run in a WASM sandbox, but administrators must still verify and trust the source and permissions of unsigned packages.',
+      install: 'Install Plugin',
+      plugin: 'Plugin',
+      permissions: 'Permissions',
+      trust: 'Trust',
+      unsignedTrusted: 'Unsigned · Admin Trusted',
+      status: 'Status',
+      incompatible: 'Incompatible ABI',
+      operation: 'Actions',
+      uninstall: 'Uninstall',
+      empty: 'No plugins',
+      audit: 'Plugin Audit Log',
+      time: 'Time',
+      result: 'Result',
+      summary: 'Summary',
+      loadFailed: 'Failed to load plugins',
+      inspectFailed: 'Failed to inspect plugin',
+      unknown: 'Unknown',
+      none: 'None',
+      trustConfirm:
+        'Plugin: {name} v{version}\nSource: {author}\nPermissions: {permissions}\nPackage SHA-256: {sha256}\n\nThis plugin is unsigned. Trust and install it?',
+      trustTitle: 'Trust Unsigned Plugin',
+      trustButton: 'Trust and Install',
+      installSuccess: 'Plugin installed',
+      uninstallConfirm: 'Uninstall “{name}”? The backend will reject removal while subscriptions still use it.',
+      uninstallTitle: 'Uninstall Plugin',
+      uninstallSuccess: 'Plugin uninstalled'
+    },
     users: {
       title: 'User Management',
       addUser: 'Add User',
@@ -836,7 +873,6 @@ export default {
       cannotEditAdmin: 'Cannot edit admin group users',
       cannotDeleteAdmin: 'Cannot delete admin group users',
       cannotOperateAdmin: 'Cannot operate admin group users',
-      featureDeveloping: 'User management feature is under development',
       loadListFailed: 'Failed to load user list',
       usernameRequired: 'Please enter username',
       passwordRequired: 'Please enter password',
@@ -872,7 +908,6 @@ export default {
       confirmDelete: 'Are you sure to delete group "{name}"?',
       assignPowerSuccess: 'Permission assignment successful',
       assignPowerFailed: 'Permission assignment failed',
-      featureDeveloping: 'Group management feature is under development',
       loadListFailed: 'Failed to load group list',
       unlimited: 'Unlimited'
     },
@@ -958,7 +993,6 @@ export default {
       noDisksScanned: 'No available disks scanned',
       scanFailed: 'Failed to scan disks',
       confirmDelete: 'Are you sure to delete disk "{path}"?',
-      featureDeveloping: 'Disk management feature is under development',
       loadListFailed: 'Failed to load disk list'
     },
     system: {
@@ -986,8 +1020,7 @@ export default {
       unknown: 'Unknown',
       configSaveSuccess: 'Configuration saved successfully',
       saveFailed: 'Save failed',
-      loadConfigFailed: 'Failed to load configuration',
-      featureDeveloping: 'System configuration feature is under development'
+      loadConfigFailed: 'Failed to load configuration'
     }
   },
   preview: {
@@ -1024,6 +1057,7 @@ export default {
       play: 'Play',
       pause: 'Pause',
       download: 'Download',
+      loadFailed: 'Failed to load audio',
       notSupported: 'Your browser does not support audio playback'
     },
     pdf: {
@@ -1140,6 +1174,8 @@ export default {
     title: 'MyObj Cloud',
     search: 'Search Files',
     logout: 'Logout',
+    userMenu: 'User menu',
+    account: 'Account',
     logoutSuccess: 'Logged out successfully',
     switchToLight: 'Switch to Light Mode',
     switchToDark: 'Switch to Dark Mode',
@@ -1204,14 +1240,6 @@ export default {
     uploadFailed: 'Upload failed',
     processFileError: 'Error processing file {fileName}: {error}',
     processUploadError: 'Error processing file upload: {error}'
-  },
-  tagsView: {
-    refresh: 'Refresh Page',
-    closeCurrent: 'Close Current',
-    closeOthers: 'Close Others',
-    closeLeft: 'Close Left',
-    closeRight: 'Close Right',
-    closeAll: 'Close All'
   },
   empty: {
     folder: {

@@ -131,14 +131,10 @@
         Object.assign(configData, res.data)
         Object.assign(systemInfo, res.data)
       } else {
-        proxy?.$modal.msg(t('admin.system.featureDeveloping'))
+        proxy?.$modal.msgError(res.message || t('admin.system.loadConfigFailed'))
       }
     } catch (error: any) {
-      if (error.response?.status === 404 || error.message?.includes('404')) {
-        proxy?.$modal.msg(t('admin.system.featureDeveloping'))
-      } else {
-        proxy?.$modal.msgError(t('admin.system.loadConfigFailed'))
-      }
+      proxy?.$modal.msgError(error.message || t('admin.system.loadConfigFailed'))
       proxy?.$log?.error(error)
     } finally {
       loading.value = false
@@ -163,11 +159,7 @@
         proxy?.$modal.msgError(res.message || t('admin.system.saveFailed'))
       }
     } catch (error: any) {
-      if (error.response?.status === 404 || error.message?.includes('404')) {
-        proxy?.$modal.msg(t('admin.system.featureDeveloping'))
-      } else {
-        proxy?.$modal.msgError(error.message || t('admin.system.saveFailed'))
-      }
+      proxy?.$modal.msgError(error.message || t('admin.system.saveFailed'))
     } finally {
       saving.value = false
     }

@@ -7,6 +7,53 @@
       @navigate="navigateToPath"
     />
 
+    <PageToolbar v-if="!isMobile" :selected-count="selectedCount">
+      <template #primary>
+        <template v-if="selectedCount > 0">
+          <el-button icon="Download" @click="handleSelectionDownload">{{ t('files.download') }}</el-button>
+          <el-button icon="FolderOpened" @click="handleMoveFile">{{ t('files.move') }}</el-button>
+          <el-button type="danger" plain icon="Delete" @click="handleSelectionDelete">{{
+            t('files.delete')
+          }}</el-button>
+          <el-button text @click="clearCurrentSelection">{{ t('files.cancelSelect') }}</el-button>
+        </template>
+        <template v-else>
+          <el-button type="primary" icon="Upload" @click="handleUpload">{{ t('files.upload') }}</el-button>
+          <el-button icon="FolderAdd" @click="showNewFolderDialog = true">{{ t('files.newFolder') }}</el-button>
+        </template>
+      </template>
+
+      <el-dropdown trigger="click">
+        <el-button icon="Sort">{{
+          t(`files.sort${sortBy === 'name' ? 'Name' : sortBy === 'size' ? 'Size' : 'Time'}`)
+        }}</el-button>
+        <template #dropdown>
+          <el-dropdown-menu>
+            <el-dropdown-item @click="changeSorting('name')">{{ t('files.sortName') }}</el-dropdown-item>
+            <el-dropdown-item @click="changeSorting('time')">{{ t('files.sortTime') }}</el-dropdown-item>
+            <el-dropdown-item @click="changeSorting('size')">{{ t('files.sortSize') }}</el-dropdown-item>
+            <el-dropdown-item divided @click="changeSorting(sortBy, sortOrder === 'asc' ? 'desc' : 'asc')">
+              {{ sortOrder === 'asc' ? t('files.sortDesc') : t('files.sortAsc') }}
+            </el-dropdown-item>
+          </el-dropdown-menu>
+        </template>
+      </el-dropdown>
+      <el-button-group>
+        <el-button
+          :type="viewMode === 'grid' ? 'primary' : 'default'"
+          icon="Grid"
+          :aria-label="t('files.gridView')"
+          @click="setViewMode('grid')"
+        />
+        <el-button
+          :type="viewMode === 'list' ? 'primary' : 'default'"
+          icon="List"
+          :aria-label="t('files.listView')"
+          @click="setViewMode('list')"
+        />
+      </el-button-group>
+    </PageToolbar>
+
     <div
       ref="contentRef"
       class="file-content-area"
@@ -305,6 +352,7 @@
   import { useMoveFile } from './composables/useMoveFile'
   import { useFileSearch } from './composables/useFileSearch'
   import { useFileViewMode } from './composables/useFileViewMode'
+  import { PageToolbar } from '@/components/desktop'
 
   const { t } = useI18n()
   const { proxy } = getCurrentInstance() as ComponentInternalInstance
@@ -469,8 +517,7 @@
     height: `${Math.abs(boxSelection.currentY - boxSelection.startY)}px`
   }))
 
-  const entryName = (entry: FileEntry) =>
-    entry.type === 'file' ? entry.file.file_name : entry.folder.name
+  const entryName = (entry: FileEntry) => (entry.type === 'file' ? entry.file.file_name : entry.folder.name)
   const selectionCapabilities = computed(() => getFileSelectionCapabilities(selectedEntries.value))
 
   const closeContextMenu = () => {
@@ -894,6 +941,16 @@
     gap: 8px;
     overflow: hidden;
     padding: 4px;
+  }
+  :global(.desktop-shell) .files-page {
+    padding: var(--desktop-page-padding);
+    gap: 12px;
+  }
+  :global(.desktop-shell) .file-content-area {
+    border: 1px solid var(--desktop-border);
+    border-radius: var(--desktop-radius-lg);
+    background: var(--desktop-surface);
+    box-shadow: var(--desktop-shadow-sm);
   }
   .file-content-area {
     position: relative;

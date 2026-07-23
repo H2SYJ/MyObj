@@ -10,8 +10,41 @@ export default defineConfig({
     screenshot: 'only-on-failure'
   },
   projects: [
-    { name: 'chromium-mobile', use: { ...devices['Pixel 7'], channel: 'chrome' } },
-    { name: 'webkit-mobile', use: { ...devices['iPhone 13'] } }
+    {
+      name: 'chromium-desktop-1440',
+      testMatch: '**/desktop-*.spec.ts',
+      use: {
+        browserName: 'chromium',
+        channel: 'chrome',
+        viewport: { width: 1440, height: 900 },
+        colorScheme: 'light',
+        locale: 'zh-CN'
+      }
+    },
+    {
+      name: 'chromium-desktop-1024',
+      testMatch: '**/desktop-*.spec.ts',
+      use: {
+        browserName: 'chromium',
+        channel: 'chrome',
+        viewport: { width: 1024, height: 768 },
+        colorScheme: 'dark',
+        locale: 'en-US'
+      }
+    },
+    {
+      name: 'chromium-desktop-768',
+      testMatch: '**/desktop-*.spec.ts',
+      use: {
+        browserName: 'chromium',
+        channel: 'chrome',
+        viewport: { width: 768, height: 1024 },
+        colorScheme: 'dark',
+        locale: 'zh-CN'
+      }
+    },
+    { name: 'chromium-mobile', testMatch: '**/mobile-*.spec.ts', use: { ...devices['Pixel 7'], channel: 'chrome' } },
+    { name: 'webkit-mobile', testMatch: '**/mobile-*.spec.ts', use: { ...devices['iPhone 13'] } }
   ],
   webServer: {
     command: 'npm run dev -- --host 127.0.0.1 --port 4173',

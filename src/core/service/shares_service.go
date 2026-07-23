@@ -14,6 +14,7 @@ import (
 	"myobj/src/pkg/models"
 	"myobj/src/pkg/util"
 	"path"
+	"strconv"
 
 	"github.com/google/uuid"
 )
@@ -37,7 +38,7 @@ func (s *SharesService) GetRepository() *impl.RepositoryFactory {
 // CreateShare 创建分享
 func (s *SharesService) CreateShare(req *request.CreateShareRequest, userID string) (*models.JsonResponse, error) {
 	uid := fmt.Sprintf("%s-%v", uuid.New().String(), util.TimeUtil{}.GetTimestamp())
-	
+
 	// 如果密码为空，不生成哈希，直接设置为空字符串
 	var passwordHash string
 	if req.Password != "" {
@@ -48,7 +49,7 @@ func (s *SharesService) CreateShare(req *request.CreateShareRequest, userID stri
 		}
 		passwordHash = password
 	}
-	
+
 	userFile, err := s.factory.UserFiles().GetByUserIDAndUfID(context.Background(), userID, req.FileID)
 	if err != nil {
 		logger.LOG.Error("获取文件失败", "error", err)
@@ -253,6 +254,29 @@ func (s *SharesService) DeleteShare(shareID int, userID string) (*models.JsonRes
 		return nil, fmt.Errorf("删除分享失败")
 	}
 	return models.NewJsonResponse(200, "ok", nil), nil
+}
+
+// BatchDeleteShares 批量删除当前用户的分享，单项失败不影响其他项目。
+func (s *SharesService) BatchDeleteShares(req *request.BatchDeleteShareRequest, userID string) *models.JsonResponse {
+	result := &response.BatchOperationResponse{FailedItems: make([]response.BatchOperationFailedItem, 0)}
+	seen := make(map[int]struct{}, len(req.IDs))
+	for _, shareID := range req.IDs {
+		if _, exists := seen[shareID]; exists {
+			continue
+		}
+		seen[shareID] = struct{}{}
+		result.TotalCount++
+		if _, err := s.DeleteShare(shareID, userID); err != nil {
+			result.FailedCount++
+			result.FailedItems = append(result.FailedItems, response.BatchOperationFailedItem{
+				ItemID: strconv.Itoa(shareID),
+				Reason: err.Error(),
+			})
+			continue
+		}
+		result.SuccessCount++
+	}
+	return models.NewJsonResponse(200, "批量删除分享完成", result)
 }
 
 // UpdateSharePassword 修改分享密码

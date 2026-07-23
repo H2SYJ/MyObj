@@ -48,10 +48,6 @@
   --el-color-danger: var(--danger-color);
   --el-color-info: var(--info-color);
 
-  /* TagsView Variables */
-  --tags-view-active-bg: var(--primary-color);
-  --tags-view-active-border-color: var(--primary-color);
-
   /* 手机 APP 设计令牌 */
   --mobile-radius-sm: 12px;
   --mobile-radius-md: 16px;
@@ -116,8 +112,4 @@ html.dark {
   --el-fill-color-light: rgba(255, 255, 255, 0.03);
   --el-fill-color-lighter: rgba(255, 255, 255, 0.02);
   --el-fill-color-extra-light: rgba(255, 255, 255, 0.01);
-
-  /* TagsView Variables */
-  --tags-view-active-bg: var(--primary-color);
-  --tags-view-active-border-color: var(--primary-color);
 }

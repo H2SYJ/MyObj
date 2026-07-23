@@ -1,7 +1,7 @@
 import { get, post } from '@/utils/network/request'
 import { filterParams } from '@/utils/common/params'
 import { API_ENDPOINTS } from '@/config/api'
-import type { ApiResponse } from '@/types'
+import type { ApiResponse, BatchOperationResult } from '@/types'
 
 // 回收站文件项
 export interface RecycledItem {
@@ -49,12 +49,24 @@ export const restoreFile = (recycledId: string) => {
   })
 }
 
+export const batchRestoreFiles = (recycledIds: string[]) => {
+  return post<ApiResponse<BatchOperationResult>>(API_ENDPOINTS.RECYCLED.RESTORE_BATCH, {
+    recycled_ids: recycledIds
+  })
+}
+
 /**
  * 永久删除文件
  */
 export const deleteFilePermanently = (recycledId: string) => {
   return post<ApiResponse>(API_ENDPOINTS.RECYCLED.DELETE, {
     recycled_id: recycledId
+  })
+}
+
+export const batchDeleteFilesPermanently = (recycledIds: string[]) => {
+  return post<ApiResponse<BatchOperationResult>>(API_ENDPOINTS.RECYCLED.DELETE_BATCH, {
+    recycled_ids: recycledIds
   })
 }
 

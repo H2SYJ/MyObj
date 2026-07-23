@@ -248,6 +248,48 @@ func (r *RecycledService) DeletePermanently(req *request.DeleteRecycledRequest, 
 	return models.NewJsonResponse(200, "文件已永久删除", nil), nil
 }
 
+// BatchRestore 批量还原回收站记录，单项失败不影响其他项目。
+func (r *RecycledService) BatchRestore(req *request.BatchRecycledRequest, userID string) *models.JsonResponse {
+	return r.batchOperate(req.RecycledIDs, func(recycledID string) error {
+		_, err := r.RestoreFile(&request.RestoreFileRequest{RecycledID: recycledID}, userID)
+		return err
+	}, "批量还原完成")
+}
+
+// BatchDeletePermanently 批量彻底删除回收站记录，单项失败不影响其他项目。
+func (r *RecycledService) BatchDeletePermanently(req *request.BatchRecycledRequest, userID string) *models.JsonResponse {
+	return r.batchOperate(req.RecycledIDs, func(recycledID string) error {
+		_, err := r.DeletePermanently(&request.DeleteRecycledRequest{RecycledID: recycledID}, userID)
+		return err
+	}, "批量彻底删除完成")
+}
+
+func (r *RecycledService) batchOperate(
+	recycledIDs []string,
+	operation func(string) error,
+	message string,
+) *models.JsonResponse {
+	result := &response.BatchOperationResponse{FailedItems: make([]response.BatchOperationFailedItem, 0)}
+	seen := make(map[string]struct{}, len(recycledIDs))
+	for _, recycledID := range recycledIDs {
+		if _, exists := seen[recycledID]; exists {
+			continue
+		}
+		seen[recycledID] = struct{}{}
+		result.TotalCount++
+		if err := operation(recycledID); err != nil {
+			result.FailedCount++
+			result.FailedItems = append(result.FailedItems, response.BatchOperationFailedItem{
+				ItemID: recycledID,
+				Reason: err.Error(),
+			})
+			continue
+		}
+		result.SuccessCount++
+	}
+	return models.NewJsonResponse(200, message, result)
+}
+
 // EmptyRecycled 清空回收站
 func (r *RecycledService) EmptyRecycled(userID string) (*models.JsonResponse, error) {
 	ctx := context.Background()

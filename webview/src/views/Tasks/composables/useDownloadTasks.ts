@@ -7,6 +7,7 @@ import {
 } from '@/api/download'
 import { useI18n, useResponsive } from '@/composables'
 import type { OfflineDownloadTask } from '@/api/download'
+import { useLatestRequest } from '@/composables/core/useLatestRequest'
 
 export function useDownloadTasks() {
   const { proxy } = getCurrentInstance() as ComponentInternalInstance
@@ -20,9 +21,11 @@ export function useDownloadTasks() {
   const total = ref(0)
   let isFirstLoad = true
   let lastRefreshTime = 0
+  const listRequest = useLatestRequest()
 
   // 加载下载任务列表
   const loadDownloadTasks = async (showLoading?: boolean, page?: number, limit?: number, append = false) => {
+    const requestTicket = listRequest.begin()
     // 智能刷新：只在首次加载、手动刷新或距离上次刷新超过5秒时显示loading
     const shouldShowLoading =
       showLoading !== false && (isFirstLoad || !lastRefreshTime || Date.now() - lastRefreshTime > 5000)
@@ -37,7 +40,11 @@ export function useDownloadTasks() {
 
     try {
       // 只查询网盘文件下载任务（type=7）
-      const res = await getDownloadTaskList({ page: pageNum, pageSize: pageSizeNum, type: 7 })
+      const res = await getDownloadTaskList(
+        { page: pageNum, pageSize: pageSizeNum, type: 7 },
+        { signal: requestTicket.signal }
+      )
+      if (!requestTicket.isCurrent()) return
       if (res.code === 200 && res.data) {
         const nextTasks = res.data.tasks || []
         if (append) {
@@ -54,6 +61,7 @@ export function useDownloadTasks() {
         }
       }
     } catch (error: any) {
+      if (!requestTicket.isCurrent()) return
       // 智能刷新时静默处理错误，避免频繁弹窗
       if (shouldShowLoading) {
         proxy?.$log.error('加载下载任务失败:', error)
@@ -62,11 +70,13 @@ export function useDownloadTasks() {
         proxy?.$log.warn('刷新下载任务失败:', error)
       }
     } finally {
-      if (shouldShowLoading) {
+      if (shouldShowLoading && requestTicket.isCurrent()) {
         downloadLoading.value = false
       }
-      isFirstLoad = false
-      lastRefreshTime = Date.now()
+      if (requestTicket.isCurrent()) {
+        isFirstLoad = false
+        lastRefreshTime = Date.now()
+      }
     }
   }
 

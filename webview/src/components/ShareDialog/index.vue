@@ -8,100 +8,23 @@
     class="share-dialog"
     @close="handleClose"
   >
-    <!-- 文件信息卡片 -->
-    <div class="file-info-card">
-      <el-icon :size="48" class="share-file-icon"><Document /></el-icon>
-      <div class="file-info-content">
-        <div class="file-name">{{ fileInfo.file_name || t('common.noData') }}</div>
-        <div class="file-size" v-if="fileInfo.file_size">
-          {{ formatFileSize(fileInfo.file_size) }}
-        </div>
-      </div>
-    </div>
-
-    <!-- 分享设置 -->
-    <el-form :model="shareForm" label-width="100px" class="share-form">
-      <el-form-item :label="t('share.expireTime')">
-        <!-- 移动端使用下拉选择框 -->
-        <el-select v-model="shareForm.expire_days" class="expire-select mobile-only" @change="handleExpireChange">
-          <el-option v-for="option in expireOptions" :key="option.value" :label="option.label" :value="option.value" />
-        </el-select>
-
-        <!-- 桌面端使用单选按钮组 -->
-        <el-radio-group
-          v-model="shareForm.expire_days"
-          class="expire-options desktop-only"
-          @change="handleExpireChange"
-        >
-          <el-radio-button v-for="option in expireOptions" :key="option.value" :value="option.value">
-            {{ option.label }}
-          </el-radio-button>
-        </el-radio-group>
-      </el-form-item>
-
-      <el-form-item :label="t('share.sharePassword')">
-        <el-input
-          v-model="shareForm.password"
-          :placeholder="t('share.sharePassword')"
-          maxlength="20"
-          show-word-limit
-          clearable
-        >
-          <template #append>
-            <el-button @click="generateRandomPassword" icon="Refresh">{{ t('common.generate') }}</el-button>
-          </template>
-        </el-input>
-        <div class="form-tip">{{ t('share.passwordTip') }}</div>
-      </el-form-item>
-    </el-form>
-
-    <!-- 分享结果（分享成功后显示） -->
-    <div v-if="shareResult" class="share-result">
-      <el-alert type="success" :closable="false" show-icon class="result-alert">
-        <template #title>
-          <div class="result-title">{{ t('share.shareSuccess') }}</div>
-        </template>
-      </el-alert>
-
-      <div class="share-link-section">
-        <div class="link-label">{{ t('share.shareLink') }}</div>
-        <div class="link-content">
-          <el-input :model-value="shareResult.shareUrl" readonly class="link-input">
-            <template #append>
-              <el-button
-                :icon="shareResult.copied ? 'Check' : 'CopyDocument'"
-                @click="copyShareLink"
-                :type="shareResult.copied ? 'success' : 'primary'"
-              >
-                {{ shareResult.copied ? t('common.copied') : t('share.copyLink') }}
-              </el-button>
-            </template>
-          </el-input>
-        </div>
-
-        <div v-if="shareForm.password" class="password-section">
-          <div class="link-label">{{ t('share.sharePassword') }}</div>
-          <div class="link-content">
-            <el-input :model-value="shareForm.password" readonly class="link-input">
-              <template #append>
-                <el-button
-                  :icon="shareResult.passwordCopied ? 'Check' : 'CopyDocument'"
-                  @click="copyPassword"
-                  :type="shareResult.passwordCopied ? 'success' : 'primary'"
-                >
-                  {{ shareResult.passwordCopied ? t('common.copied') : t('share.copyPassword') }}
-                </el-button>
-              </template>
-            </el-input>
-          </div>
-        </div>
-
-        <div class="expire-info">
-          <el-icon><Clock /></el-icon>
-          <span>{{ t('share.expireTime') }}：{{ shareResult.expireText }}</span>
-        </div>
-      </div>
-    </div>
+    <ShareCreateForm
+      v-if="!shareResult"
+      :file-info="fileInfo"
+      :expire-options="expireOptions"
+      :expire-days="shareForm.expire_days"
+      :password="shareForm.password"
+      @update:expire-days="shareForm.expire_days = $event"
+      @update:password="shareForm.password = $event"
+      @generate="generateRandomPassword"
+    />
+    <ShareResultPanel
+      v-else
+      :result="shareResult"
+      :password="shareForm.password"
+      @copy-link="copyShareLink"
+      @copy-password="copyPassword"
+    />
 
     <template #footer>
       <div class="dialog-footer">
@@ -120,18 +43,17 @@
 <script setup lang="ts">
   import { createShare } from '@/api/share'
   import type { CreateShareRequest } from '@/types'
-  import { formatSize, generateRandomPassword as generatePassword, copyToClipboard, getShareUrl } from '@/utils'
+  import { generateRandomPassword as generatePassword, copyToClipboard, getShareUrl } from '@/utils'
   import { useI18n } from '@/composables'
+  import ShareCreateForm from './ShareCreateForm.vue'
+  import ShareResultPanel from './ShareResultPanel.vue'
+  import type { ShareDialogFileInfo, ShareDialogResult } from './types'
 
   const { t } = useI18n()
 
   interface Props {
     modelValue: boolean
-    fileInfo: {
-      file_id: string
-      file_name: string
-      file_size?: number
-    }
+    fileInfo: ShareDialogFileInfo
   }
 
   const props = withDefaults(defineProps<Props>(), {
@@ -161,12 +83,8 @@
     password: ''
   })
 
-  const shareResult = ref<{
-    shareUrl: string
-    expireText: string
-    copied: boolean
-    passwordCopied: boolean
-  } | null>(null)
+  const shareResult = ref<ShareDialogResult | null>(null)
+  const copyResetTimers = new Set<number>()
 
   const expireOptions = computed(() => [
     { label: t('share.expireDays', { days: 1 }), value: 1 },
@@ -175,19 +93,21 @@
     { label: t('share.permanent'), value: 0 }
   ])
 
-  const formatFileSize = (size: number) => {
-    return formatSize(size)
-  }
-
   const generateRandomPassword = () => {
     shareForm.password = generatePassword()
   }
 
-  const handleExpireChange = (value: string | number | boolean | undefined) => {
-    // 确保值正确更新
-    if (typeof value === 'number') {
-      shareForm.expire_days = value
-    }
+  const scheduleCopyReset = (reset: () => void) => {
+    const timer = window.setTimeout(() => {
+      copyResetTimers.delete(timer)
+      reset()
+    }, 2000)
+    copyResetTimers.add(timer)
+  }
+
+  const clearCopyResetTimers = () => {
+    copyResetTimers.forEach(timer => window.clearTimeout(timer))
+    copyResetTimers.clear()
   }
 
   const handleConfirmShare = async () => {
@@ -245,11 +165,11 @@
     if (success) {
       shareResult.value.copied = true
       proxy?.$modal.msgSuccess(t('share.linkCopied'))
-      setTimeout(() => {
+      scheduleCopyReset(() => {
         if (shareResult.value) {
           shareResult.value.copied = false
         }
-      }, 2000)
+      })
     } else {
       proxy?.$modal.msgError(t('common.copyFailed'))
     }
@@ -262,17 +182,18 @@
     if (success) {
       shareResult.value.passwordCopied = true
       proxy?.$modal.msgSuccess(t('share.passwordCopied'))
-      setTimeout(() => {
+      scheduleCopyReset(() => {
         if (shareResult.value) {
           shareResult.value.passwordCopied = false
         }
-      }, 2000)
+      })
     } else {
       proxy?.$modal.msgError(t('common.copyFailed'))
     }
   }
 
   const handleClose = () => {
+    clearCopyResetTimers()
     visible.value = false
     // 重置表单
     shareForm.expire_days = 7
@@ -281,10 +202,13 @@
   }
 
   const handleCreateAnother = () => {
+    clearCopyResetTimers()
     shareResult.value = null
     shareForm.expire_days = 7
     shareForm.password = ''
   }
+
+  onBeforeUnmount(clearCopyResetTimers)
 </script>
 
 <style scoped>

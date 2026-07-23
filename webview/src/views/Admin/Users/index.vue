@@ -21,22 +21,33 @@
       </div>
     </div>
 
-    <el-table v-if="!isHandheld" :data="userList" v-loading="loading" class="admin-table" :empty-text="t('admin.users.noUsers')">
-      <el-table-column prop="user_name" :label="t('admin.users.username')" min-width="120" />
-      <el-table-column prop="name" :label="t('admin.users.nickname')" min-width="120" />
-      <el-table-column prop="email" :label="t('admin.users.email')" min-width="180" />
-      <el-table-column prop="phone" :label="t('admin.users.phone')" min-width="120" />
-      <el-table-column prop="group_name" :label="t('admin.users.userGroup')" width="120">
+    <el-table
+      v-if="!isHandheld"
+      :data="userList"
+      v-loading="loading"
+      class="admin-table"
+      :empty-text="t('admin.users.noUsers')"
+    >
+      <el-table-column prop="user_name" :label="t('admin.users.username')" :min-width="isCompactDesktop ? 100 : 120" />
+      <el-table-column prop="name" :label="t('admin.users.nickname')" :min-width="isCompactDesktop ? 100 : 120" />
+      <el-table-column v-if="!isCompactDesktop" prop="email" :label="t('admin.users.email')" min-width="180" />
+      <el-table-column v-if="!isCompactDesktop" prop="phone" :label="t('admin.users.phone')" min-width="120" />
+      <el-table-column prop="group_name" :label="t('admin.users.userGroup')" :width="isCompactDesktop ? 104 : 120">
         <template #default="{ row }">
           <el-tag>{{ row.group_name || t('admin.users.userGroup') + row.group_id }}</el-tag>
         </template>
       </el-table-column>
-      <el-table-column :label="t('admin.users.storageSpace')" width="150">
+      <el-table-column v-if="!isCompactDesktop" :label="t('admin.users.storageSpace')" width="150">
         <template #default="{ row }">
           {{ formatStorage(row.space) }}
         </template>
       </el-table-column>
-      <el-table-column prop="state" :label="t('admin.users.status')" width="100" align="center">
+      <el-table-column
+        prop="state"
+        :label="t('admin.users.status')"
+        :width="isCompactDesktop ? 80 : 100"
+        align="center"
+      >
         <template #default="{ row }">
           <el-switch
             v-model="row.state"
@@ -47,8 +58,12 @@
           />
         </template>
       </el-table-column>
-      <el-table-column prop="created_at" :label="t('admin.users.createTime')" width="180" />
-      <el-table-column :label="t('admin.users.operation')" width="150" fixed="right">
+      <el-table-column v-if="!isCompactDesktop" prop="created_at" :label="t('admin.users.createTime')" width="180" />
+      <el-table-column
+        :label="t('admin.users.operation')"
+        :width="isCompactDesktop ? 104 : 150"
+        :fixed="isCompactDesktop ? false : 'right'"
+      >
         <template #default="{ row }">
           <el-button v-if="row.group_id !== 1" link type="primary" @click="handleEdit(row)">
             {{ t('admin.users.edit') }}
@@ -102,7 +117,13 @@
     />
 
     <!-- 创建/编辑用户对话框 -->
-    <el-dialog v-model="showDialog" :title="dialogTitle" width="600px" :fullscreen="isHandheld" @close="handleDialogClose">
+    <el-dialog
+      v-model="showDialog"
+      :title="dialogTitle"
+      width="600px"
+      :fullscreen="isHandheld"
+      @close="handleDialogClose"
+    >
       <el-form :model="formData" :rules="formRules" ref="formRef" label-width="100px">
         <el-form-item :label="t('admin.users.username')" prop="user_name">
           <el-input v-model="formData.user_name" :disabled="isEdit" />
@@ -163,7 +184,7 @@
 
   const { proxy } = getCurrentInstance() as ComponentInternalInstance
   const { t } = useI18n()
-  const { isHandheld } = useResponsive()
+  const { isHandheld, isCompactDesktop } = useResponsive()
   const userStore = useUserStore()
 
   const loading = ref(false)
@@ -242,8 +263,7 @@
         userList.value = res.data.users || []
         pagination.total = res.data.total || 0
       } else {
-        // 后端接口未实现，提示开发中
-        proxy?.$modal.msg(t('admin.users.featureDeveloping'))
+        proxy?.$modal.msgError(res.message || t('admin.users.loadListFailed'))
         userList.value = []
         pagination.total = 0
       }
@@ -262,13 +282,12 @@
       if (res.code === 200 && res.data) {
         groupList.value = res.data.groups || []
       } else {
-        // 后端接口未实现，使用默认组
-        groupList.value = [
-          { id: 1, name: '管理员', group_default: 0, space: 0, created_at: '' },
-          { id: 2, name: '普通用户', group_default: 1, space: 0, created_at: '' }
-        ]
+        groupList.value = []
+        proxy?.$modal.msgError(res.message || t('admin.groups.loadListFailed'))
       }
     } catch (error: any) {
+      groupList.value = []
+      proxy?.$modal.msgError(error.message || t('admin.groups.loadListFailed'))
       proxy?.$log?.error(error)
     }
   }
@@ -354,11 +373,7 @@
             }
           }
         } catch (error: any) {
-          if (error.response?.status === 404 || error.message?.includes('404')) {
-            proxy?.$modal.msg(t('admin.users.featureDeveloping'))
-          } else {
-            proxy?.$modal.msgError(error.message || t('common.operationFailed'))
-          }
+          proxy?.$modal.msgError(error.message || t('common.operationFailed'))
         } finally {
           submitting.value = false
         }
@@ -385,11 +400,7 @@
           proxy?.$modal.msgError(res.message || t('admin.users.deleteFailed'))
         }
       } catch (error: any) {
-        if (error.response?.status === 404 || error.message?.includes('404')) {
-          proxy?.$modal.msg(t('admin.users.featureDeveloping'))
-        } else {
-          proxy?.$modal.msgError(error.message || t('admin.users.deleteFailed'))
-        }
+        proxy?.$modal.msgError(error.message || t('admin.users.deleteFailed'))
       }
     } catch (error: any) {
       // 用户取消
@@ -422,11 +433,7 @@
       } catch (error: any) {
         // 操作失败，回滚状态
         row.state = row.state === 0 ? 1 : 0
-        if (error.response?.status === 404 || error.message?.includes('404')) {
-          proxy?.$modal.msg(t('admin.users.featureDeveloping'))
-        } else {
-          proxy?.$modal.msgError(error.message || t(`admin.users.${actionKey}Failed`))
-        }
+        proxy?.$modal.msgError(error.message || t(`admin.users.${actionKey}Failed`))
       }
     } catch (error: any) {
       // 用户取消，回滚状态

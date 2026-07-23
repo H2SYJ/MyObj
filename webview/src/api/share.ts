@@ -1,6 +1,6 @@
 import { post, get } from '@/utils/network/request'
 import { API_ENDPOINTS, API_BASE_URL } from '@/config/api'
-import type { CreateShareRequest, CreateShareResponse, ApiResponse, ShareInfo } from '@/types'
+import type { CreateShareRequest, CreateShareResponse, ApiResponse, BatchOperationResult, ShareInfo } from '@/types'
 
 /**
  * 创建文件分享
@@ -23,6 +23,11 @@ export const deleteShare = (id: number) => {
   return post<ApiResponse>(API_ENDPOINTS.SHARE.DELETE, { id })
 }
 
+/** 批量删除分享，单项失败不会回滚其他项目。 */
+export const batchDeleteShares = (ids: number[]) => {
+  return post<ApiResponse<BatchOperationResult>>(API_ENDPOINTS.SHARE.DELETE_BATCH, { ids })
+}
+
 /**
  * 修改分享密码
  */
@@ -35,12 +40,12 @@ export const updateSharePassword = (id: number, password: string) => {
  * @param token 分享token
  * @param password 分享密码（如果有密码则必需）
  */
-export const getShareInfo = (token: string, password?: string) => {
+export const getShareInfo = (token: string, password?: string, options: { signal?: AbortSignal } = {}) => {
   const params: any = { token }
   if (password) {
     params.password = password
   }
-  return get<ApiResponse<ShareInfoResponse>>(API_ENDPOINTS.SHARE.INFO, params)
+  return get<ApiResponse<ShareInfoResponse>>(API_ENDPOINTS.SHARE.INFO, params, options)
 }
 
 /**

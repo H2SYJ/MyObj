@@ -1,0 +1,127 @@
+/* PC V2 样式仅在桌面壳层内生效，避免影响移动端。 */
+.desktop-shell {
+  --desktop-sidebar-width: 232px;
+  --desktop-sidebar-collapsed-width: 72px;
+  --desktop-header-height: 64px;
+  --desktop-content-max: 1680px;
+  --desktop-page-padding: 28px;
+  --desktop-radius-sm: 8px;
+  --desktop-radius-md: 12px;
+  --desktop-radius-lg: 16px;
+  --desktop-surface: #ffffff;
+  --desktop-surface-muted: #f7f8fb;
+  --desktop-fill: #f2f4f8;
+  --desktop-border: #e7eaf0;
+  --desktop-primary-soft: #eef4ff;
+  --desktop-shadow-sm: 0 1px 2px rgba(15, 23, 42, 0.04), 0 8px 24px rgba(15, 23, 42, 0.035);
+  --desktop-shadow-md: 0 18px 48px rgba(15, 23, 42, 0.09);
+  min-width: 768px;
+  height: 100vh;
+  display: grid;
+  grid-template-columns: var(--desktop-sidebar-width) minmax(0, 1fr);
+  grid-template-rows: var(--desktop-header-height) minmax(0, 1fr);
+  grid-template-areas: 'sidebar header' 'sidebar main';
+  overflow: hidden;
+  background: var(--desktop-surface-muted);
+  color: var(--text-primary);
+}
+
+.desktop-shell.is-sidebar-collapsed {
+  grid-template-columns: var(--desktop-sidebar-collapsed-width) minmax(0, 1fr);
+}
+
+html.dark .desktop-shell {
+  --desktop-surface: #161d2b;
+  --desktop-surface-muted: #0f1522;
+  --desktop-fill: #202a3b;
+  --desktop-border: rgba(255, 255, 255, 0.09);
+  --desktop-primary-soft: rgba(59, 130, 246, 0.14);
+  --desktop-shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.18), 0 10px 28px rgba(0, 0, 0, 0.12);
+  --desktop-shadow-md: 0 22px 56px rgba(0, 0, 0, 0.32);
+}
+
+.desktop-shell .desktop-card,
+.desktop-shell .el-card {
+  border: 1px solid var(--desktop-border);
+  border-radius: var(--desktop-radius-lg);
+  background: var(--desktop-surface);
+  box-shadow: var(--desktop-shadow-sm);
+}
+
+.desktop-shell .glass-panel,
+.desktop-shell .glass-panel-sm {
+  background: var(--desktop-surface);
+  border-color: var(--desktop-border);
+  box-shadow: var(--desktop-shadow-sm);
+  backdrop-filter: none;
+}
+
+.desktop-shell .el-button {
+  min-height: 36px;
+  border-radius: var(--desktop-radius-sm);
+}
+.desktop-shell .el-button.is-circle {
+  width: 36px;
+  min-height: 36px;
+}
+.desktop-shell .el-input__wrapper,
+.desktop-shell .el-select__wrapper {
+  min-height: 38px;
+  border-radius: var(--desktop-radius-sm);
+}
+.desktop-shell .el-dialog {
+  border: 1px solid var(--desktop-border);
+  border-radius: 18px;
+  box-shadow: var(--desktop-shadow-md);
+}
+.desktop-shell .el-table {
+  --el-table-header-bg-color: var(--desktop-surface-muted);
+  --el-table-row-hover-bg-color: var(--desktop-primary-soft);
+}
+.desktop-shell .el-table th.el-table__cell {
+  height: 46px;
+  color: var(--text-secondary);
+  font-size: 12px;
+  font-weight: 700;
+}
+.desktop-shell .el-table td.el-table__cell {
+  height: 54px;
+}
+
+/* 未使用 DesktopPage 标题骨架的业务页共享同一 PC 内容边界。 */
+.desktop-shell .desktop-content-page {
+  width: min(100%, var(--desktop-content-max));
+  min-width: 0;
+  min-height: 100%;
+  margin: 0 auto;
+  padding: var(--desktop-page-padding);
+}
+
+.desktop-shell :is(.header-card, .toolbar-card, .table-card, .task-list-card, .admin-header-card, .admin-content-card) {
+  border: 1px solid var(--desktop-border);
+  border-radius: var(--desktop-radius-lg);
+  background: var(--desktop-surface);
+  box-shadow: var(--desktop-shadow-sm);
+  backdrop-filter: none;
+}
+
+.desktop-shell .desktop-content-page h2 {
+  letter-spacing: -0.015em;
+}
+
+@media (max-width: 991px) {
+  .desktop-shell {
+    --desktop-sidebar-width: 72px;
+    --desktop-page-padding: 20px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .desktop-shell *,
+  .desktop-shell *::before,
+  .desktop-shell *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}

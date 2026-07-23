@@ -1,5 +1,5 @@
 <template>
-  <div class="shares-page">
+  <div class="shares-page desktop-content-page">
     <!-- 头部卡片 -->
     <div class="header-card glass-panel">
       <div class="header">
@@ -240,9 +240,10 @@
   import { useResponsive, useI18n, useMobileLayerHistory } from '@/composables'
   import { MobileActionSheet } from '@/components/mobile'
   import type { MobileSheetAction } from '@/components/mobile/types'
-  import { getShareList, deleteShare, updateSharePassword } from '@/api/share'
+  import { getShareList, deleteShare, batchDeleteShares, updateSharePassword } from '@/api/share'
   import type { ShareInfo } from '@/types'
   import { formatDate, getShareUrl, generateRandomPassword, copyToClipboard } from '@/utils'
+  import { failedItemIDs, retainBatchFailures } from '@/utils/desktop/batch'
 
   const { proxy } = getCurrentInstance() as ComponentInternalInstance
   const { t } = useI18n()
@@ -418,15 +419,33 @@
       await proxy?.$modal.confirm(t('share.confirmBatchDeleteShare', { count: selectedShares.value.length }))
       batchDeleting.value = true
 
-      // 提示开发中
-      proxy?.$modal.msg(t('share.batchDeletePending'))
+      const selectedIDs = selectedShares.value.map(item => item.id)
+      const res = await batchDeleteShares(selectedIDs)
+      if (res.code !== 200 || !res.data) throw new Error(res.message || t('share.batchDeleteFailed'))
 
-      // 清空选择（包括表格多选框）
-      selectedShares.value = []
+      const failedIDs = failedItemIDs(res.data)
+      shareList.value = shareList.value.filter(item => !selectedIDs.includes(item.id) || failedIDs.has(String(item.id)))
+      selectedShares.value = retainBatchFailures(selectedShares.value, res.data, item => String(item.id))
       tableRef.value?.clearSelection()
+      await nextTick()
+      selectedShares.value.forEach(item => tableRef.value?.toggleRowSelection(item, true))
+
+      if (res.data.failed_count > 0) {
+        proxy?.$log.warn('批量删除分享部分失败', res.data.failed_items)
+      }
+
+      if (res.data.failed_count === 0) {
+        proxy?.$modal.msgSuccess(t('share.batchDeleteSuccess', { count: res.data.success_count }))
+      } else if (res.data.success_count > 0) {
+        proxy?.$modal.msgWarning(
+          t('share.batchDeletePartial', { success: res.data.success_count, failed: res.data.failed_count })
+        )
+      } else {
+        proxy?.$modal.msgError(t('share.batchDeleteFailedWithCount', { count: res.data.failed_count }))
+      }
     } catch (error: any) {
       if (error !== 'cancel') {
-        proxy?.$modal.msgError(error.message || t('files.operationFailed'))
+        proxy?.$modal.msgError(error.message || t('share.batchDeleteFailed'))
       }
     } finally {
       batchDeleting.value = false

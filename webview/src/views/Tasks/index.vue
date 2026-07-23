@@ -1,5 +1,5 @@
 <template>
-  <div class="tasks-page">
+  <div class="tasks-page desktop-content-page">
     <el-tabs v-model="activeTab" class="task-tabs">
       <el-tab-pane :label="t('tasks.upload')" name="upload">
         <UploadTaskTable
@@ -56,6 +56,7 @@
   const { t } = useI18n()
 
   const route = useRoute()
+  const router = useRouter()
 
   const activeTab = ref<string>((route.query.tab as string) || 'upload')
   let refreshTimer: number | null = null
@@ -70,6 +71,11 @@
       }
     }
   )
+
+  watch(activeTab, tab => {
+    if (route.query.tab === tab) return
+    router.replace({ query: { ...route.query, tab } })
+  })
 
   // 使用 composables
   const {
@@ -208,7 +214,10 @@
       padding: 0 12px;
       border-radius: 13px;
       justify-content: center;
-      transition: background-color 180ms ease, color 180ms ease, box-shadow 180ms ease;
+      transition:
+        background-color 180ms ease,
+        color 180ms ease,
+        box-shadow 180ms ease;
     }
 
     .task-tabs :deep(.el-tabs__item.is-active) {

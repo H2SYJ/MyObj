@@ -66,12 +66,14 @@ export interface SubscriptionPayload {
   run_now?: boolean
 }
 
-export const availablePlugins = () => get<ApiResponse<InstalledPlugin[]>>(API_ENDPOINTS.SUBSCRIPTION.PLUGINS)
-export const listSubscriptions = (page = 1, pageSize = 100) =>
-  get<ApiResponse<{ subscriptions: Subscription[]; total: number }>>(API_ENDPOINTS.SUBSCRIPTION.LIST, {
-    page,
-    pageSize
-  })
+export const availablePlugins = (options: { signal?: AbortSignal } = {}) =>
+  get<ApiResponse<InstalledPlugin[]>>(API_ENDPOINTS.SUBSCRIPTION.PLUGINS, {}, options)
+export const listSubscriptions = (page = 1, pageSize = 100, options: { signal?: AbortSignal } = {}) =>
+  get<ApiResponse<{ subscriptions: Subscription[]; total: number }>>(
+    API_ENDPOINTS.SUBSCRIPTION.LIST,
+    { page, pageSize },
+    options
+  )
 export const createSubscription = (data: SubscriptionPayload) =>
   post<ApiResponse>(API_ENDPOINTS.SUBSCRIPTION.CREATE, data)
 export const updateSubscription = (data: SubscriptionPayload & { id: string }) =>
@@ -82,17 +84,27 @@ export const toggleSubscription = (id: string, enabled: boolean) =>
 export const runSubscription = (id: string) => post<ApiResponse>(API_ENDPOINTS.SUBSCRIPTION.RUN, { id })
 export const updateSubscriptionPermissions = (id: string, granted_permissions: string[]) =>
   post<ApiResponse>(API_ENDPOINTS.SUBSCRIPTION.PERMISSIONS, { id, granted_permissions })
-export const listSubscriptionRuns = (subscriptionId: string, page = 1, pageSize = 50) =>
-  get<ApiResponse<{ items: SubscriptionRun[]; total: number }>>(API_ENDPOINTS.SUBSCRIPTION.RUNS, {
-    subscription_id: subscriptionId,
-    page,
-    pageSize
-  })
-export const listSubscriptionItems = (subscriptionId: string, page = 1, pageSize = 50) =>
-  get<ApiResponse<{ items: SubscriptionItem[]; total: number }>>(API_ENDPOINTS.SUBSCRIPTION.ITEMS, {
-    subscription_id: subscriptionId,
-    page,
-    pageSize
-  })
+export const listSubscriptionRuns = (
+  subscriptionId: string,
+  page = 1,
+  pageSize = 50,
+  options: { signal?: AbortSignal } = {}
+) =>
+  get<ApiResponse<{ items: SubscriptionRun[]; total: number }>>(
+    API_ENDPOINTS.SUBSCRIPTION.RUNS,
+    { subscription_id: subscriptionId, page, pageSize },
+    options
+  )
+export const listSubscriptionItems = (
+  subscriptionId: string,
+  page = 1,
+  pageSize = 50,
+  options: { signal?: AbortSignal } = {}
+) =>
+  get<ApiResponse<{ items: SubscriptionItem[]; total: number }>>(
+    API_ENDPOINTS.SUBSCRIPTION.ITEMS,
+    { subscription_id: subscriptionId, page, pageSize },
+    options
+  )
 export const retrySubscriptionThumbnail = (itemId: string) =>
   post<ApiResponse>(API_ENDPOINTS.SUBSCRIPTION.THUMBNAIL_RETRY, { item_id: itemId })

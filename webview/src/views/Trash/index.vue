@@ -1,5 +1,5 @@
 <template>
-  <div class="trash-page">
+  <div class="trash-page desktop-content-page">
     <!-- 工具栏 -->
     <el-card shadow="never" class="toolbar-card">
       <div class="toolbar">
@@ -231,8 +231,12 @@
     />
     <div v-if="isHandheld && selectedIds.length > 0" class="mobile-trash-batch-bar">
       <span>{{ t('common.selected', { count: selectedIds.length }) }}</span>
-      <el-button link type="primary" @click="handleRestore"><el-icon><RefreshRight /></el-icon>{{ t('trash.restore') }}</el-button>
-      <el-button link type="danger" @click="handleDeletePermanently"><el-icon><Delete /></el-icon>{{ t('trash.permanentDelete') }}</el-button>
+      <el-button link type="primary" @click="handleRestore"
+        ><el-icon><RefreshRight /></el-icon>{{ t('trash.restore') }}</el-button
+      >
+      <el-button link type="danger" @click="handleDeletePermanently"
+        ><el-icon><Delete /></el-icon>{{ t('trash.permanentDelete') }}</el-button
+      >
       <el-button link @click="selectedIds = []">{{ t('common.cancel') }}</el-button>
     </div>
 
@@ -253,13 +257,22 @@
 </template>
 
 <script setup lang="ts">
-  import { getRecycledList, restoreFile, deleteFilePermanently, emptyRecycled, type RecycledItem } from '@/api/recycled'
+  import {
+    getRecycledList,
+    restoreFile,
+    batchRestoreFiles,
+    deleteFilePermanently,
+    batchDeleteFilesPermanently,
+    emptyRecycled,
+    type RecycledItem
+  } from '@/api/recycled'
   import { getThumbnailUrl } from '@/api/file'
   import { formatSize, formatDate } from '@/utils'
   import { useI18n, useResponsive } from '@/composables'
   import { MobileInfiniteList } from '@/components/mobile'
   import { useUserStore } from '@/stores'
   import EmptyState from '@/components/EmptyState/index.vue'
+  import { retainBatchFailures } from '@/utils/desktop/batch'
 
   const { proxy } = getCurrentInstance() as ComponentInternalInstance
   const userStore = useUserStore()
@@ -402,34 +415,24 @@
 
     try {
       await proxy?.$modal.confirm(t('trash.confirmRestore', { count: selectedIds.value.length }))
-      let successCount = 0
-      let failedCount = 0
+      const res = await batchRestoreFiles(selectedIds.value)
+      if (res.code !== 200 || !res.data) throw new Error(res.message || t('trash.restoreFailed'))
+      const failedSelection = retainBatchFailures(selectedIds.value, res.data, item => item)
 
-      for (const recycledId of selectedIds.value) {
-        try {
-          const res = await restoreFile(recycledId)
-          if (res.code === 200) {
-            successCount++
-          } else {
-            failedCount++
-          }
-        } catch {
-          failedCount++
-        }
+      if (res.data.success_count > 0) {
+        proxy?.$modal.msgSuccess(t('trash.successRestore', { count: res.data.success_count }))
+      }
+      if (res.data.failed_count > 0) {
+        proxy?.$log.warn('批量还原回收站项目部分失败', res.data.failed_items)
+        proxy?.$modal.msgWarning(t('trash.restoreFilesFailed', { count: res.data.failed_count }))
       }
 
-      if (successCount > 0) {
-        proxy?.$modal.msgSuccess(t('trash.successRestore', { count: successCount }))
-      }
-      if (failedCount > 0) {
-        proxy?.$modal.msgWarning(t('trash.restoreFilesFailed', { count: failedCount }))
-      }
-
-      selectedIds.value = []
       await loadRecycledList()
+      const visibleIDs = new Set(fileList.value.map(item => item.recycled_id))
+      selectedIds.value = failedSelection.filter(item => visibleIDs.has(item))
     } catch (error: any) {
       if (error !== 'cancel') {
-        // 用户取消操作
+        proxy?.$modal.msgError(error.message || t('trash.restoreFailed'))
       }
     }
   }
@@ -461,36 +464,26 @@
 
     try {
       await proxy?.$modal.confirm(t('trash.confirmPermanentDelete', { count: selectedIds.value.length }))
-      let successCount = 0
-      let failedCount = 0
+      const res = await batchDeleteFilesPermanently(selectedIds.value)
+      if (res.code !== 200 || !res.data) throw new Error(res.message || t('trash.deleteFailed'))
+      const failedSelection = retainBatchFailures(selectedIds.value, res.data, item => item)
 
-      for (const recycledId of selectedIds.value) {
-        try {
-          const res = await deleteFilePermanently(recycledId)
-          if (res.code === 200) {
-            successCount++
-          } else {
-            failedCount++
-          }
-        } catch {
-          failedCount++
-        }
-      }
-
-      if (successCount > 0) {
-        proxy?.$modal.msgSuccess(t('trash.successDelete', { count: successCount }))
+      if (res.data.success_count > 0) {
+        proxy?.$modal.msgSuccess(t('trash.successDelete', { count: res.data.success_count }))
         // 永久删除成功后刷新用户信息，更新存储空间显示
         await userStore.fetchUserInfo()
       }
-      if (failedCount > 0) {
-        proxy?.$modal.msgWarning(t('trash.deleteFilesFailed', { count: failedCount }))
+      if (res.data.failed_count > 0) {
+        proxy?.$log.warn('批量彻底删除回收站项目部分失败', res.data.failed_items)
+        proxy?.$modal.msgWarning(t('trash.deleteFilesFailed', { count: res.data.failed_count }))
       }
 
-      selectedIds.value = []
       await loadRecycledList()
+      const visibleIDs = new Set(fileList.value.map(item => item.recycled_id))
+      selectedIds.value = failedSelection.filter(item => visibleIDs.has(item))
     } catch (error: any) {
       if (error !== 'cancel') {
-        // 用户取消操作
+        proxy?.$modal.msgError(error.message || t('trash.deleteFailed'))
       }
     }
   }

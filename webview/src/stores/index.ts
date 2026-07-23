@@ -9,11 +9,8 @@ export { useUserStore } from './user'
 export { useAuthStore } from './auth'
 export { useAppStore } from './app'
 export { useLayoutStore } from './layout'
-export { useTagsViewStore } from './tagsView'
 
 // 导出类型
-export type { LayoutMode } from './layout'
-
 /**
  * 设置 Vue Store (Pinia)
  * 初始化 Pinia 并注册插件

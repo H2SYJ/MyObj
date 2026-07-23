@@ -1,5 +1,5 @@
 <template>
-  <div class="share-download-page">
+  <PublicPageShell class="share-download-page" :subtitle="t('shareDownload.title')">
     <div class="share-container glass-panel">
       <!-- 加载状态 -->
       <div v-if="loading" class="loading-container">
@@ -111,7 +111,7 @@
         </div>
       </div>
     </div>
-  </div>
+  </PublicPageShell>
 </template>
 
 <script setup lang="ts">
@@ -119,6 +119,8 @@
   import { getShareInfo, getShareDownloadUrl, type ShareInfoResponse } from '@/api/share'
   import { formatSize } from '@/utils'
   import { useI18n } from '@/composables'
+  import { useLatestRequest } from '@/composables/core/useLatestRequest'
+  import PublicPageShell from '@/components/public/PublicPageShell.vue'
 
   const route = useRoute()
   const router = useRouter()
@@ -133,6 +135,8 @@
   const downloading = ref(false)
   const verifying = ref(false)
   const needsPassword = ref(false)
+  const infoRequest = useLatestRequest()
+  let refreshTimer: number | null = null
 
   // 从路由参数获取token
   const token = computed(() => {
@@ -147,10 +151,12 @@
       return
     }
 
+    const requestTicket = infoRequest.begin()
     try {
       loading.value = true
       error.value = ''
-      const res = await getShareInfo(token.value)
+      const res = await getShareInfo(token.value, undefined, { signal: requestTicket.signal })
+      if (!requestTicket.isCurrent()) return
 
       if (res.code === 200 && res.data) {
         // 如果只返回了 has_password，说明需要密码
@@ -170,9 +176,9 @@
         error.value = res.message || t('shareDownload.refreshFailed')
       }
     } catch (err: any) {
-      error.value = err.message || t('shareDownload.refreshFailed')
+      if (requestTicket.isCurrent()) error.value = err.message || t('shareDownload.refreshFailed')
     } finally {
-      loading.value = false
+      if (requestTicket.isCurrent()) loading.value = false
     }
   }
 
@@ -182,12 +188,14 @@
       return
     }
 
+    const requestTicket = infoRequest.begin()
     try {
       verifying.value = true
       passwordError.value = '' // 清空之前的错误提示
       error.value = ''
 
-      const res = await getShareInfo(token.value, password.value)
+      const res = await getShareInfo(token.value, password.value, { signal: requestTicket.signal })
+      if (!requestTicket.isCurrent()) return
 
       if (res.code === 200 && res.data) {
         // 密码正确，显示文件信息
@@ -204,11 +212,12 @@
         password.value = ''
       }
     } catch (err: any) {
+      if (!requestTicket.isCurrent()) return
       // 密码验证失败，保持在密码输入界面
       passwordError.value = err.message || t('shareDownload.passwordError')
       password.value = ''
     } finally {
-      verifying.value = false
+      if (requestTicket.isCurrent()) verifying.value = false
     }
   }
 
@@ -232,10 +241,14 @@
     proxy?.$modal.msgSuccess(t('shareDownload.downloadSuccess'))
 
     // 延迟刷新分享信息（更新下载次数），避免影响下载
-    setTimeout(async () => {
+    if (refreshTimer) window.clearTimeout(refreshTimer)
+    refreshTimer = window.setTimeout(async () => {
+      refreshTimer = null
       try {
         const currentPassword = shareInfo.value?.has_password ? password.value : undefined
-        const res = await getShareInfo(token.value, currentPassword)
+        const requestTicket = infoRequest.begin()
+        const res = await getShareInfo(token.value, currentPassword, { signal: requestTicket.signal })
+        if (!requestTicket.isCurrent()) return
         if (res.code === 200 && res.data && res.data.file_name && shareInfo.value) {
           // 只更新下载次数，保持其他状态不变
           shareInfo.value.download_count = res.data.download_count
@@ -256,6 +269,9 @@
   onMounted(() => {
     loadShareInfo()
   })
+  onBeforeUnmount(() => {
+    if (refreshTimer) window.clearTimeout(refreshTimer)
+  })
 </script>
 
 <style scoped>
@@ -266,7 +282,6 @@
     align-items: center;
     justify-content: center;
     padding: calc(20px + env(safe-area-inset-top)) 20px calc(20px + env(safe-area-inset-bottom));
-    background: linear-gradient(135deg, var(--primary-color) 0%, var(--secondary-color) 100%);
   }
 
   .share-container {

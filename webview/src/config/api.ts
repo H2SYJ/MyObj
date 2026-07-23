@@ -76,6 +76,7 @@ export const API_ENDPOINTS = {
     CREATE: '/share/create',
     LIST: '/share/list',
     DELETE: '/share/delete',
+    DELETE_BATCH: '/share/deleteBatch',
     UPDATE_PASSWORD: '/share/updatePassword',
     INFO: '/share/info',
     DOWNLOAD: '/share/download'
@@ -109,7 +110,9 @@ export const API_ENDPOINTS = {
   RECYCLED: {
     LIST: '/recycled/list',
     RESTORE: '/recycled/restore',
+    RESTORE_BATCH: '/recycled/restoreBatch',
     DELETE: '/recycled/delete',
+    DELETE_BATCH: '/recycled/deleteBatch',
     EMPTY: '/recycled/empty'
   },
 

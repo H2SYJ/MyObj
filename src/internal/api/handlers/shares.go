@@ -2,7 +2,6 @@ package handlers
 
 import (
 	"fmt"
-	"net/url"
 	"myobj/src/core/domain/request"
 	"myobj/src/core/service"
 	"myobj/src/internal/api/middleware"
@@ -10,6 +9,7 @@ import (
 	"myobj/src/pkg/cache"
 	"myobj/src/pkg/logger"
 	"myobj/src/pkg/models"
+	"net/url"
 	"os"
 
 	"github.com/gin-gonic/gin"
@@ -50,6 +50,8 @@ func (s *SharesHandler) Router(c *gin.RouterGroup) {
 		ver.GET("/list", middleware.PowerVerify("file:share"), s.GetShareList)
 		// 删除分享
 		ver.POST("/delete", middleware.PowerVerify("file:share"), s.DeleteShare)
+		// 批量删除分享
+		ver.POST("/deleteBatch", middleware.PowerVerify("file:share"), s.BatchDeleteShares)
 		// 修改分享密码
 		ver.POST("/updatePassword", middleware.PowerVerify("file:share"), s.UpdateSharePassword)
 	}
@@ -74,7 +76,7 @@ func (s *SharesHandler) CreateShare(c *gin.Context) {
 func (s *SharesHandler) GetShareInfo(c *gin.Context) {
 	token := c.Query("token")
 	password := c.Query("password") // 可选，如果有密码则必需
-	
+
 	if token == "" {
 		c.JSON(400, models.NewJsonResponse(400, "token参数不能为空", nil))
 		return
@@ -105,21 +107,21 @@ func (s *SharesHandler) DownloadShare(c *gin.Context) {
 		c.JSON(400, models.NewJsonResponse(400, share.Err, nil))
 		return
 	}
-	
+
 	// 检查返回的数据是否有效
 	if share.Path == "" {
 		logger.LOG.Error("分享文件路径为空", "token", token)
 		c.JSON(400, models.NewJsonResponse(400, "文件路径无效", nil))
 		return
 	}
-	
+
 	// 检查文件是否存在
 	if _, err := os.Stat(share.Path); os.IsNotExist(err) {
 		logger.LOG.Error("分享文件不存在", "path", share.Path, "error", err)
 		c.JSON(404, models.NewJsonResponse(404, "文件不存在或已被删除", nil))
 		return
 	}
-	
+
 	defer func(name string) {
 		if name != "" {
 			err := os.RemoveAll(name)
@@ -128,17 +130,17 @@ func (s *SharesHandler) DownloadShare(c *gin.Context) {
 			}
 		}
 	}(share.Temp)
-	
+
 	// 处理文件名，确保特殊字符被正确编码
 	fileName := share.FileName
 	if fileName == "" {
 		fileName = "download"
 	}
 	// 使用 RFC 5987 格式编码文件名，支持中文和特殊字符
-	c.Header("Content-Disposition", fmt.Sprintf(`attachment; filename="%s"; filename*=UTF-8''%s`, 
+	c.Header("Content-Disposition", fmt.Sprintf(`attachment; filename="%s"; filename*=UTF-8''%s`,
 		fileName, url.QueryEscape(fileName)))
 	c.Header("Content-Type", "application/octet-stream")
-	
+
 	// 使用 c.File 发送文件，直接触发浏览器下载
 	c.File(share.Path)
 }
@@ -168,6 +170,20 @@ func (s *SharesHandler) DeleteShare(c *gin.Context) {
 		return
 	}
 	c.JSON(200, deleteShare)
+}
+
+// BatchDeleteShares 批量删除分享。
+func (s *SharesHandler) BatchDeleteShares(c *gin.Context) {
+	req := new(request.BatchDeleteShareRequest)
+	if err := c.ShouldBindJSON(req); err != nil {
+		c.JSON(200, models.NewJsonResponse(400, "参数错误", err.Error()))
+		return
+	}
+	if err := req.ValidateUniqueLimit(200); err != nil {
+		c.JSON(200, models.NewJsonResponse(400, err.Error(), nil))
+		return
+	}
+	c.JSON(200, s.service.BatchDeleteShares(req, c.GetString("userID")))
 }
 
 // UpdateSharePassword 修改分享密码

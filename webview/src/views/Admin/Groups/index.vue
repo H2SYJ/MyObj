@@ -5,7 +5,13 @@
       <el-button icon="Refresh" @click="loadGroupList">{{ t('common.refresh') }}</el-button>
     </div>
 
-    <el-table v-if="!isHandheld" :data="groupList" v-loading="loading" class="admin-table" :empty-text="t('admin.groups.noGroups')">
+    <el-table
+      v-if="!isHandheld"
+      :data="groupList"
+      v-loading="loading"
+      class="admin-table"
+      :empty-text="t('admin.groups.noGroups')"
+    >
       <el-table-column prop="id" label="ID" width="80" />
       <el-table-column prop="name" :label="t('admin.groups.groupName')" min-width="150" />
       <el-table-column :label="t('admin.groups.defaultGroup')" width="100" align="center">
@@ -45,7 +51,10 @@
             {{ row.group_default === 1 ? t('admin.groups.defaultGroup') : `ID ${row.id}` }}
           </el-tag>
         </div>
-        <div class="mobile-admin-card__meta"><span>{{ formatStorage(row.space) }}</span><span>{{ row.created_at }}</span></div>
+        <div class="mobile-admin-card__meta">
+          <span>{{ formatStorage(row.space) }}</span
+          ><span>{{ row.created_at }}</span>
+        </div>
         <div v-if="row.id !== 1" class="mobile-admin-card__footer">
           <el-button link type="primary" @click="handleEdit(row)">{{ t('admin.users.edit') }}</el-button>
           <el-button link type="primary" @click="handleAssignPower(row)">{{ t('admin.groups.assignPower') }}</el-button>
@@ -56,7 +65,13 @@
     </div>
 
     <!-- 创建/编辑组对话框 -->
-    <el-dialog v-model="showDialog" :title="dialogTitle" width="500px" :fullscreen="isHandheld" @close="handleDialogClose">
+    <el-dialog
+      v-model="showDialog"
+      :title="dialogTitle"
+      width="500px"
+      :fullscreen="isHandheld"
+      @close="handleDialogClose"
+    >
       <el-form :model="formData" :rules="formRules" ref="formRef" label-width="100px">
         <el-form-item :label="t('admin.groups.groupName')" prop="name">
           <el-input v-model="formData.name" />
@@ -369,15 +384,11 @@
       if (res.code === 200 && res.data) {
         groupList.value = res.data.groups || []
       } else {
-        proxy?.$modal.msg(t('admin.groups.featureDeveloping'))
+        proxy?.$modal.msgError(res.message || t('admin.groups.loadListFailed'))
         groupList.value = []
       }
     } catch (error: any) {
-      if (error.response?.status === 404 || error.message?.includes('404')) {
-        proxy?.$modal.msg(t('admin.groups.featureDeveloping'))
-      } else {
-        proxy?.$modal.msgError(t('admin.groups.loadListFailed'))
-      }
+      proxy?.$modal.msgError(error.message || t('admin.groups.loadListFailed'))
       proxy?.$log?.error(error)
     } finally {
       loading.value = false
@@ -392,7 +403,7 @@
       if (res.code === 200 && res.data) {
         powerList.value = res.data.powers || []
       } else {
-        proxy?.$modal.msg(t('admin.groups.featureDeveloping'))
+        proxy?.$modal.msgError(res.message || t('admin.permissions.loadListFailed'))
         powerList.value = []
       }
     } catch (error: any) {
@@ -468,11 +479,7 @@
             }
           }
         } catch (error: any) {
-          if (error.response?.status === 404 || error.message?.includes('404')) {
-            proxy?.$modal.msg(t('admin.groups.featureDeveloping'))
-          } else {
-            proxy?.$modal.msgError(error.message || t('common.operationFailed'))
-          }
+          proxy?.$modal.msgError(error.message || t('common.operationFailed'))
         } finally {
           submitting.value = false
         }
@@ -498,11 +505,7 @@
           proxy?.$modal.msgError(res.message || t('admin.users.deleteFailed'))
         }
       } catch (error: any) {
-        if (error.response?.status === 404 || error.message?.includes('404')) {
-          proxy?.$modal.msg(t('admin.groups.featureDeveloping'))
-        } else {
-          proxy?.$modal.msgError(error.message || t('admin.users.deleteFailed'))
-        }
+        proxy?.$modal.msgError(error.message || t('admin.users.deleteFailed'))
       }
     } catch (error: any) {
       // 用户取消
@@ -557,11 +560,7 @@
         proxy?.$modal.msgError(res.message || t('admin.groups.assignPowerFailed'))
       }
     } catch (error: any) {
-      if (error.response?.status === 404 || error.message?.includes('404')) {
-        proxy?.$modal.msg(t('admin.groups.featureDeveloping'))
-      } else {
-        proxy?.$modal.msgError(error.message || t('admin.groups.assignPowerFailed'))
-      }
+      proxy?.$modal.msgError(error.message || t('admin.groups.assignPowerFailed'))
     } finally {
       submitting.value = false
     }

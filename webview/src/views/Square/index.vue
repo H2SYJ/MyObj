@@ -1,5 +1,5 @@
 <template>
-  <div class="square-container">
+  <div class="square-container desktop-content-page">
     <!-- 顶部工具栏 -->
     <div class="toolbar">
       <div class="breadcrumb">
@@ -413,7 +413,7 @@
     window.addEventListener('square-search', handleGlobalSearch)
 
     // 检查路由参数中是否有搜索关键词
-    const keyword = route.query.keyword as string
+    const keyword = route.query.search as string
     if (keyword) {
       searchKeyword.value = keyword
       performSearch(keyword, 1, pageSize.value)
@@ -429,7 +429,7 @@
 
   // 监听路由参数变化
   watch(
-    () => route.query.keyword,
+    () => route.query.search,
     newKeyword => {
       if (newKeyword) {
         searchKeyword.value = newKeyword as string
@@ -792,7 +792,9 @@
       font-size: 11px;
     }
 
-    .toolbar { padding: 10px 12px; }
+    .toolbar {
+      padding: 10px 12px;
+    }
   }
 
   @media (max-width: 767px) {
@@ -822,15 +824,37 @@
       border-radius: 18px;
       background: color-mix(in srgb, var(--primary-color) 8%, transparent);
     }
-    .mobile-item-info { text-align: center; gap: 5px; }
-    .mobile-item-name-row { justify-content: center; }
-    .mobile-item-name { font-size: 13px; font-weight: 650; }
-    .mobile-item-meta { justify-content: center; gap: 6px; font-size: 10px; }
-    .mobile-item-time { display: none; }
-    .mobile-item-actions { margin-top: auto; }
-    .mobile-download-btn { width: 100%; min-height: 36px; border-radius: 12px; }
+    .mobile-item-info {
+      text-align: center;
+      gap: 5px;
+    }
+    .mobile-item-name-row {
+      justify-content: center;
+    }
+    .mobile-item-name {
+      font-size: 13px;
+      font-weight: 650;
+    }
+    .mobile-item-meta {
+      justify-content: center;
+      gap: 6px;
+      font-size: 10px;
+    }
+    .mobile-item-time {
+      display: none;
+    }
+    .mobile-item-actions {
+      margin-top: auto;
+    }
+    .mobile-download-btn {
+      width: 100%;
+      min-height: 36px;
+      border-radius: 12px;
+    }
     .mobile-load-state,
-    .mobile-empty-state { grid-column: 1 / -1; }
+    .mobile-empty-state {
+      grid-column: 1 / -1;
+    }
   }
 
   /* 移动端卡片列表布局 */

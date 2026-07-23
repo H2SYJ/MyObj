@@ -1,21 +1,6 @@
 <template>
-  <div class="login-page">
-    <!-- Abstract Background -->
-    <div class="background-blobs">
-      <div class="blob blob-1"></div>
-      <div class="blob blob-2"></div>
-    </div>
-
+  <PublicPageShell class="login-page" :subtitle="t('login.subtitle')" badge="PRO">
     <div class="login-content">
-      <!-- Header -->
-      <div class="brand-header">
-        <div class="logo-row">
-          <span class="logo-text">MyObj</span>
-          <div class="badge">PRO</div>
-        </div>
-        <p class="subtitle">{{ t('login.subtitle') }}</p>
-      </div>
-
       <!-- Auth Form -->
       <div class="auth-card">
         <!-- Login Form -->
@@ -106,7 +91,7 @@
         </div>
       </div>
     </div>
-  </div>
+  </PublicPageShell>
 </template>
 
 <script setup lang="ts">
@@ -114,6 +99,7 @@
   import { rsaEncrypt } from '@/utils/validation/crypto'
   import { useI18n } from '@/composables'
   import { useAuthStore } from '@/stores'
+  import PublicPageShell from '@/components/public/PublicPageShell.vue'
 
   const { proxy } = getCurrentInstance() as ComponentInternalInstance
   const authStore = useAuthStore()
@@ -122,6 +108,7 @@
   const isFirstUse = ref(false)
   const hasUsers = ref(true)
   const allowRegister = ref(true) // 是否允许注册
+  let autoLoginTimer: number | null = null
 
   const loginFormRef = ref<FormInstance>()
   const registerFormRef = ref<FormInstance>()
@@ -214,7 +201,8 @@
           // 如果是首次使用，尝试自动登录
           if (isFirstUse.value) {
             // 延迟一下，确保tab切换完成
-            setTimeout(async () => {
+            autoLoginTimer = window.setTimeout(async () => {
+              autoLoginTimer = null
               await handleLogin()
             }, 100)
           }
@@ -253,6 +241,9 @@
   }
 
   onMounted(() => checkSysInfo())
+  onBeforeUnmount(() => {
+    if (autoLoginTimer) window.clearTimeout(autoLoginTimer)
+  })
 </script>
 
 <style scoped>
@@ -262,13 +253,8 @@
     display: flex;
     align-items: center;
     justify-content: center;
-    background: var(--bg-color, #ffffff);
     position: relative;
     overflow: hidden;
-  }
-
-  html.dark .login-page {
-    background: var(--bg-color);
   }
 
   /* --- Blue/Indigo Background Blobs --- */

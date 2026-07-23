@@ -5,7 +5,13 @@
       <el-button icon="Refresh" @click="loadDiskList">{{ t('common.refresh') }}</el-button>
     </div>
 
-    <el-table v-if="!isHandheld" :data="diskList" v-loading="loading" class="admin-table" :empty-text="t('admin.disks.noDisks')">
+    <el-table
+      v-if="!isHandheld"
+      :data="diskList"
+      v-loading="loading"
+      class="admin-table"
+      :empty-text="t('admin.disks.noDisks')"
+    >
       <el-table-column prop="id" :label="t('admin.disks.diskId')" min-width="200" />
       <el-table-column prop="disk_path" :label="t('admin.disks.diskPath')" min-width="250" />
       <el-table-column prop="data_path" :label="t('admin.disks.dataPath')" min-width="250" />
@@ -24,9 +30,14 @@
 
     <div v-else v-loading="loading" class="mobile-admin-list">
       <article v-for="row in diskList" :key="row.id" class="mobile-admin-card">
-        <div class="mobile-admin-card__header"><div class="mobile-admin-card__title">{{ row.disk_path }}</div><el-tag size="small">{{ formatStorage(row.size) }}</el-tag></div>
+        <div class="mobile-admin-card__header">
+          <div class="mobile-admin-card__title">{{ row.disk_path }}</div>
+          <el-tag size="small">{{ formatStorage(row.size) }}</el-tag>
+        </div>
         <div class="mobile-admin-card__subtitle">{{ row.data_path }}</div>
-        <div class="mobile-admin-card__meta"><code>{{ row.id }}</code></div>
+        <div class="mobile-admin-card__meta">
+          <code>{{ row.id }}</code>
+        </div>
         <div class="mobile-admin-card__footer">
           <el-button link type="primary" @click="handleEdit(row)">{{ t('admin.users.edit') }}</el-button>
           <el-button link type="danger" @click="handleDelete(row)">{{ t('admin.users.delete') }}</el-button>
@@ -36,7 +47,13 @@
     </div>
 
     <!-- 创建/编辑磁盘对话框 -->
-    <el-dialog v-model="showDialog" :title="dialogTitle" width="600px" :fullscreen="isHandheld" @close="handleDialogClose">
+    <el-dialog
+      v-model="showDialog"
+      :title="dialogTitle"
+      width="600px"
+      :fullscreen="isHandheld"
+      @close="handleDialogClose"
+    >
       <el-form :model="formData" :rules="formRules" ref="formRef" label-width="100px">
         <!-- 输入方式选择 -->
         <el-form-item :label="t('admin.disks.inputMode')" v-if="!isEdit">
@@ -181,15 +198,11 @@
       if (res.code === 200 && res.data) {
         diskList.value = res.data.disks || []
       } else {
-        proxy?.$modal.msg(t('admin.disks.featureDeveloping'))
+        proxy?.$modal.msgError(res.message || t('admin.disks.loadListFailed'))
         diskList.value = []
       }
     } catch (error: any) {
-      if (error.response?.status === 404 || error.message?.includes('404')) {
-        proxy?.$modal.msg(t('admin.disks.featureDeveloping'))
-      } else {
-        proxy?.$modal.msgError(t('admin.disks.loadListFailed'))
-      }
+      proxy?.$modal.msgError(error.message || t('admin.disks.loadListFailed'))
       proxy?.$log?.error(error)
     } finally {
       loading.value = false
@@ -306,11 +319,7 @@
             }
           }
         } catch (error: any) {
-          if (error.response?.status === 404 || error.message?.includes('404')) {
-            proxy?.$modal.msg(t('admin.disks.featureDeveloping'))
-          } else {
-            proxy?.$modal.msgError(error.message || t('common.operationFailed'))
-          }
+          proxy?.$modal.msgError(error.message || t('common.operationFailed'))
         } finally {
           submitting.value = false
         }
@@ -331,11 +340,7 @@
           proxy?.$modal.msgError(res.message || t('admin.users.deleteFailed'))
         }
       } catch (error: any) {
-        if (error.response?.status === 404 || error.message?.includes('404')) {
-          proxy?.$modal.msg(t('admin.disks.featureDeveloping'))
-        } else {
-          proxy?.$modal.msgError(error.message || t('admin.users.deleteFailed'))
-        }
+        proxy?.$modal.msgError(error.message || t('admin.users.deleteFailed'))
       }
     } catch (error: any) {
       // 用户取消
