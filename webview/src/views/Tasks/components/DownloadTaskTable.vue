@@ -89,7 +89,14 @@
     </div>
 
     <!-- 移动端：卡片布局 -->
-    <div class="mobile-task-list" v-loading="loading">
+    <MobileInfiniteList
+      v-if="isHandheld"
+      class="mobile-task-list"
+      :loading="loading"
+      :has-more="hasMore"
+      @load-more="$emit('loadMore')"
+      @retry="$emit('loadMore')"
+    >
       <div v-for="row in tasks" :key="row.id" class="mobile-task-item">
         <div class="task-item-header">
           <div class="task-item-info">
@@ -158,13 +165,13 @@
           </div>
         </div>
       </div>
-    </div>
+    </MobileInfiniteList>
 
     <el-empty v-if="tasks.length === 0 && !loading" :description="t('tasks.noDownloadTasks')" />
 
     <!-- 分页 -->
     <pagination
-      v-if="(props.total || 0) > 0"
+      v-if="!isHandheld && (props.total || 0) > 0"
       v-model:page="currentPage"
       v-model:limit="pageSize"
       :total="props.total || 0"
@@ -178,9 +185,12 @@
 <script setup lang="ts">
   import { formatSize, formatDate, formatSpeed } from '@/utils'
   import { useI18n } from '@/composables'
+  import { useResponsive } from '@/composables'
+  import MobileInfiniteList from '@/components/mobile/MobileInfiniteList.vue'
   import type { OfflineDownloadTask } from '@/api/download'
 
   const { t } = useI18n()
+  const { isHandheld } = useResponsive()
 
   const props = defineProps<{
     tasks: OfflineDownloadTask[]
@@ -188,6 +198,7 @@
     currentPage?: number
     pageSize?: number
     total?: number
+    hasMore?: boolean
   }>()
 
   const emit = defineEmits<{
@@ -196,6 +207,7 @@
     cancel: [taskId: string]
     delete: [taskId: string]
     pagination: [data: { page: number; limit: number }]
+    loadMore: []
   }>()
 
   const currentPage = computed({
@@ -466,7 +478,7 @@
   }
 
   /* 移动端响应式 */
-  @media (max-width: 1024px) {
+  @media (max-width: 767px) {
     .desktop-table {
       display: none !important;
     }
@@ -520,7 +532,7 @@
     justify-content: center;
   }
 
-  @media (max-width: 1024px) {
+  @media (max-width: 767px) {
     .pagination {
       padding: 12px;
     }

@@ -47,7 +47,7 @@ export function useFileList() {
     return name
   }
 
-  const loadFileList = async () => {
+  const loadFileList = async (append = false) => {
     loading.value = true
     try {
       const res = await getFileList({
@@ -59,7 +59,14 @@ export function useFileList() {
       })
 
       if (res.code === 200) {
-        fileListData.value = res.data
+        fileListData.value = append
+          ? {
+              ...res.data,
+              breadcrumbs: fileListData.value.breadcrumbs,
+              folders: [...fileListData.value.folders, ...res.data.folders],
+              files: [...fileListData.value.files, ...res.data.files]
+            }
+          : res.data
 
         currentDirectoryId.value = res.data.current_directory_id
 

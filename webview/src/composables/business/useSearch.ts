@@ -22,7 +22,7 @@ export function useSearch<T>(
 
   const searchKeyword = ref('')
   const isSearching = ref(false)
-  const searchResults = ref<T[]>([])
+  const searchResults = ref<T[]>([]) as Ref<T[]>
   const total = ref(0)
   const currentPage = ref(1)
   const pageSize = ref(20)
@@ -88,7 +88,7 @@ export function useSearch<T>(
   }
 
   // 执行搜索
-  const performSearch = async (keyword: string, pageNum: number = 1, pageSizeNum: number = 20) => {
+  const performSearch = async (keyword: string, pageNum: number = 1, pageSizeNum: number = 20, append = false) => {
     if (!keyword.trim()) {
       // 如果关键词为空，清空搜索结果
       clearSearchResults()
@@ -114,7 +114,8 @@ export function useSearch<T>(
       const res = await searchApi(params)
 
       if (res.code === 200 && res.data) {
-        searchResults.value = transformResult(res.data.files)
+        const nextResults = transformResult(res.data.files)
+        searchResults.value = append ? [...searchResults.value, ...nextResults] : nextResults
         total.value = res.data.total
         currentPage.value = pageNum
         pageSize.value = pageSizeNum

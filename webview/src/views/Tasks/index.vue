@@ -10,6 +10,7 @@
           :current-page="uploadCurrentPage"
           :page-size="uploadPageSize"
           :total="uploadTotal"
+          :has-more="uploadHasMore"
           @pause="pauseUpload"
           @resume="resumeUpload"
           @cancel="cancelUpload"
@@ -18,6 +19,7 @@
           @view-expired="showExpiredDialog = true"
           @clear-all="clearAllUploadTasks"
           @pagination="handleUploadPagination"
+          @load-more="loadMoreUploadTasks"
         />
         <ExpiredTasksDialog v-model="showExpiredDialog" @refresh="handleExpiredRefresh" />
       </el-tab-pane>
@@ -29,11 +31,13 @@
           :current-page="downloadCurrentPage"
           :page-size="downloadPageSize"
           :total="downloadTotal"
+          :has-more="downloadHasMore"
           @pause="pauseDownloadTask"
           @resume="resumeDownloadTask"
           @cancel="cancelDownload"
           @delete="deleteDownloadTask"
           @pagination="handleDownloadPagination"
+          @load-more="loadMoreDownloadTasks"
         />
       </el-tab-pane>
     </el-tabs>
@@ -76,6 +80,7 @@
     currentPage: uploadCurrentPage,
     pageSize: uploadPageSize,
     total: uploadTotal,
+    hasMore: uploadHasMore,
     loadUploadTasks,
     getExpiredTaskCount,
     pauseUpload,
@@ -84,7 +89,8 @@
     deleteUpload,
     retryFinalize,
     clearAllUploadTasks,
-    handlePagination: handleUploadPagination
+    handlePagination: handleUploadPagination,
+    loadMore: loadMoreUploadTasks
   } = useUploadTasks()
 
   const showExpiredDialog = ref(false)
@@ -101,7 +107,10 @@
     currentPage: downloadCurrentPage,
     pageSize: downloadPageSize,
     total: downloadTotal,
+    hasMore: downloadHasMore,
     loadDownloadTasks,
+    loadMore: loadMoreDownloadTasks,
+    refreshDownloadTasks,
     cancelDownload,
     deleteDownloadTask,
     pauseDownloadTask,
@@ -146,7 +155,7 @@
     refreshTimer = window.setInterval(() => {
       // 自动刷新时不显示loading，保持当前分页
       if (activeTab.value === 'download') {
-        loadDownloadTasks(false, downloadCurrentPage.value, downloadPageSize.value)
+        refreshDownloadTasks(false)
       }
     }, 3000)
   })
@@ -167,6 +176,46 @@
 <style scoped>
   .tasks-page {
     height: 100%;
+  }
+
+  @media (max-width: 767px) {
+    .tasks-page {
+      min-height: 100%;
+      padding: 12px;
+      background: var(--bg-color);
+    }
+
+    .task-tabs :deep(.el-tabs__header) {
+      margin: 0 0 12px;
+      padding: 4px;
+      border-radius: 16px;
+      background: var(--border-light);
+    }
+
+    .task-tabs :deep(.el-tabs__nav-wrap::after),
+    .task-tabs :deep(.el-tabs__active-bar) {
+      display: none;
+    }
+
+    .task-tabs :deep(.el-tabs__nav) {
+      width: 100%;
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+    }
+
+    .task-tabs :deep(.el-tabs__item) {
+      min-height: 42px;
+      padding: 0 12px;
+      border-radius: 13px;
+      justify-content: center;
+      transition: background-color 180ms ease, color 180ms ease, box-shadow 180ms ease;
+    }
+
+    .task-tabs :deep(.el-tabs__item.is-active) {
+      color: var(--primary-color);
+      background: var(--card-bg);
+      box-shadow: 0 4px 14px rgba(15, 23, 42, 0.08);
+    }
   }
 
   .task-tabs {

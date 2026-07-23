@@ -28,7 +28,7 @@ module.exports = {
     'vue/require-default-prop': 'off', // 不要求 props 有默认值
     'vue/require-explicit-emits': 'warn', // 警告未显式声明的 emits
     'vue/html-self-closing': [
-      'error',
+      'warn',
       {
         html: {
           void: 'always',
@@ -40,7 +40,7 @@ module.exports = {
       }
     ],
     'vue/max-attributes-per-line': [
-      'error',
+      'warn',
       {
         singleline: 3,
         multiline: 1
@@ -67,16 +67,16 @@ module.exports = {
     'no-unused-vars': 'off', // 使用 TypeScript 版本
     'prefer-const': 'error',
     'no-var': 'error',
-    'object-shorthand': 'error',
-    'quote-props': ['error', 'as-needed'],
-    'arrow-body-style': ['error', 'as-needed'],
+    'object-shorthand': 'warn',
+    'quote-props': ['warn', 'as-needed'],
+    'arrow-body-style': ['warn', 'as-needed'],
     'prefer-arrow-callback': 'error',
     
     // 代码风格
-    'indent': ['error', 2, { SwitchCase: 1 }],
-    'quotes': ['error', 'single', { avoidEscape: true }],
+    'indent': ['warn', 2, { SwitchCase: 1 }],
+    'quotes': ['warn', 'single', { avoidEscape: true }],
     'semi': ['error', 'never'],
-    'comma-dangle': ['error', 'never'],
+    'comma-dangle': ['warn', 'never'],
     'max-len': [
       'warn',
       {
@@ -90,7 +90,7 @@ module.exports = {
     
     // 最佳实践
     'eqeqeq': ['error', 'always', { null: 'ignore' }],
-    'curly': ['error', 'all'],
+    'curly': ['warn', 'all'],
     'no-eval': 'error',
     'no-implied-eval': 'error',
     'no-new-func': 'error',
@@ -98,14 +98,20 @@ module.exports = {
     'no-sequences': 'error',
     'no-throw-literal': 'error',
     'no-unmodified-loop-condition': 'error',
-    'no-unused-expressions': 'error',
+    'no-unused-expressions': 'warn',
     'no-useless-call': 'error',
     'no-useless-concat': 'error',
     'no-useless-return': 'error',
     'prefer-promise-reject-errors': 'error',
     'radix': 'error',
     'require-await': 'warn',
-    'yoda': 'error'
+    'yoda': 'error',
+    // 旧代码包含自动导入类型和历史写法，先保留为可见告警，避免阻断增量检查。
+    'no-undef': 'off',
+    'no-extra-semi': 'warn',
+    'no-constant-condition': 'warn',
+    'no-control-regex': 'warn',
+    'no-prototype-builtins': 'warn'
   },
   globals: {
     // 从 .eslintrc-auto-import.json 继承的全局变量

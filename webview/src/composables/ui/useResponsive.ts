@@ -1,3 +1,5 @@
+import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
+
 /**
  * 响应式断点配置
  * 参考 Bootstrap 和主流设计系统
@@ -28,6 +30,7 @@ export const LEGACY_BREAKPOINTS = {
 export function useResponsive() {
   const windowWidth = ref(typeof window !== 'undefined' ? window.innerWidth : 1920)
   const windowHeight = ref(typeof window !== 'undefined' ? window.innerHeight : 1080)
+  const hasCoarsePointer = ref(false)
 
   // 设备类型判断（基于新断点系统）
   const isXs = computed(() => windowWidth.value < BREAKPOINTS.xs)
@@ -42,12 +45,17 @@ export function useResponsive() {
   const isTablet = computed(() => windowWidth.value >= BREAKPOINTS.md && windowWidth.value < BREAKPOINTS.lg) // 768px - 991px
   const isPhone = computed(() => windowWidth.value < BREAKPOINTS.xs) // < 480px
   const isDesktop = computed(() => windowWidth.value >= BREAKPOINTS.lg) // >= 992px
+  const isHandheld = computed(() => windowWidth.value < BREAKPOINTS.md) // < 768px，使用手机 APP 壳层
+  const isCompactDesktop = computed(
+    () => windowWidth.value >= BREAKPOINTS.md && windowWidth.value < BREAKPOINTS.lg
+  ) // 768px - 991px，使用紧凑桌面布局
 
   // 处理窗口大小变化
   const handleResize = () => {
     if (typeof window !== 'undefined') {
       windowWidth.value = window.innerWidth
       windowHeight.value = window.innerHeight
+      hasCoarsePointer.value = window.matchMedia('(pointer: coarse)').matches
     }
   }
 
@@ -81,6 +89,9 @@ export function useResponsive() {
     isTablet,
     isPhone,
     isDesktop,
+    isHandheld,
+    isCompactDesktop,
+    hasCoarsePointer,
     BREAKPOINTS,
     LEGACY_BREAKPOINTS
   }

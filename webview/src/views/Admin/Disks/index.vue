@@ -5,7 +5,7 @@
       <el-button icon="Refresh" @click="loadDiskList">{{ t('common.refresh') }}</el-button>
     </div>
 
-    <el-table :data="diskList" v-loading="loading" class="admin-table" :empty-text="t('admin.disks.noDisks')">
+    <el-table v-if="!isHandheld" :data="diskList" v-loading="loading" class="admin-table" :empty-text="t('admin.disks.noDisks')">
       <el-table-column prop="id" :label="t('admin.disks.diskId')" min-width="200" />
       <el-table-column prop="disk_path" :label="t('admin.disks.diskPath')" min-width="250" />
       <el-table-column prop="data_path" :label="t('admin.disks.dataPath')" min-width="250" />
@@ -22,8 +22,21 @@
       </el-table-column>
     </el-table>
 
+    <div v-else v-loading="loading" class="mobile-admin-list">
+      <article v-for="row in diskList" :key="row.id" class="mobile-admin-card">
+        <div class="mobile-admin-card__header"><div class="mobile-admin-card__title">{{ row.disk_path }}</div><el-tag size="small">{{ formatStorage(row.size) }}</el-tag></div>
+        <div class="mobile-admin-card__subtitle">{{ row.data_path }}</div>
+        <div class="mobile-admin-card__meta"><code>{{ row.id }}</code></div>
+        <div class="mobile-admin-card__footer">
+          <el-button link type="primary" @click="handleEdit(row)">{{ t('admin.users.edit') }}</el-button>
+          <el-button link type="danger" @click="handleDelete(row)">{{ t('admin.users.delete') }}</el-button>
+        </div>
+      </article>
+      <el-empty v-if="!loading && diskList.length === 0" :description="t('admin.disks.noDisks')" />
+    </div>
+
     <!-- 创建/编辑磁盘对话框 -->
-    <el-dialog v-model="showDialog" :title="dialogTitle" width="600px" @close="handleDialogClose">
+    <el-dialog v-model="showDialog" :title="dialogTitle" width="600px" :fullscreen="isHandheld" @close="handleDialogClose">
       <el-form :model="formData" :rules="formRules" ref="formRef" label-width="100px">
         <!-- 输入方式选择 -->
         <el-form-item :label="t('admin.disks.inputMode')" v-if="!isEdit">
@@ -105,10 +118,11 @@
     type ScannedDiskInfo
   } from '@/api/admin'
   import { formatSize, bytesToGB } from '@/utils'
-  import { useI18n } from '@/composables'
+  import { useI18n, useMobileLayerHistory, useResponsive } from '@/composables'
 
   const { proxy } = getCurrentInstance() as ComponentInternalInstance
   const { t } = useI18n()
+  const { isHandheld } = useResponsive()
 
   const loading = ref(false)
   const submitting = ref(false)
@@ -116,6 +130,7 @@
   const diskList = ref<AdminDisk[]>([])
   const scannedDisks = ref<ScannedDiskInfo[]>([])
   const showDialog = ref(false)
+  useMobileLayerHistory(showDialog, 'admin-disk-editor', isHandheld)
   const isEdit = ref(false)
   const inputMode = ref<'manual' | 'scan'>('manual')
   const formRef = ref()

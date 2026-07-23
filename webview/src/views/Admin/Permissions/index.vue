@@ -13,6 +13,7 @@
     </div>
 
     <el-table
+      v-if="!isHandheld"
       :data="powerList"
       v-loading="loading"
       class="admin-table"
@@ -49,6 +50,22 @@
       </el-table-column>
     </el-table>
 
+    <div v-else v-loading="loading" class="mobile-admin-list">
+      <article v-for="row in powerList" :key="row.id" class="mobile-admin-card">
+        <div class="mobile-admin-card__header">
+          <el-checkbox :model-value="isPowerSelected(row)" @change="value => togglePowerSelection(row, !!value)" />
+          <div class="mobile-admin-card__title">{{ getPermissionName(row.characteristic, row.name) }}</div>
+        </div>
+        <div class="mobile-admin-card__subtitle">{{ getPermissionDescription(row.characteristic, row.description) }}</div>
+        <div class="mobile-admin-card__meta"><code>{{ row.characteristic }}</code></div>
+        <div class="mobile-admin-card__footer">
+          <el-button link type="primary" @click="handleEdit(row)">{{ t('admin.users.edit') }}</el-button>
+          <el-button link type="danger" @click="handleDelete(row)">{{ t('admin.users.delete') }}</el-button>
+        </div>
+      </article>
+      <el-empty v-if="!loading && powerList.length === 0" :description="t('admin.permissions.noPermissions')" />
+    </div>
+
     <!-- 分页组件 -->
     <Pagination
       v-model:page="pagination.page"
@@ -58,7 +75,7 @@
     />
 
     <!-- 创建/编辑权限对话框 -->
-    <el-dialog v-model="showDialog" :title="dialogTitle" :width="dialogWidth" @close="handleDialogClose">
+    <el-dialog v-model="showDialog" :title="dialogTitle" :width="dialogWidth" :fullscreen="isHandheld" @close="handleDialogClose">
       <el-form :model="formData" :rules="formRules" ref="formRef" label-width="100px">
         <el-form-item :label="t('admin.permissions.permissionName')" prop="name">
           <el-input v-model="formData.name" :placeholder="t('admin.permissions.permissionNamePlaceholder')" />
@@ -96,17 +113,18 @@
     type UpdatePowerRequest
   } from '@/api/admin'
   import type { FormRules, FormInstance } from 'element-plus'
-  import { useResponsive, useI18n } from '@/composables'
+  import { useResponsive, useI18n, useMobileLayerHistory } from '@/composables'
   import { getPermissionName, getPermissionDescription } from '@/utils/business/permission'
 
   const { proxy } = getCurrentInstance() as ComponentInternalInstance
-  const { isMobile, isPhone } = useResponsive()
+  const { isMobile, isPhone, isHandheld } = useResponsive()
   const { t } = useI18n()
 
   const loading = ref(false)
   const powerList = ref<AdminPower[]>([])
   const selectedRows = ref<AdminPower[]>([])
   const showDialog = ref(false)
+  useMobileLayerHistory(showDialog, 'admin-permission-editor', isHandheld)
   const dialogTitle = ref('')
   const formRef = ref<FormInstance>()
   const isEdit = ref(false)
@@ -115,6 +133,13 @@
     description: '',
     characteristic: ''
   })
+
+  const isPowerSelected = (row: AdminPower) => selectedRows.value.some(item => item.id === row.id)
+  const togglePowerSelection = (row: AdminPower, selected: boolean) => {
+    selectedRows.value = selected
+      ? [...selectedRows.value.filter(item => item.id !== row.id), row]
+      : selectedRows.value.filter(item => item.id !== row.id)
+  }
 
   // 分页数据
   const pagination = reactive({

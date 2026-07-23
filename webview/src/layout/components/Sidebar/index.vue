@@ -1,7 +1,7 @@
 <template>
   <!-- 移动端抽屉式侧边栏 -->
   <el-drawer
-    v-if="isMobile"
+    v-if="isHandheld"
     v-model="sidebarVisible"
     :with-header="false"
     size="280px"
@@ -36,25 +36,25 @@
 
   <!-- 桌面端固定侧边栏（水平布局时隐藏，顶部混合-头部优先时也隐藏，因为菜单在 Header 中） -->
   <el-aside
-    v-if="!isMobile && layoutStore.layoutMode !== 'horizontal' && layoutStore.layoutMode !== 'top-hybrid-header-first'"
-    :width="isCollapsed || props.mode === 'icon' ? '64px' : `${sidebarWidth}px`"
+    v-if="!isHandheld && layoutStore.layoutMode !== 'horizontal' && layoutStore.layoutMode !== 'top-hybrid-header-first'"
+    :width="isCollapsed || isCompactDesktop || props.mode === 'icon' ? '64px' : `${sidebarWidth}px`"
     class="layout-aside"
-    :class="[`sider-mode-${props.mode}`, { 'is-collapsed': isCollapsed }]"
+    :class="[`sider-mode-${props.mode}`, { 'is-collapsed': isCollapsed || isCompactDesktop }]"
   >
     <el-menu
       :default-active="currentRoute"
       router
       @select="handleMenuSelect"
       class="premium-menu"
-      :collapse="isCollapsed || props.mode === 'icon'"
+      :collapse="isCollapsed || isCompactDesktop || props.mode === 'icon'"
       :collapse-transition="false"
     >
       <template v-for="group in menuGroups" :key="group.title || 'group'">
-        <div v-if="group.title && props.mode !== 'icon' && !isCollapsed" class="menu-group-title">
+        <div v-if="group.title && props.mode !== 'icon' && !isCollapsed && !isCompactDesktop" class="menu-group-title">
           {{ group.title }}
         </div>
         <template v-for="item in group.items" :key="item.path || 'item'">
-          <el-tooltip v-if="props.mode === 'icon' || isCollapsed" :content="item.label" placement="right">
+          <el-tooltip v-if="props.mode === 'icon' || isCollapsed || isCompactDesktop" :content="item.label" placement="right">
             <el-menu-item v-if="!item.hidden && item.path" :index="item.path">
               <el-icon><component :is="item.icon" /></el-icon>
             </el-menu-item>
@@ -91,7 +91,7 @@
     showStorageCard: true
   })
 
-  const { isMobile } = useResponsive()
+  const { isHandheld, isCompactDesktop } = useResponsive()
   const layoutStore = useLayoutStore()
   const { menuGroups, currentRoute } = useMenu()
 
@@ -108,7 +108,7 @@
   const handleMenuSelect = () => {
     // Router handles navigation automatically
     // 移动端点击菜单后关闭侧边栏（使用 nextTick 确保路由跳转完成后再关闭）
-    if (isMobile.value) {
+    if (isHandheld.value) {
       nextTick(() => {
         closeSidebar()
       })
@@ -132,7 +132,7 @@
 
   // 点击外部关闭侧边栏（参考 plus-ui）
   const handleClickOutside = (event: MouseEvent) => {
-    if (isMobile.value && sidebarVisible.value) {
+    if (isHandheld.value && sidebarVisible.value) {
       const target = event.target as HTMLElement
       // 检查点击是否在侧边栏外部
       const drawer = document.querySelector('.sidebar-drawer')
@@ -144,7 +144,7 @@
 
   // 监听窗口大小变化，自动调整侧边栏状态
   watch(
-    isMobile,
+    isHandheld,
     newVal => {
       if (newVal) {
         // 切换到移动端时，如果侧边栏打开则关闭
@@ -161,7 +161,7 @@
 
   onMounted(() => {
     // 移动端默认隐藏侧边栏
-    if (isMobile.value) {
+    if (isHandheld.value) {
       sidebarVisible.value = false
     }
 

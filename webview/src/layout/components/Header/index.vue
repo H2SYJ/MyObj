@@ -2,7 +2,14 @@
   <el-header class="layout-header glass-panel">
     <div class="header-left">
       <!-- 移动端汉堡菜单按钮（非水平布局时显示） -->
-      <el-button v-if="!showHorizontalMenu" class="mobile-menu-btn" icon="Menu" circle text @click="toggleSidebar" />
+      <el-button
+        v-if="isHandheld && !showHorizontalMenu"
+        class="mobile-menu-btn"
+        icon="Menu"
+        circle
+        text
+        @click="toggleSidebar"
+      />
       <!-- 桌面端 Logo -->
       <div class="logo-wrapper desktop-logo">
         <el-image :src="logoImage" alt="MyObj Logo" class="logo-image" fit="contain" :lazy="false" />
@@ -144,7 +151,7 @@
 </template>
 
 <script setup lang="ts">
-  import { useTheme, useSearchHistory, useI18n } from '@/composables'
+  import { useTheme, useSearchHistory, useI18n, useResponsive } from '@/composables'
   import { useFullscreen } from '@vueuse/core'
   import logoImage from '@/assets/images/LOGO.png'
 
@@ -170,6 +177,7 @@
     return mode === 'horizontal' || mode === 'top-hybrid-header-first' || mode === 'vertical-hybrid-header-first'
   })
   const { isDark, toggleTheme } = useTheme()
+  const { isHandheld } = useResponsive()
   const { searchHistory, addHistory, clearHistory, removeHistory } = useSearchHistory()
   const { isFullscreen, toggle: toggleFullscreen } = useFullscreen()
 

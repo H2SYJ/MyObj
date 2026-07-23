@@ -160,10 +160,18 @@
       <div v-if="filteredFiles.length === 0 && !loading" class="mobile-empty-state">
         <el-empty :description="t('square.noPublicFiles')" />
       </div>
+      <MobileInfiniteList
+        v-if="filteredFiles.length > 0"
+        class="mobile-load-state"
+        :loading="loading || isSearching"
+        :has-more="filteredFiles.length < total"
+        @load-more="loadNextMobilePage"
+        @retry="loadNextMobilePage"
+      />
     </div>
 
     <!-- 分页 -->
-    <div class="pagination">
+    <div v-if="!isMobile" class="pagination">
       <pagination
         v-model:page="currentPage"
         v-model:limit="pageSize"
@@ -186,13 +194,14 @@
   import { getFileIcon } from '@/utils/file/fileIcon'
   import { useFileDownload } from '@/composables/business/useFileDownload'
   import { useI18n } from '@/composables/core/useI18n'
+  import { MobileInfiniteList } from '@/components/mobile'
 
   const { proxy } = getCurrentInstance() as ComponentInternalInstance
   const route = useRoute()
   const { t } = useI18n()
 
   // 使用响应式检测 composable
-  const { isMobile } = useResponsive()
+  const { isHandheld: isMobile } = useResponsive()
 
   // 响应式数据
   const viewMode = ref<'grid' | 'list'>(isMobile.value ? 'list' : 'grid')
@@ -226,6 +235,7 @@
 
   // 兼容现有代码的变量
   const searchKeyword = search.searchKeyword
+  const isSearching = search.isSearching
   const currentPage = search.currentPage
   const pageSize = search.pageSize
   const total = search.total
@@ -255,7 +265,7 @@
   }
 
   // 搜索处理（使用后端搜索 API）
-  const performSearch = async (keyword: string, pageNum: number = 1, pageSizeNum: number = 20) => {
+  const performSearch = async (keyword: string, pageNum: number = 1, pageSizeNum: number = 20, append = false) => {
     if (!keyword.trim()) {
       // 如果关键词为空，切换到正常模式
       isSearchMode.value = false
@@ -265,7 +275,7 @@
     }
 
     isSearchMode.value = true
-    await search.performSearch(keyword, pageNum, pageSizeNum)
+    await search.performSearch(keyword, pageNum, pageSizeNum, append)
   }
 
   // 筛选处理
@@ -332,7 +342,7 @@
   }
 
   // 加载公开文件列表
-  const loadPublicFiles = async () => {
+  const loadPublicFiles = async (append = false) => {
     // 如果正在搜索，不显示加载状态（避免冲突）
     if (!isSearchMode.value) {
       loading.value = true
@@ -353,7 +363,8 @@
 
       if (response.code === 200 && response.data) {
         // 确保 files 是数组，如果为 null 或 undefined 则使用空数组
-        publicFiles.value = response.data.files || []
+        const nextFiles = response.data.files || []
+        publicFiles.value = append ? [...publicFiles.value, ...nextFiles] : nextFiles
         total.value = response.data.total || 0
       } else {
         proxy?.$modal.msgError(response.message || t('square.loadFailed'))
@@ -367,6 +378,17 @@
       if (!isSearchMode.value) {
         loading.value = false
       }
+    }
+  }
+
+  const loadNextMobilePage = async () => {
+    if (!isMobile.value || loading.value || isSearching.value || filteredFiles.value.length >= total.value) return
+    const nextPage = currentPage.value + 1
+    if (isSearchMode.value && searchKeyword.value.trim()) {
+      await performSearch(searchKeyword.value, nextPage, pageSize.value, true)
+    } else {
+      currentPage.value = nextPage
+      await loadPublicFiles(true)
     }
   }
 
@@ -632,19 +654,23 @@
   }
 
   /* 移动端响应式 - 组件特定样式 */
-  @media (max-width: 1024px) {
+  @media (max-width: 767px) {
     .square-container {
       border-radius: 0;
     }
 
     .toolbar {
       padding: 12px 16px;
-      gap: 12px;
+      flex-direction: row;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
     }
 
     .breadcrumb {
-      flex: 1 1 100%;
-      order: 1;
+      flex: 1 1 auto;
+      min-width: 0;
+      order: 0;
     }
 
     .breadcrumb-item {
@@ -656,9 +682,17 @@
     }
 
     .toolbar-actions {
-      flex: 1 1 100%;
-      order: 2;
-      width: 100%;
+      flex: 0 0 auto;
+      order: 0;
+      width: auto;
+      margin-left: auto;
+    }
+
+    .toolbar-actions :deep(.el-button) {
+      width: 44px;
+      min-width: 44px;
+      height: 44px;
+      padding: 0;
     }
 
     .filter-bar {
@@ -758,19 +792,45 @@
       font-size: 11px;
     }
 
-    .toolbar {
+    .toolbar { padding: 10px 12px; }
+  }
+
+  @media (max-width: 767px) {
+    .mobile-file-list {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      align-content: start;
+      gap: 10px;
+      padding: 12px;
+      overflow: visible;
+    }
+    .mobile-file-item {
+      min-width: 0;
+      padding: 14px 10px 12px;
+      border-radius: 18px;
+    }
+    .mobile-item-content {
+      min-height: 156px;
       flex-direction: column;
-      align-items: flex-start;
-      gap: 12px;
+      align-items: stretch;
+      gap: 10px;
     }
-
-    .breadcrumb {
-      width: 100%;
+    .mobile-item-icon {
+      width: 64px;
+      height: 64px;
+      margin: 0 auto;
+      border-radius: 18px;
+      background: color-mix(in srgb, var(--primary-color) 8%, transparent);
     }
-
-    .toolbar-actions {
-      width: 100%;
-    }
+    .mobile-item-info { text-align: center; gap: 5px; }
+    .mobile-item-name-row { justify-content: center; }
+    .mobile-item-name { font-size: 13px; font-weight: 650; }
+    .mobile-item-meta { justify-content: center; gap: 6px; font-size: 10px; }
+    .mobile-item-time { display: none; }
+    .mobile-item-actions { margin-top: auto; }
+    .mobile-download-btn { width: 100%; min-height: 36px; border-radius: 12px; }
+    .mobile-load-state,
+    .mobile-empty-state { grid-column: 1 / -1; }
   }
 
   /* 移动端卡片列表布局 */

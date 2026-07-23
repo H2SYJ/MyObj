@@ -466,7 +466,125 @@
   display: block !important;
 }
 
-@media (max-width: 1024px) {
+/* 手机 APP 壳层下的统一控件与页面状态 */
+@media (max-width: 767px) {
+  html,
+  body,
+  #app {
+    width: 100%;
+    min-height: 100%;
+    overscroll-behavior: none;
+  }
+
+  button,
+  [role='button'],
+  .el-button,
+  .el-switch {
+    touch-action: manipulation;
+  }
+
+  :deep(.el-message-box) {
+    width: calc(100vw - 24px) !important;
+    max-width: 420px !important;
+    border-radius: 20px !important;
+  }
+
+  .el-dialog.is-fullscreen {
+    height: 100vh !important;
+    height: 100dvh !important;
+    display: flex !important;
+    flex-direction: column !important;
+  }
+
+  .el-dialog.is-fullscreen .el-dialog__header {
+    padding-top: calc(14px + env(safe-area-inset-top)) !important;
+  }
+
+  .el-dialog.is-fullscreen .el-dialog__body {
+    flex: 1 !important;
+    min-height: 0 !important;
+    max-height: none !important;
+  }
+
+  .el-dialog.is-fullscreen .el-dialog__footer {
+    padding-bottom: calc(12px + env(safe-area-inset-bottom)) !important;
+  }
+
+  .glass-panel,
+  .glass-panel-sm {
+    backdrop-filter: blur(16px);
+  }
+
+  .mobile-admin-list {
+    display: grid;
+    gap: 12px;
+  }
+
+  .mobile-admin-card {
+    padding: 16px;
+    border: 1px solid var(--border-color);
+    border-radius: 18px;
+    background: var(--card-bg);
+    box-shadow: var(--shadow-sm);
+  }
+
+  .mobile-admin-card__header,
+  .mobile-admin-card__footer,
+  .mobile-admin-card__meta {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+
+  .mobile-admin-card__header {
+    justify-content: space-between;
+  }
+
+  .mobile-admin-card__title {
+    min-width: 0;
+    font-size: 15px;
+    font-weight: 650;
+    color: var(--text-primary);
+    overflow-wrap: anywhere;
+  }
+
+  .mobile-admin-card__subtitle,
+  .mobile-admin-card__meta {
+    margin-top: 8px;
+    color: var(--text-secondary);
+    font-size: 12px;
+    line-height: 1.55;
+    overflow-wrap: anywhere;
+  }
+
+  .mobile-admin-card__meta {
+    flex-wrap: wrap;
+  }
+
+  .mobile-admin-card__footer {
+    justify-content: flex-end;
+    margin-top: 12px;
+    padding-top: 10px;
+    border-top: 1px solid var(--border-light);
+  }
+
+  .mobile-admin-card__footer .el-button {
+    min-height: 44px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    scroll-behavior: auto !important;
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+
+@media (max-width: 767px) {
   .mobile-only {
     display: block !important;
   }

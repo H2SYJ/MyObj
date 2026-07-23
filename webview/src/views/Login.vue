@@ -595,4 +595,19 @@
       font-size: 12px;
     }
   }
+
+  @media (max-width: 767px) {
+    .login-container {
+      min-height: 100vh;
+      min-height: 100dvh;
+      padding-top: env(safe-area-inset-top);
+      padding-bottom: env(safe-area-inset-bottom);
+    }
+
+    .login-form :deep(.el-input__wrapper),
+    .login-button {
+      min-height: 48px;
+      border-radius: 16px;
+    }
+  }
 </style>

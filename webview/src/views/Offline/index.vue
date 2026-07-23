@@ -263,8 +263,15 @@
       </div>
 
       <el-empty v-if="taskList.length === 0 && !loading" :description="t('offline.noDownloads')" />
+      <MobileInfiniteList
+        v-if="isMobile && taskList.length > 0"
+        :loading="loading"
+        :has-more="taskList.length < taskTotal"
+        @load-more="loadNextMobileTaskPage"
+        @retry="loadNextMobileTaskPage"
+      />
       <el-pagination
-        v-if="taskTotal > taskPageSize"
+        v-if="!isMobile && taskTotal > taskPageSize"
         v-model:current-page="taskPage"
         v-model:page-size="taskPageSize"
         :total="taskTotal"
@@ -281,6 +288,7 @@
       v-model="showDownloadDialog"
       :title="t('offline.newDownload')"
       :width="isMobile ? '95%' : '800px'"
+      :fullscreen="isMobile"
       @open="handleDownloadDialogOpen"
       @close="handleDownloadDialogClose"
       :destroy-on-close="true"
@@ -639,13 +647,14 @@
   } from '@/api/download'
   import { getDirectories } from '@/api/file'
   import { formatSize, formatDate, formatSpeed, truncateUrl, getTaskStatusType } from '@/utils'
-  import { useResponsive, useI18n } from '@/composables'
+  import { useResponsive, useI18n, useMobileLayerHistory } from '@/composables'
+  import { MobileInfiniteList } from '@/components/mobile'
 
   const { proxy } = getCurrentInstance() as ComponentInternalInstance
   const { t } = useI18n()
 
   // 使用响应式检测 composable
-  const { isMobile } = useResponsive()
+  const { isHandheld: isMobile } = useResponsive()
 
   const loading = ref(false)
   const creating = ref(false)
@@ -659,6 +668,7 @@
   const batchDeleting = ref(false)
   let syncingTaskSelection = false
   const showDownloadDialog = ref(false) // 统一的下载对话框
+  useMobileLayerHistory(showDownloadDialog, 'offline-create', isMobile)
   let refreshTimer: number | null = null // 支持 setTimeout 和 setInterval
   const loadingTree = ref(false)
   const folderTreeData = ref<any[]>([])
@@ -924,19 +934,21 @@
   }
 
   // 加载任务列表
-  const loadTaskList = async () => {
+  const loadTaskList = async (append = false) => {
     // 智能刷新时不显示 loading，避免频繁闪烁
     // 只在手动刷新或首次加载时显示 loading
     const isManualRefresh = !refreshTimer
-    if (isManualRefresh) {
+    if (isManualRefresh || append) {
       loading.value = true
     }
 
     try {
       // 查询受下载管理器管理的HTTP、种子、磁力和HLS任务，不包含网盘文件下载。
+      const requestPage = append ? taskPage.value : isMobile.value ? 1 : taskPage.value
+      const requestSize = !append && isMobile.value ? taskPageSize.value * taskPage.value : taskPageSize.value
       const res = await getDownloadTaskList({
-        page: taskPage.value,
-        pageSize: taskPageSize.value,
+        page: requestPage,
+        pageSize: requestSize,
         state: -1,
         types: '0,4,5,9'
       })
@@ -946,7 +958,9 @@
 
         // 确保数据更新（即使值相同，也要触发响应式更新）
         // 通过创建新数组来触发 Vue 的响应式更新
-        taskList.value = newTasks.map((task: any) => ({ ...task }))
+        const mergedTasks = append ? [...taskList.value, ...newTasks] : newTasks
+        const uniqueTasks = new Map(mergedTasks.map((task: OfflineDownloadTask) => [task.id, { ...task }]))
+        taskList.value = Array.from(uniqueTasks.values())
         const visibleTaskIDs = new Set(taskList.value.map(task => task.id))
         selectedTaskIds.value = selectedTaskIds.value.filter(taskID => visibleTaskIDs.has(taskID))
         await syncTaskTableSelection()
@@ -979,6 +993,12 @@
         loading.value = false
       }
     }
+  }
+
+  const loadNextMobileTaskPage = async () => {
+    if (!isMobile.value || loading.value || taskList.value.length >= taskTotal.value) return
+    taskPage.value += 1
+    await loadTaskList(true)
   }
 
   // 刷新任务列表

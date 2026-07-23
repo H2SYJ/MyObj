@@ -1,5 +1,19 @@
 <template>
-  <div class="admin-page">
+  <MobilePage v-if="isHandheld && route.path === '/admin'" class="mobile-admin-hub">
+    <div class="admin-hub-card">
+      <router-link v-for="item in adminItems" :key="item.path" :to="item.path" class="admin-hub-item">
+        <span><el-icon><component :is="item.icon" /></el-icon></span>
+        <div><strong>{{ item.title }}</strong><small>{{ item.description }}</small></div>
+        <el-icon><ArrowRight /></el-icon>
+      </router-link>
+    </div>
+  </MobilePage>
+
+  <div v-else-if="isHandheld" class="mobile-admin-content">
+    <component :is="activeAdminComponent" />
+  </div>
+
+  <div v-else class="admin-page">
     <el-card shadow="never" class="admin-header-card">
       <div class="admin-header">
         <div class="header-left">
@@ -41,13 +55,32 @@
   import AdminDisks from './Disks/index.vue'
   import AdminSystem from './System/index.vue'
   import AdminPlugins from './Plugins/index.vue'
-  import { useI18n } from '@/composables'
+  import { MobilePage } from '@/components/mobile'
+  import { useI18n, useResponsive } from '@/composables'
 
   const route = useRoute()
   const router = useRouter()
   const { t } = useI18n()
+  const { isHandheld } = useResponsive()
 
   const activeTab = ref('users')
+  const adminComponents = {
+    users: AdminUsers,
+    groups: AdminGroups,
+    permissions: AdminPermissions,
+    disks: AdminDisks,
+    system: AdminSystem,
+    plugins: AdminPlugins
+  }
+  const activeAdminComponent = computed(() => adminComponents[activeTab.value as keyof typeof adminComponents])
+  const adminItems = [
+    { path: '/admin/users', title: t('route.adminUsers'), description: '账户、状态与用户组', icon: 'User' },
+    { path: '/admin/groups', title: t('route.adminGroups'), description: '容量与权限策略', icon: 'UserFilled' },
+    { path: '/admin/permissions', title: t('route.adminPermissions'), description: '系统权限定义', icon: 'Lock' },
+    { path: '/admin/disks', title: t('route.adminDisks'), description: '存储磁盘与容量', icon: 'Coin' },
+    { path: '/admin/system', title: t('route.adminSystem'), description: '服务与安全配置', icon: 'Setting' },
+    { path: '/admin/plugins', title: t('route.adminPlugins'), description: '插件、权限与审计', icon: 'Box' }
+  ]
 
   // 根据路由设置活动标签
   watch(
@@ -165,4 +198,37 @@
   html.dark .admin-tabs :deep(.el-tabs__item:hover) {
     color: var(--primary-color);
   }
+
+  .mobile-admin-content { min-height: 100%; padding: 12px; }
+  .admin-hub-card {
+    overflow: hidden;
+    border: 1px solid var(--border-light);
+    border-radius: 20px;
+    background: var(--card-bg);
+  }
+  .admin-hub-item {
+    min-height: 72px;
+    padding: 10px 14px;
+    display: grid;
+    grid-template-columns: 42px 1fr 24px;
+    align-items: center;
+    gap: 12px;
+    color: var(--text-primary);
+    text-decoration: none;
+    border-top: 1px solid var(--border-light);
+  }
+  .admin-hub-item:first-child { border-top: 0; }
+  .admin-hub-item:active { background: var(--border-light); }
+  .admin-hub-item > span {
+    width: 42px;
+    height: 42px;
+    display: grid;
+    place-items: center;
+    border-radius: 14px;
+    color: white;
+    background: linear-gradient(135deg, var(--primary-color), var(--secondary-color));
+  }
+  .admin-hub-item > div { min-width: 0; display: flex; flex-direction: column; gap: 4px; }
+  .admin-hub-item strong { font-size: 15px; }
+  .admin-hub-item small { color: var(--text-secondary); font-size: 12px; }
 </style>

@@ -5,6 +5,7 @@
         v-if="visible"
         ref="menuRef"
         class="file-context-menu"
+        :class="{ 'is-handheld': isHandheld }"
         :style="menuStyle"
         role="menu"
         tabindex="-1"
@@ -34,6 +35,7 @@
 
 <script setup lang="ts">
   import type { ComponentPublicInstance, CSSProperties } from 'vue'
+  import { useMobileLayerHistory, useResponsive } from '@/composables'
   import type { ContextMenuItem } from '../types'
 
   const props = defineProps<{
@@ -48,11 +50,16 @@
     action: [key: string]
     close: []
   }>()
+  const { isHandheld } = useResponsive()
+  const opened = computed({ get: () => props.visible, set: value => !value && emit('close') })
+  useMobileLayerHistory(opened, 'file-actions', isHandheld)
 
   const menuRef = ref<HTMLElement>()
   const itemRefs = ref<HTMLElement[]>([])
   const position = reactive({ x: 0, y: 0 })
-  const menuStyle = computed<CSSProperties>(() => ({ left: `${position.x}px`, top: `${position.y}px` }))
+  const menuStyle = computed<CSSProperties>(() =>
+    isHandheld.value ? {} : { left: `${position.x}px`, top: `${position.y}px` }
+  )
 
   const setItemRef = (element: Element | ComponentPublicInstance | null, index: number) => {
     if (element instanceof HTMLElement) itemRefs.value[index] = element
@@ -140,6 +147,24 @@
     backdrop-filter: blur(18px);
   }
 
+  .file-context-menu.is-handheld {
+    left: 12px;
+    right: 12px;
+    top: auto;
+    bottom: calc(12px + env(safe-area-inset-bottom));
+    width: auto;
+    max-height: min(72dvh, 620px);
+    padding: 10px;
+    border-radius: 24px;
+    box-shadow: 0 -18px 48px rgba(15, 23, 42, 0.2);
+  }
+
+  .file-context-menu.is-handheld .context-menu-item {
+    min-height: 48px;
+    border-radius: 13px;
+    padding: 10px 12px;
+  }
+
   .context-menu-title {
     padding: 8px 10px 6px;
     color: var(--el-text-color-secondary);
@@ -203,5 +228,15 @@
   .context-menu-leave-to {
     opacity: 0;
     transform: scale(0.96);
+  }
+
+  @media (max-width: 767px) {
+    .context-menu-enter-active,
+    .context-menu-leave-active {
+      transition: opacity 180ms ease, transform 200ms ease;
+      transform-origin: bottom center;
+    }
+    .context-menu-enter-from,
+    .context-menu-leave-to { transform: translateY(24px); }
   }
 </style>

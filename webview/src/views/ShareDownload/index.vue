@@ -261,10 +261,11 @@
 <style scoped>
   .share-download-page {
     min-height: 100vh;
+    min-height: 100dvh;
     display: flex;
     align-items: center;
     justify-content: center;
-    padding: 20px;
+    padding: calc(20px + env(safe-area-inset-top)) 20px calc(20px + env(safe-area-inset-bottom));
     background: linear-gradient(135deg, var(--primary-color) 0%, var(--secondary-color) 100%);
   }
 
@@ -374,9 +375,18 @@
     margin-bottom: 16px;
   }
 
-  @media (max-width: 768px) {
+  @media (max-width: 767px) {
+    .share-download-page {
+      align-items: flex-start;
+      overflow-y: auto;
+      padding-right: max(12px, env(safe-area-inset-right));
+      padding-left: max(12px, env(safe-area-inset-left));
+    }
+
     .share-container {
-      padding: 24px;
+      min-height: calc(100dvh - env(safe-area-inset-top) - env(safe-area-inset-bottom) - 40px);
+      padding: 24px 18px;
+      border-radius: 24px;
     }
 
     .file-info-card {
@@ -386,6 +396,23 @@
 
     .file-meta {
       align-items: center;
+    }
+
+    .share-header {
+      margin-bottom: 24px;
+    }
+
+    .share-header h1 {
+      font-size: 22px;
+    }
+
+    .password-form-wrapper {
+      margin-top: 24px;
+    }
+
+    :deep(.el-input__wrapper),
+    :deep(.el-button--large) {
+      min-height: 48px;
     }
   }
 

@@ -168,7 +168,14 @@
     </div>
 
     <!-- 移动端：卡片布局 -->
-    <div class="mobile-task-list" v-loading="loading">
+    <MobileInfiniteList
+      v-if="isHandheld"
+      class="mobile-task-list"
+      :loading="loading"
+      :has-more="hasMore"
+      @load-more="$emit('loadMore')"
+      @retry="$emit('loadMore')"
+    >
       <div v-for="row in tasks" :key="row.id" class="mobile-task-item">
         <div class="task-item-header">
           <div class="task-item-info">
@@ -279,13 +286,13 @@
           </div>
         </div>
       </div>
-    </div>
+    </MobileInfiniteList>
 
     <EmptyState v-if="tasks.length === 0 && !loading" type="task" :show-actions="false" compact />
 
     <!-- 分页 -->
     <pagination
-      v-if="(total || 0) > 0"
+      v-if="!isHandheld && (total || 0) > 0"
       v-model:page="currentPage"
       v-model:limit="pageSize"
       :total="total || 0"
@@ -305,10 +312,13 @@
     getUploadStatusType,
     getUploadStatusText
   } from '@/utils'
+  import { useResponsive } from '@/composables'
+  import MobileInfiniteList from '@/components/mobile/MobileInfiniteList.vue'
   import { useI18n } from '@/composables'
   import EmptyState from '@/components/EmptyState/index.vue'
 
   const { t } = useI18n()
+  const { isHandheld } = useResponsive()
 
   const props = defineProps<{
     tasks: any[]
@@ -318,6 +328,7 @@
     currentPage?: number
     pageSize?: number
     total?: number
+    hasMore?: boolean
   }>()
 
   const emit = defineEmits<{
@@ -329,6 +340,7 @@
     'view-expired': []
     'clear-all': []
     pagination: [{ page: number; limit: number }]
+    loadMore: []
   }>()
 
   const clearAllLoading = computed(() => props.cleanLoading)
@@ -654,7 +666,7 @@
   }
 
   /* 移动端响应式 */
-  @media (max-width: 1024px) {
+  @media (max-width: 767px) {
     .desktop-table {
       display: none !important;
     }
@@ -711,7 +723,7 @@
     justify-content: center;
   }
 
-  @media (max-width: 1024px) {
+  @media (max-width: 767px) {
     .pagination {
       padding: 12px;
     }

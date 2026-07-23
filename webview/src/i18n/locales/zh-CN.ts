@@ -7,6 +7,7 @@ export default {
     tasks: '任务中心',
     trash: '回收站',
     square: '文件广场',
+    me: '我的',
     settings: '系统设置',
     collaboration: '协作',
     admin: '系统管理',
@@ -16,6 +17,13 @@ export default {
     adminDisks: '磁盘管理',
     adminSystem: '系统配置',
     adminPlugins: '插件中心'
+  },
+  mobileTab: {
+    files: '文件',
+    offline: '离线',
+    tasks: '任务',
+    square: '广场',
+    me: '我的'
   },
   error: {
     title: '出现错误',
@@ -83,6 +91,7 @@ export default {
     subscriptions: '订阅管理',
     trash: '回收站',
     square: '文件广场',
+    me: '我的',
     settings: '系统设置',
     collaboration: '协作',
     admin: '系统管理',

@@ -4,7 +4,7 @@ import { useAuthStore } from '@/stores/auth'
 import { useAppStore } from '@/stores/app'
 import { useSEO } from '@/composables'
 
-const routes: RouteRecordRaw[] = [
+export const routes: RouteRecordRaw[] = [
   {
     path: '/login',
     name: 'Login',
@@ -28,49 +28,103 @@ const routes: RouteRecordRaw[] = [
         path: '/files',
         name: 'Files',
         component: () => import('@/views/Files/index.vue'),
-        meta: { title: '我的文件', i18nKey: 'route.files' }
+        meta: { title: '我的文件', i18nKey: 'route.files', mobileTab: 'files', mobileSearch: true }
       },
       {
         path: '/shares',
         name: 'Shares',
         component: () => import('@/views/Shares/index.vue'),
-        meta: { title: '我的分享', i18nKey: 'route.shares' }
+        meta: { title: '我的分享', i18nKey: 'route.shares', mobileParent: '/me', hideMobileNav: true }
       },
       {
         path: '/offline',
         name: 'Offline',
         component: () => import('@/views/Offline/index.vue'),
-        meta: { title: '离线下载', i18nKey: 'route.offline' }
+        meta: { title: '离线下载', i18nKey: 'route.offline', mobileTab: 'offline' }
       },
       {
         path: '/subscriptions',
         name: 'Subscriptions',
         component: () => import('@/views/Subscriptions/index.vue'),
-        meta: { title: '订阅管理', i18nKey: 'route.subscriptions' }
+        meta: { title: '订阅管理', i18nKey: 'route.subscriptions', mobileParent: '/me', hideMobileNav: true }
       },
       {
         path: '/tasks',
         name: 'Tasks',
         component: () => import('@/views/Tasks/index.vue'),
-        meta: { title: '任务中心', i18nKey: 'route.tasks' }
+        meta: { title: '任务中心', i18nKey: 'route.tasks', mobileTab: 'tasks' }
       },
       {
         path: '/trash',
         name: 'Trash',
         component: () => import('@/views/Trash/index.vue'),
-        meta: { title: '回收站', i18nKey: 'route.trash' }
+        meta: { title: '回收站', i18nKey: 'route.trash', mobileParent: '/me', hideMobileNav: true }
       },
       {
         path: '/square',
         name: 'Square',
         component: () => import('@/views/Square/index.vue'),
-        meta: { title: '文件广场', i18nKey: 'route.square' }
+        meta: { title: '文件广场', i18nKey: 'route.square', mobileTab: 'square', mobileSearch: true }
+      },
+      {
+        path: '/me',
+        name: 'Me',
+        component: () => import('@/views/Me/index.vue'),
+        meta: { title: '我的', i18nKey: 'route.me', mobileTab: 'me' }
       },
       {
         path: '/settings',
         name: 'Settings',
         component: () => import('@/views/Settings/index.vue'),
-        meta: { title: '系统设置', i18nKey: 'route.settings' }
+        meta: { title: '系统设置', i18nKey: 'route.settings', mobileParent: '/me', hideMobileNav: true }
+      },
+      {
+        path: '/settings/profile',
+        name: 'SettingsProfile',
+        component: () => import('@/views/Settings/index.vue'),
+        meta: {
+          title: '个人信息',
+          mobileTitle: '个人信息',
+          settingSection: 'profile',
+          mobileParent: '/settings',
+          hideMobileNav: true
+        }
+      },
+      {
+        path: '/settings/password',
+        name: 'SettingsPassword',
+        component: () => import('@/views/Settings/index.vue'),
+        meta: {
+          title: '修改密码',
+          mobileTitle: '修改密码',
+          settingSection: 'password',
+          mobileParent: '/settings',
+          hideMobileNav: true
+        }
+      },
+      {
+        path: '/settings/appearance',
+        name: 'SettingsAppearance',
+        component: () => import('@/views/Settings/index.vue'),
+        meta: {
+          title: '外观设置',
+          mobileTitle: '外观设置',
+          settingSection: 'appearance',
+          mobileParent: '/settings',
+          hideMobileNav: true
+        }
+      },
+      {
+        path: '/settings/api-key',
+        name: 'SettingsApiKey',
+        component: () => import('@/views/Settings/index.vue'),
+        meta: {
+          title: 'API Key',
+          mobileTitle: 'API Key',
+          settingSection: 'api-key',
+          mobileParent: '/settings',
+          hideMobileNav: true
+        }
       },
       // 协作功能暂时隐藏
       // {
@@ -83,44 +137,54 @@ const routes: RouteRecordRaw[] = [
         path: '/admin',
         name: 'Admin',
         component: () => import('@/views/Admin/index.vue'),
-        meta: { title: '系统管理', i18nKey: 'route.admin', requiresAdmin: true },
-        redirect: '/admin/users',
+        meta: {
+          title: '系统管理',
+          i18nKey: 'route.admin',
+          requiresAdmin: true,
+          mobileParent: '/me',
+          hideMobileNav: true
+        },
         children: [
           {
             path: 'users',
             name: 'AdminUsers',
             component: () => import('@/views/Admin/Users/index.vue'),
-            meta: { title: '用户管理', i18nKey: 'route.adminUsers' }
+            meta: { title: '用户管理', i18nKey: 'route.adminUsers', mobileParent: '/admin', hideMobileNav: true }
           },
           {
             path: 'groups',
             name: 'AdminGroups',
             component: () => import('@/views/Admin/Groups/index.vue'),
-            meta: { title: '组管理', i18nKey: 'route.adminGroups' }
+            meta: { title: '组管理', i18nKey: 'route.adminGroups', mobileParent: '/admin', hideMobileNav: true }
           },
           {
             path: 'permissions',
             name: 'AdminPermissions',
             component: () => import('@/views/Admin/Permissions/index.vue'),
-            meta: { title: '权限管理', i18nKey: 'route.adminPermissions' }
+            meta: {
+              title: '权限管理',
+              i18nKey: 'route.adminPermissions',
+              mobileParent: '/admin',
+              hideMobileNav: true
+            }
           },
           {
             path: 'disks',
             name: 'AdminDisks',
             component: () => import('@/views/Admin/Disks/index.vue'),
-            meta: { title: '磁盘管理', i18nKey: 'route.adminDisks' }
+            meta: { title: '磁盘管理', i18nKey: 'route.adminDisks', mobileParent: '/admin', hideMobileNav: true }
           },
           {
             path: 'system',
             name: 'AdminSystem',
             component: () => import('@/views/Admin/System/index.vue'),
-            meta: { title: '系统配置', i18nKey: 'route.adminSystem' }
+            meta: { title: '系统配置', i18nKey: 'route.adminSystem', mobileParent: '/admin', hideMobileNav: true }
           },
           {
             path: 'plugins',
             name: 'AdminPlugins',
             component: () => import('@/views/Admin/Plugins/index.vue'),
-            meta: { title: '插件中心', i18nKey: 'route.adminPlugins' }
+            meta: { title: '插件中心', i18nKey: 'route.adminPlugins', mobileParent: '/admin', hideMobileNav: true }
           }
         ]
       }

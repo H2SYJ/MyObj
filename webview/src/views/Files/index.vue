@@ -22,7 +22,7 @@
       @dragleave="handleDragLeave"
       @drop.prevent="handleDrop"
     >
-      <Skeleton v-if="fileListLoading || isSearching" :count="12" :view-mode="viewMode" />
+      <Skeleton v-if="(fileListLoading || isSearching) && entries.length === 0" :count="12" :view-mode="viewMode" />
 
       <FileGrid
         v-else-if="viewMode === 'grid'"
@@ -61,7 +61,7 @@
       </div>
     </div>
 
-    <div v-if="displayPagination.total > 0" class="pagination-wrapper">
+    <div v-if="!isMobile && displayPagination.total > 0" class="pagination-wrapper">
       <pagination
         :page="displayPagination.page"
         :limit="displayPagination.pageSize"
@@ -72,6 +72,14 @@
         class="pagination"
       />
     </div>
+
+    <MobileInfiniteList
+      v-if="isMobile && displayPagination.total > 0"
+      :loading="fileListLoading || isSearching"
+      :has-more="mobileHasMore"
+      @load-more="loadNextMobilePage"
+      @retry="loadNextMobilePage"
+    />
 
     <button
       v-if="isMobile && !mobileSelectionMode && !hasOpenDialog && !contextMenu.visible"
@@ -278,8 +286,8 @@
     UploadFilled,
     View
   } from '@element-plus/icons-vue'
-  import cache from '@/plugins/cache'
-  import { useI18n } from '@/composables'
+  import { useI18n, useResponsive } from '@/composables'
+  import { MobileInfiniteList } from '@/components/mobile'
   import { handleFileUpload, uploadMultipleFiles } from '@/utils/file/upload'
   import { useUserStore } from '@/stores'
   import type { FileItem, FileListResponse } from '@/types'
@@ -296,14 +304,16 @@
   import { useRename } from './composables/useRename'
   import { useMoveFile } from './composables/useMoveFile'
   import { useFileSearch } from './composables/useFileSearch'
+  import { useFileViewMode } from './composables/useFileViewMode'
 
   const { t } = useI18n()
   const { proxy } = getCurrentInstance() as ComponentInternalInstance
   const route = useRoute()
   const router = useRouter()
   const userStore = useUserStore()
-  const storedView = cache.local.get('files.viewMode')
-  const viewMode = ref<'grid' | 'list'>(storedView === 'list' ? 'list' : 'grid')
+  const { isHandheld, hasCoarsePointer } = useResponsive()
+  const isMobile = isHandheld
+  const { viewMode, setViewMode } = useFileViewMode(isMobile)
 
   const {
     fileListData,
@@ -337,6 +347,17 @@
     pageSize: hasSearchKeyword.value ? searchResults.value.page_size : pageSize.value,
     total: displayData.value.total
   }))
+  const mobileHasMore = computed(() => displayData.value.files.length < displayPagination.value.total)
+  const loadNextMobilePage = async () => {
+    if (!isMobile.value || fileListLoading.value || isSearching.value || !mobileHasMore.value) return
+    const nextPage = displayPagination.value.page + 1
+    if (hasSearchKeyword.value) {
+      await performSearch(searchKeyword.value, nextPage, displayPagination.value.pageSize, true)
+    } else {
+      currentPage.value = nextPage
+      await loadFileList(true)
+    }
+  }
   const reloadDisplayData = async () => {
     if (hasSearchKeyword.value) {
       await performSearch(searchKeyword.value, displayPagination.value.page, displayPagination.value.pageSize)
@@ -419,7 +440,6 @@
     useMoveFile(currentPath, selectedFileIds, selectedFolderIds, clearCurrentSelection, reloadDisplayData)
 
   const contentRef = ref<HTMLElement>()
-  const isMobile = ref(false)
   const mobileSelectionMode = ref(false)
   const showUploadEncryptDialog = ref(false)
   const pendingDroppedFiles = ref<File[]>([])
@@ -452,16 +472,6 @@
   const entryName = (entry: FileEntry) =>
     entry.type === 'file' ? entry.file.file_name : entry.folder.name
   const selectionCapabilities = computed(() => getFileSelectionCapabilities(selectedEntries.value))
-
-  const updateDeviceMode = () => {
-    isMobile.value = window.matchMedia('(pointer: coarse)').matches
-    if (!isMobile.value) mobileSelectionMode.value = false
-  }
-
-  const setViewMode = (mode: 'grid' | 'list') => {
-    viewMode.value = mode
-    cache.local.set('files.viewMode', mode)
-  }
 
   const closeContextMenu = () => {
     contextMenu.visible = false
@@ -650,7 +660,7 @@
   }
 
   const handleEntryLongPress = (entry: FileEntry) => {
-    if (!isMobile.value) return
+    if (!isMobile.value || !hasCoarsePointer.value) return
     mobileSelectionMode.value = true
     if (!isSelectedEntry(entry)) setSingle(entry)
     navigator.vibrate?.(25)
@@ -846,8 +856,6 @@
   }
 
   onMounted(() => {
-    updateDeviceMode()
-    window.addEventListener('resize', updateDeviceMode)
     window.addEventListener('keydown', handleGlobalKeydown)
     window.addEventListener('files-search', handleGlobalSearch)
     if (route.query.search && typeof route.query.search === 'string') {
@@ -856,10 +864,25 @@
     }
   })
   onBeforeUnmount(() => {
-    window.removeEventListener('resize', updateDeviceMode)
     window.removeEventListener('keydown', handleGlobalKeydown)
     window.removeEventListener('files-search', handleGlobalSearch)
   })
+  watch(
+    () => route.query.search,
+    value => {
+      const keyword = typeof value === 'string' ? value.trim() : ''
+      if (keyword === searchKeyword.value.trim()) return
+      clearCurrentSelection()
+      if (keyword) {
+        searchKeyword.value = keyword
+        performSearch(keyword, 1, pageSize.value)
+      } else if (hasSearchKeyword.value) {
+        clearSearch()
+        currentPage.value = 1
+        loadFileList()
+      }
+    }
+  )
 </script>
 
 <style scoped>
@@ -930,7 +953,7 @@
   .page-fab {
     position: fixed;
     right: 22px;
-    bottom: calc(24px + env(safe-area-inset-bottom));
+    bottom: calc(78px + env(safe-area-inset-bottom));
     z-index: 1000;
     width: 52px;
     height: 52px;
@@ -946,7 +969,7 @@
     position: fixed;
     left: 12px;
     right: 12px;
-    bottom: calc(12px + env(safe-area-inset-bottom));
+    bottom: calc(74px + env(safe-area-inset-bottom));
     z-index: 1100;
     min-height: 62px;
     display: flex;
@@ -979,7 +1002,7 @@
   .mobile-selection-bar button:disabled {
     opacity: 0.4;
   }
-  @media (max-width: 1024px) {
+  @media (max-width: 767px) {
     .files-page {
       gap: 4px;
     }

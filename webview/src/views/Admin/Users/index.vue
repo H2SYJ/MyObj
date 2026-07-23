@@ -21,7 +21,7 @@
       </div>
     </div>
 
-    <el-table :data="userList" v-loading="loading" class="admin-table" :empty-text="t('admin.users.noUsers')">
+    <el-table v-if="!isHandheld" :data="userList" v-loading="loading" class="admin-table" :empty-text="t('admin.users.noUsers')">
       <el-table-column prop="user_name" :label="t('admin.users.username')" min-width="120" />
       <el-table-column prop="name" :label="t('admin.users.nickname')" min-width="120" />
       <el-table-column prop="email" :label="t('admin.users.email')" min-width="180" />
@@ -63,6 +63,33 @@
       </el-table-column>
     </el-table>
 
+    <div v-else v-loading="loading" class="mobile-admin-list">
+      <article v-for="row in userList" :key="row.id" class="mobile-admin-card">
+        <div class="mobile-admin-card__header">
+          <div class="mobile-admin-card__title">{{ row.name || row.user_name }}</div>
+          <el-switch
+            v-model="row.state"
+            :active-value="0"
+            :inactive-value="1"
+            :disabled="row.group_id === 1"
+            @change="handleStatusChange(row)"
+          />
+        </div>
+        <div class="mobile-admin-card__subtitle">@{{ row.user_name }}</div>
+        <div class="mobile-admin-card__meta">
+          <el-tag size="small">{{ row.group_name || t('admin.users.userGroup') + row.group_id }}</el-tag>
+          <span>{{ formatStorage(row.space) }}</span>
+          <span v-if="row.email">{{ row.email }}</span>
+          <span v-if="row.phone">{{ row.phone }}</span>
+        </div>
+        <div v-if="row.group_id !== 1" class="mobile-admin-card__footer">
+          <el-button link type="primary" @click="handleEdit(row)">{{ t('admin.users.edit') }}</el-button>
+          <el-button link type="danger" @click="handleDelete(row)">{{ t('admin.users.delete') }}</el-button>
+        </div>
+      </article>
+      <el-empty v-if="!loading && userList.length === 0" :description="t('admin.users.noUsers')" />
+    </div>
+
     <el-pagination
       v-model:current-page="pagination.page"
       v-model:page-size="pagination.pageSize"
@@ -75,7 +102,7 @@
     />
 
     <!-- 创建/编辑用户对话框 -->
-    <el-dialog v-model="showDialog" :title="dialogTitle" width="600px" @close="handleDialogClose">
+    <el-dialog v-model="showDialog" :title="dialogTitle" width="600px" :fullscreen="isHandheld" @close="handleDialogClose">
       <el-form :model="formData" :rules="formRules" ref="formRef" label-width="100px">
         <el-form-item :label="t('admin.users.username')" prop="user_name">
           <el-input v-model="formData.user_name" :disabled="isEdit" />
@@ -131,11 +158,12 @@
   } from '@/api/admin'
   import { formatSize, bytesToGB, GBToBytes } from '@/utils'
   import type { FormRules } from 'element-plus'
-  import { useI18n } from '@/composables'
+  import { useI18n, useMobileLayerHistory, useResponsive } from '@/composables'
   import { useUserStore } from '@/stores'
 
   const { proxy } = getCurrentInstance() as ComponentInternalInstance
   const { t } = useI18n()
+  const { isHandheld } = useResponsive()
   const userStore = useUserStore()
 
   const loading = ref(false)
@@ -144,6 +172,7 @@
   const groupList = ref<AdminGroup[]>([])
   const searchKeyword = ref('')
   const showDialog = ref(false)
+  useMobileLayerHistory(showDialog, 'admin-user-editor', isHandheld)
   const isEdit = ref(false)
   const formRef = ref()
   const formData = reactive<CreateUserRequest & { id?: string }>({

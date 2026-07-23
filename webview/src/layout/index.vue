@@ -1,5 +1,6 @@
 <template>
-  <div class="layout-container">
+  <MobileLayout v-if="isHandheld" />
+  <div v-else class="layout-container">
     <!-- 背景图案 -->
     <BackgroundPattern :pattern="backgroundPattern" />
 
@@ -93,9 +94,12 @@
 
 <script setup lang="ts">
   import { Header, Sidebar, AppMain, TagsView } from './components'
+  import MobileLayout from './mobile/index.vue'
+  import { useResponsive } from '@/composables'
   import { useLayoutStore } from '@/stores'
 
   const layoutStore = useLayoutStore()
+  const { isHandheld } = useResponsive()
 
   // 初始化布局配置
   onMounted(() => {

@@ -21,6 +21,12 @@
     flex: 1;
   }
 
+  @media (min-width: 768px) and (max-width: 991px) {
+    .layout-main {
+      padding: 16px;
+    }
+  }
+
   .fade-scale-enter-active,
   .fade-scale-leave-active {
     transition:

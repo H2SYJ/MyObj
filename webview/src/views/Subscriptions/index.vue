@@ -1,6 +1,6 @@
 <template>
   <div class="subscriptions-page">
-    <el-card shadow="never">
+    <el-card shadow="never" class="subscriptions-header-card">
       <div class="header">
         <div>
           <h2>订阅管理</h2>
@@ -12,7 +12,7 @@
         </div>
       </div>
     </el-card>
-    <el-card shadow="never">
+    <el-card v-if="!isHandheld" shadow="never">
       <el-table :data="subscriptions" v-loading="loading">
         <el-table-column prop="name" label="订阅" min-width="180" />
         <el-table-column label="插件" min-width="160"
@@ -48,7 +48,52 @@
       </el-table>
     </el-card>
 
-    <el-dialog v-model="dialogVisible" :title="editingId ? '编辑订阅' : '新建订阅'" width="640px">
+    <div v-else class="mobile-subscription-list" v-loading="loading">
+      <article v-for="subscription in subscriptions" :key="subscription.id" class="mobile-subscription-card">
+        <div class="subscription-card-head">
+          <div>
+            <strong>{{ subscription.name }}</strong>
+            <span>{{ pluginName(subscription.plugin_id) }} v{{ subscription.plugin_version }}</span>
+          </div>
+          <el-switch
+            :model-value="subscription.enabled"
+            :disabled="subscription.status === 'needs_permission'"
+            @change="value => toggle(subscription, !!value)"
+          />
+        </div>
+        <div class="subscription-meta">
+          <span><el-icon><Clock /></el-icon>{{ subscription.schedule_time }}</span>
+          <span><el-icon><Folder /></el-icon>{{ subscription.save_path }}</span>
+        </div>
+        <div class="subscription-card-foot">
+          <el-tag :type="statusType(subscription.status)" size="small">{{ subscription.status }}</el-tag>
+          <div>
+            <el-button type="primary" link @click="run(subscription)">立即运行</el-button>
+            <el-button link @click="openMobileActions(subscription)">更多</el-button>
+          </div>
+        </div>
+      </article>
+      <el-empty v-if="!loading && subscriptions.length === 0" description="暂无订阅" />
+    </div>
+
+    <button v-if="isHandheld" type="button" class="subscription-fab" aria-label="新建订阅" @click="openCreate">
+      <el-icon><Plus /></el-icon>
+    </button>
+
+    <MobileActionSheet
+      v-model="mobileActionsVisible"
+      title="订阅操作"
+      :actions="mobileActions"
+      history-key="subscription-actions"
+      @select="handleMobileAction"
+    />
+
+    <el-dialog
+      v-model="dialogVisible"
+      :title="editingId ? '编辑订阅' : '新建订阅'"
+      width="640px"
+      :fullscreen="isHandheld"
+    >
       <el-form label-width="120px">
         <el-form-item label="名称"><el-input v-model="form.name" /></el-form-item>
         <el-form-item label="插件">
@@ -121,10 +166,14 @@
       >
     </el-dialog>
 
-    <el-drawer v-model="historyVisible" :title="`${historyTarget?.name || ''} · 执行与条目`" size="75%">
+    <el-drawer
+      v-model="historyVisible"
+      :title="`${historyTarget?.name || ''} · 执行与条目`"
+      :size="isHandheld ? '100%' : '75%'"
+    >
       <el-tabs v-model="historyTab" @tab-change="loadHistory">
         <el-tab-pane label="下载条目" name="items">
-          <el-table :data="items" size="small">
+          <el-table v-if="!isHandheld" :data="items" size="small">
             <el-table-column prop="title" label="标题" min-width="180" />
             <el-table-column prop="save_path" label="保存目录" min-width="160" />
             <el-table-column prop="status" label="提交状态" width="120" />
@@ -145,9 +194,17 @@
               ></el-table-column
             >
           </el-table>
+          <div v-else class="mobile-history-list">
+            <article v-for="item in items" :key="item.id" class="history-card">
+              <strong>{{ item.title }}</strong>
+              <span>{{ item.save_path }}</span>
+              <div><el-tag size="small">{{ item.status }}</el-tag><el-tag size="small">{{ item.thumbnail_status }}</el-tag></div>
+              <small v-if="item.has_request_headers">请求头：{{ item.request_header_names.join(', ') || '值不可解密' }}</small>
+            </article>
+          </div>
         </el-tab-pane>
         <el-tab-pane label="执行记录" name="runs">
-          <el-table :data="runs" size="small"
+          <el-table v-if="!isHandheld" :data="runs" size="small"
             ><el-table-column prop="created_at" label="时间" width="180" /><el-table-column
               prop="trigger"
               label="触发"
@@ -159,6 +216,13 @@
               label="错误"
               min-width="220"
           /></el-table>
+          <div v-else class="mobile-history-list">
+            <article v-for="runItem in runs" :key="runItem.id" class="history-card">
+              <div class="history-title"><strong>{{ runItem.created_at }}</strong><el-tag size="small">{{ runItem.status }}</el-tag></div>
+              <span>{{ runItem.trigger }} · 发现 {{ runItem.items_found }} · 提交 {{ runItem.tasks_created }}</span>
+              <small v-if="runItem.error_msg" class="history-error">{{ runItem.error_msg }}</small>
+            </article>
+          </div>
         </el-tab-pane>
       </el-tabs>
     </el-drawer>
@@ -168,6 +232,8 @@
 <script setup lang="ts">
   import { ElMessage, ElMessageBox } from 'element-plus'
   import type { TabsPaneContext } from 'element-plus'
+  import { MobileActionSheet, type MobileSheetAction } from '@/components/mobile'
+  import { useMobileLayerHistory, useResponsive } from '@/composables'
   import type { InstalledPlugin } from '@/api/plugin'
   import {
     availablePlugins,
@@ -185,6 +251,7 @@
   import type { Subscription, SubscriptionItem, SubscriptionPayload, SubscriptionRun } from '@/api/subscription'
 
   const plugins = ref<InstalledPlugin[]>([])
+  const { isHandheld } = useResponsive()
   const subscriptions = ref<Subscription[]>([])
   const items = ref<SubscriptionItem[]>([])
   const runs = ref<SubscriptionRun[]>([])
@@ -195,6 +262,8 @@
   const historyTab = ref('items')
   const historyTarget = ref<Subscription>()
   const editingId = ref('')
+  const mobileActionsVisible = ref(false)
+  const mobileActionTarget = ref<Subscription>()
   const configuredSecrets = ref<string[]>([])
   const form = reactive<SubscriptionPayload>({
     name: '',
@@ -208,6 +277,30 @@
     run_now: true
   })
   const selectedPlugin = computed(() => plugins.value.find(plugin => plugin.id === form.plugin_id))
+  const mobileActions = computed<MobileSheetAction[]>(() => [
+    { key: 'history', label: '执行与条目', icon: 'Document' },
+    { key: 'edit', label: '编辑订阅', icon: 'Edit' },
+    ...(mobileActionTarget.value?.status === 'needs_permission'
+      ? [{ key: 'permissions', label: '确认权限', icon: 'Lock', tone: 'primary' as const }]
+      : []),
+    { key: 'delete', label: '删除订阅', icon: 'Delete', tone: 'danger' }
+  ])
+  useMobileLayerHistory(dialogVisible, 'subscription-edit', isHandheld)
+  useMobileLayerHistory(historyVisible, 'subscription-history', isHandheld)
+
+  const openMobileActions = (subscription: Subscription) => {
+    mobileActionTarget.value = subscription
+    mobileActionsVisible.value = true
+  }
+
+  const handleMobileAction = async (key: string) => {
+    const target = mobileActionTarget.value
+    if (!target) return
+    if (key === 'history') showHistory(target)
+    else if (key === 'edit') openEdit(target)
+    else if (key === 'permissions') await confirmPermissions(target)
+    else if (key === 'delete') await remove(target)
+  }
 
   const load = async () => {
     loading.value = true
@@ -281,7 +374,8 @@
   }
   const run = async (row: Subscription) => {
     const result = await runSubscription(row.id)
-    result.code === 200 ? ElMessage.success('已开始运行') : ElMessage.error(result.message)
+    if (result.code === 200) ElMessage.success('已开始运行')
+    else ElMessage.error(result.message)
   }
   const remove = async (row: Subscription) => {
     await ElMessageBox.confirm(`确定删除“${row.name}”吗？`, '删除订阅', { type: 'warning' })
@@ -339,5 +433,84 @@
   }
   .header span {
     color: var(--el-text-color-secondary);
+  }
+
+  .mobile-subscription-list,
+  .mobile-history-list {
+    display: grid;
+    gap: 12px;
+  }
+  .mobile-subscription-card,
+  .history-card {
+    padding: 16px;
+    border: 1px solid var(--border-light);
+    border-radius: 18px;
+    background: var(--card-bg);
+    box-shadow: 0 6px 22px rgba(15, 23, 42, 0.04);
+  }
+  .subscription-card-head,
+  .subscription-card-foot,
+  .history-title {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+  }
+  .subscription-card-head > div,
+  .history-card {
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+  }
+  .subscription-card-head strong,
+  .history-card strong {
+    color: var(--text-primary);
+    font-size: 15px;
+  }
+  .subscription-card-head span,
+  .history-card span,
+  .history-card small {
+    color: var(--text-secondary);
+    font-size: 12px;
+    overflow-wrap: anywhere;
+  }
+  .subscription-meta {
+    margin: 14px 0;
+    display: grid;
+    gap: 8px;
+  }
+  .subscription-meta span {
+    min-width: 0;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    color: var(--text-secondary);
+    font-size: 12px;
+    overflow-wrap: anywhere;
+  }
+  .history-error { color: var(--danger-color) !important; }
+  .subscription-fab {
+    position: fixed;
+    right: 18px;
+    bottom: calc(18px + env(safe-area-inset-bottom));
+    z-index: 1000;
+    width: 54px;
+    height: 54px;
+    border: 0;
+    border-radius: 18px;
+    display: grid;
+    place-items: center;
+    color: white;
+    background: linear-gradient(135deg, var(--primary-color), var(--secondary-color));
+    box-shadow: 0 12px 28px rgba(37, 99, 235, 0.32);
+    font-size: 22px;
+  }
+
+  @media (max-width: 767px) {
+    .subscriptions-page { min-height: 100%; padding: 12px 12px 86px; gap: 12px; }
+    .subscriptions-header-card { display: none; }
+    :deep(.el-drawer__header) { padding-top: calc(16px + env(safe-area-inset-top)); }
+    :deep(.el-drawer__body) { padding-bottom: calc(16px + env(safe-area-inset-bottom)); }
   }
 </style>

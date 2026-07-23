@@ -156,11 +156,8 @@
               </div>
             </div>
             <div class="share-actions">
-              <el-button link type="primary" @click.stop="handleUpdatePassword(row)" class="action-btn">
-                <el-icon><Edit /></el-icon>
-              </el-button>
-              <el-button link type="danger" @click.stop="handleDelete(row)" class="action-btn">
-                <el-icon><Delete /></el-icon>
+              <el-button link @click.stop="openShareActions(row)" class="action-btn" aria-label="更多操作">
+                <el-icon><MoreFilled /></el-icon>
               </el-button>
             </div>
           </div>
@@ -200,6 +197,7 @@
       :title="t('share.updatePassword')"
       :width="isMobile ? '95%' : '450px'"
       :close-on-click-modal="false"
+      :fullscreen="isMobile"
       class="password-dialog"
     >
       <el-form label-width="80px">
@@ -228,11 +226,20 @@
         }}</el-button>
       </template>
     </el-dialog>
+    <MobileActionSheet
+      v-model="showActionSheet"
+      :title="actionShare?.file_name"
+      :actions="shareActions"
+      history-key="share-actions"
+      @select="handleShareAction"
+    />
   </div>
 </template>
 
 <script setup lang="ts">
-  import { useResponsive, useI18n } from '@/composables'
+  import { useResponsive, useI18n, useMobileLayerHistory } from '@/composables'
+  import { MobileActionSheet } from '@/components/mobile'
+  import type { MobileSheetAction } from '@/components/mobile/types'
   import { getShareList, deleteShare, updateSharePassword } from '@/api/share'
   import type { ShareInfo } from '@/types'
   import { formatDate, getShareUrl, generateRandomPassword, copyToClipboard } from '@/utils'
@@ -241,11 +248,32 @@
   const { t } = useI18n()
 
   // 使用响应式检测 composable
-  const { isMobile } = useResponsive()
+  const { isHandheld: isMobile } = useResponsive()
 
   const loading = ref(false)
   const shareList = ref<ShareInfo[]>([])
   const showPasswordDialog = ref(false)
+  const showActionSheet = ref(false)
+  const actionShare = ref<ShareInfo | null>(null)
+  useMobileLayerHistory(showPasswordDialog, 'share-password-editor', isMobile)
+  const shareActions = computed<MobileSheetAction[]>(() => [
+    { key: 'copy', label: t('common.copy'), icon: 'CopyDocument', tone: 'primary' },
+    { key: 'password', label: t('share.updatePassword'), icon: 'Edit' },
+    { key: 'delete', label: t('common.delete'), icon: 'Delete', tone: 'danger' }
+  ])
+
+  const openShareActions = (share: ShareInfo) => {
+    actionShare.value = share
+    showActionSheet.value = true
+  }
+
+  const handleShareAction = (key: string) => {
+    const share = actionShare.value
+    if (!share) return
+    if (key === 'copy') copyShareLink(share)
+    if (key === 'password') handleUpdatePassword(share)
+    if (key === 'delete') handleDelete(share)
+  }
   const updating = ref(false)
   const newPassword = ref('')
   const currentShare = reactive<Partial<ShareInfo>>({})
@@ -842,7 +870,7 @@
   }
 
   /* 移动端响应式 */
-  @media (max-width: 1024px) {
+  @media (max-width: 767px) {
     .desktop-table {
       display: none !important;
     }

@@ -51,6 +51,15 @@
   /* TagsView Variables */
   --tags-view-active-bg: var(--primary-color);
   --tags-view-active-border-color: var(--primary-color);
+
+  /* 手机 APP 设计令牌 */
+  --mobile-radius-sm: 12px;
+  --mobile-radius-md: 16px;
+  --mobile-radius-lg: 20px;
+  --mobile-touch-target: 44px;
+  --mobile-page-padding: 12px;
+  --mobile-motion-fast: 160ms;
+  --mobile-motion-normal: 200ms;
 }
 
 /* 主题切换过渡动画 */

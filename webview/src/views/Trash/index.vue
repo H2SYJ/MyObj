@@ -160,16 +160,14 @@
         :key="row.recycled_id"
         class="mobile-trash-item"
         :class="{ selected: selectedIds.includes(row.recycled_id) }"
-        @click="toggleSelectItem(row)"
+        @pointerdown="startLongPress(row)"
+        @pointerup="cancelLongPress"
+        @pointercancel="cancelLongPress"
+        @pointermove="cancelLongPress"
+        @click="handleMobileItemClick(row)"
       >
         <div class="trash-item-header">
           <div class="trash-item-info">
-            <el-checkbox
-              :model-value="selectedIds.includes(row.recycled_id)"
-              @change="() => toggleSelectItem(row)"
-              @click.stop
-              class="trash-checkbox"
-            />
             <div class="list-file-icon">
               <el-icon v-if="isFolder(row)" :size="28" class="folder-icon"><Folder /></el-icon>
               <file-icon
@@ -224,13 +222,26 @@
         </div>
       </div>
     </div>
+    <MobileInfiniteList
+      v-if="isHandheld && fileList.length > 0"
+      :loading="loading"
+      :has-more="fileList.length < total"
+      @load-more="loadNextMobilePage"
+      @retry="loadNextMobilePage"
+    />
+    <div v-if="isHandheld && selectedIds.length > 0" class="mobile-trash-batch-bar">
+      <span>{{ t('common.selected', { count: selectedIds.length }) }}</span>
+      <el-button link type="primary" @click="handleRestore"><el-icon><RefreshRight /></el-icon>{{ t('trash.restore') }}</el-button>
+      <el-button link type="danger" @click="handleDeletePermanently"><el-icon><Delete /></el-icon>{{ t('trash.permanentDelete') }}</el-button>
+      <el-button link @click="selectedIds = []">{{ t('common.cancel') }}</el-button>
+    </div>
 
     <!-- 空状态 -->
     <EmptyState v-if="!loading && fileList.length === 0" type="trash" :show-actions="false" compact />
 
     <!-- 分页 -->
     <pagination
-      v-if="total > 0"
+      v-if="!isHandheld && total > 0"
       v-model:page="currentPage"
       v-model:limit="pageSize"
       :total="total"
@@ -245,13 +256,15 @@
   import { getRecycledList, restoreFile, deleteFilePermanently, emptyRecycled, type RecycledItem } from '@/api/recycled'
   import { getThumbnailUrl } from '@/api/file'
   import { formatSize, formatDate } from '@/utils'
-  import { useI18n } from '@/composables'
+  import { useI18n, useResponsive } from '@/composables'
+  import { MobileInfiniteList } from '@/components/mobile'
   import { useUserStore } from '@/stores'
   import EmptyState from '@/components/EmptyState/index.vue'
 
   const { proxy } = getCurrentInstance() as ComponentInternalInstance
   const userStore = useUserStore()
   const { t } = useI18n()
+  const { isHandheld } = useResponsive()
 
   // 数据
   const loading = ref(false)
@@ -260,6 +273,31 @@
   const currentPage = ref(1)
   const pageSize = ref(20)
   const selectedIds = ref<string[]>([])
+  let longPressTimer: number | undefined
+  let didLongPress = false
+
+  const startLongPress = (item: RecycledItem) => {
+    if (!isHandheld.value) return
+    didLongPress = false
+    longPressTimer = window.setTimeout(() => {
+      didLongPress = true
+      toggleSelectItem(item)
+    }, 520)
+  }
+
+  const cancelLongPress = () => {
+    if (longPressTimer) window.clearTimeout(longPressTimer)
+    longPressTimer = undefined
+  }
+
+  const handleMobileItemClick = (item: RecycledItem) => {
+    cancelLongPress()
+    if (didLongPress) {
+      didLongPress = false
+      return
+    }
+    if (selectedIds.value.length > 0) toggleSelectItem(item)
+  }
   const isFolder = (item: RecycledItem) => item.item_type === 'folder'
   const itemName = (item: RecycledItem) => item.item_name || item.file_name
 
@@ -311,7 +349,8 @@
   }
 
   // 加载回收站列表
-  const loadRecycledList = async () => {
+  const loadRecycledList = async (append = false) => {
+    if (!append && isHandheld.value) currentPage.value = 1
     loading.value = true
     try {
       const res = await getRecycledList({
@@ -320,7 +359,8 @@
       })
 
       if (res.code === 200 && res.data) {
-        fileList.value = res.data.items || []
+        const nextItems = res.data.items || []
+        fileList.value = append ? [...fileList.value, ...nextItems] : nextItems
         total.value = res.data.total || 0
       } else {
         proxy?.$modal.msgError(res.message || t('trash.getListFailed'))
@@ -330,6 +370,12 @@
     } finally {
       loading.value = false
     }
+  }
+
+  const loadNextMobilePage = async () => {
+    if (!isHandheld.value || loading.value || fileList.value.length >= total.value) return
+    currentPage.value += 1
+    await loadRecycledList(true)
   }
 
   // 选择变化
@@ -512,6 +558,7 @@
   onMounted(() => {
     loadRecycledList()
   })
+  onBeforeUnmount(cancelLongPress)
 </script>
 
 <style scoped>
@@ -761,6 +808,35 @@
     margin-bottom: 12px;
   }
 
+  .mobile-trash-batch-bar {
+    position: fixed;
+    left: 12px;
+    right: 12px;
+    bottom: calc(12px + env(safe-area-inset-bottom));
+    z-index: 1200;
+    min-height: 64px;
+    display: flex;
+    align-items: center;
+    justify-content: space-around;
+    gap: 4px;
+    padding: 8px 10px;
+    border: 1px solid var(--border-color);
+    border-radius: 20px;
+    background: color-mix(in srgb, var(--card-bg) 94%, transparent);
+    box-shadow: 0 14px 38px rgba(15, 23, 42, 0.2);
+    backdrop-filter: blur(18px);
+  }
+
+  .mobile-trash-batch-bar > span {
+    color: var(--text-secondary);
+    font-size: 12px;
+  }
+
+  .mobile-trash-batch-bar .el-button {
+    min-height: 44px;
+    margin: 0;
+  }
+
   .mobile-trash-item:last-child {
     border-bottom: none;
     margin-bottom: 0;
@@ -888,7 +964,7 @@
   }
 
   /* 移动端响应式 */
-  @media (max-width: 1024px) {
+  @media (max-width: 767px) {
     .desktop-table {
       display: none !important;
     }

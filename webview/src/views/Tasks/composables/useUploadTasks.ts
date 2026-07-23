@@ -3,11 +3,12 @@ import { loadAndSyncBackendTasks, findBackendTask } from '@/utils/file/uploadTas
 import { deleteUploadTask, getUploadProgress, listExpiredUploads, retryUploadFinalize } from '@/api/file'
 import { formatFileSizeForDisplay } from '@/utils'
 import { isUploadTaskActive, openFileDialog, uploadSingleFile } from '@/utils/file/upload'
-import { useI18n } from '@/composables'
+import { useI18n, useResponsive } from '@/composables'
 
 export function useUploadTasks() {
   const { proxy } = getCurrentInstance() as ComponentInternalInstance
   const { t } = useI18n()
+  const { isHandheld } = useResponsive()
 
   const uploadLoading = ref(false)
   const cleanLoading = ref(false)
@@ -24,9 +25,18 @@ export function useUploadTasks() {
 
   // 更新分页数据
   const updatePaginatedTasks = () => {
-    const start = (currentPage.value - 1) * pageSize.value
+    const start = isHandheld.value ? 0 : (currentPage.value - 1) * pageSize.value
     const end = start + pageSize.value
-    uploadTasks.value = allUploadTasks.value.slice(start, end)
+    const handheldEnd = currentPage.value * pageSize.value
+    uploadTasks.value = allUploadTasks.value.slice(start, isHandheld.value ? handheldEnd : end)
+  }
+
+  const hasMore = computed(() => uploadTasks.value.length < total.value)
+
+  const loadMore = () => {
+    if (uploadLoading.value || !hasMore.value) return
+    currentPage.value += 1
+    updatePaginatedTasks()
   }
 
   // 加载上传任务列表
@@ -403,6 +413,7 @@ export function useUploadTasks() {
     currentPage,
     pageSize,
     total,
+    hasMore,
     loadUploadTasks,
     getExpiredTaskCount,
     pauseUpload,
@@ -412,6 +423,7 @@ export function useUploadTasks() {
     retryFinalize,
     cleanExpiredUploads,
     clearAllUploadTasks,
-    handlePagination
+    handlePagination,
+    loadMore
   }
 }

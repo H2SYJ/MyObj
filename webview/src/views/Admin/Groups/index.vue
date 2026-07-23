@@ -5,7 +5,7 @@
       <el-button icon="Refresh" @click="loadGroupList">{{ t('common.refresh') }}</el-button>
     </div>
 
-    <el-table :data="groupList" v-loading="loading" class="admin-table" :empty-text="t('admin.groups.noGroups')">
+    <el-table v-if="!isHandheld" :data="groupList" v-loading="loading" class="admin-table" :empty-text="t('admin.groups.noGroups')">
       <el-table-column prop="id" label="ID" width="80" />
       <el-table-column prop="name" :label="t('admin.groups.groupName')" min-width="150" />
       <el-table-column :label="t('admin.groups.defaultGroup')" width="100" align="center">
@@ -37,8 +37,26 @@
       </el-table-column>
     </el-table>
 
+    <div v-else v-loading="loading" class="mobile-admin-list">
+      <article v-for="row in groupList" :key="row.id" class="mobile-admin-card">
+        <div class="mobile-admin-card__header">
+          <div class="mobile-admin-card__title">{{ row.name }}</div>
+          <el-tag :type="row.group_default === 1 ? 'success' : 'info'" size="small">
+            {{ row.group_default === 1 ? t('admin.groups.defaultGroup') : `ID ${row.id}` }}
+          </el-tag>
+        </div>
+        <div class="mobile-admin-card__meta"><span>{{ formatStorage(row.space) }}</span><span>{{ row.created_at }}</span></div>
+        <div v-if="row.id !== 1" class="mobile-admin-card__footer">
+          <el-button link type="primary" @click="handleEdit(row)">{{ t('admin.users.edit') }}</el-button>
+          <el-button link type="primary" @click="handleAssignPower(row)">{{ t('admin.groups.assignPower') }}</el-button>
+          <el-button link type="danger" @click="handleDelete(row)">{{ t('admin.users.delete') }}</el-button>
+        </div>
+      </article>
+      <el-empty v-if="!loading && groupList.length === 0" :description="t('admin.groups.noGroups')" />
+    </div>
+
     <!-- 创建/编辑组对话框 -->
-    <el-dialog v-model="showDialog" :title="dialogTitle" width="500px" @close="handleDialogClose">
+    <el-dialog v-model="showDialog" :title="dialogTitle" width="500px" :fullscreen="isHandheld" @close="handleDialogClose">
       <el-form :model="formData" :rules="formRules" ref="formRef" label-width="100px">
         <el-form-item :label="t('admin.groups.groupName')" prop="name">
           <el-input v-model="formData.name" />
@@ -164,11 +182,12 @@
     type AdminPower
   } from '@/api/admin'
   import { bytesToGB, GBToBytes } from '@/utils'
-  import { useI18n } from '@/composables'
+  import { useI18n, useMobileLayerHistory, useResponsive } from '@/composables'
   import { getPermissionName, getPermissionDescription } from '@/utils/business/permission'
 
   const { proxy } = getCurrentInstance() as ComponentInternalInstance
   const { t } = useI18n()
+  const { isHandheld } = useResponsive()
 
   const loading = ref(false)
   const submitting = ref(false)
@@ -176,6 +195,8 @@
   const powerList = ref<AdminPower[]>([])
   const showDialog = ref(false)
   const showPowerDrawer = ref(false)
+  useMobileLayerHistory(showDialog, 'admin-group-editor', isHandheld)
+  useMobileLayerHistory(showPowerDrawer, 'admin-group-permissions', isHandheld)
   const isEdit = ref(false)
   const currentGroup = ref<AdminGroup | null>(null)
   const selectedPowerIds = ref<number[]>([])
@@ -203,8 +224,8 @@
 
   // 计算抽屉大小（响应式）
   const drawerSize = computed(() => {
-    if (window.innerWidth <= 768) {
-      return '90%'
+    if (isHandheld.value) {
+      return '100%'
     }
     if (window.innerWidth <= 1024) {
       return '70%'

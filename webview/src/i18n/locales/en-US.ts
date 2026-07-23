@@ -7,6 +7,7 @@ export default {
     tasks: 'Task Center',
     trash: 'Trash',
     square: 'Square',
+    me: 'Me',
     settings: 'Settings',
     collaboration: 'Collaboration',
     admin: 'Admin',
@@ -16,6 +17,13 @@ export default {
     adminDisks: 'Disk Management',
     adminSystem: 'System Configuration',
     adminPlugins: 'Plugin Center'
+  },
+  mobileTab: {
+    files: 'Files',
+    offline: 'Offline',
+    tasks: 'Tasks',
+    square: 'Square',
+    me: 'Me'
   },
   error: {
     title: 'Error Occurred',
@@ -82,6 +90,7 @@ export default {
     subscriptions: 'Subscriptions',
     trash: 'Trash',
     square: 'Square',
+    me: 'Me',
     settings: 'Settings',
     collaboration: 'Collaboration',
     admin: 'Admin',
