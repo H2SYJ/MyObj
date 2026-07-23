@@ -1,6 +1,6 @@
 import { getFileList, getThumbnail } from '@/api/file'
 import { useI18n } from '@/composables'
-import type { FileListResponse } from '@/types'
+import type { FileItem, FileListResponse } from '@/types'
 import cache from '@/plugins/cache'
 
 export type FileSortBy = 'name' | 'size' | 'time'
@@ -29,6 +29,7 @@ export function useFileList() {
   const pageSize = ref(20)
   const currentDirectoryId = ref(0)
   const thumbnailCache = ref<Map<string, string>>(new Map())
+  const loadingThumbnailIds = new Set<string>()
   const loading = ref(false)
   const cachedSortBy = cache.local.get(SORT_BY_KEY)
   const cachedSortOrder = cache.local.get(SORT_ORDER_KEY)
@@ -45,6 +46,29 @@ export function useFileList() {
       return t('files.home')
     }
     return name
+  }
+
+  const loadThumbnails = async (files: FileItem[]) => {
+    const thumbnailPromises = files
+      .filter(
+        file => file.has_thumbnail && !thumbnailCache.value.has(file.file_id) && !loadingThumbnailIds.has(file.file_id)
+      )
+      .map(async file => {
+        loadingThumbnailIds.add(file.file_id)
+        try {
+          const blobUrl = await getThumbnail(file.file_id)
+          if (blobUrl) {
+            thumbnailCache.value.set(file.file_id, blobUrl)
+          }
+        } catch (error) {
+          // 缩略图加载失败不影响主流程
+          proxy?.$log.warn(t('files.thumbnailLoadFailed') + `: ${file.file_id}`, error)
+        } finally {
+          loadingThumbnailIds.delete(file.file_id)
+        }
+      })
+
+    await Promise.all(thumbnailPromises)
   }
 
   const loadFileList = async (append = false) => {
@@ -70,23 +94,8 @@ export function useFileList() {
 
         currentDirectoryId.value = res.data.current_directory_id
 
-        // 使用 Promise.all 并发加载缩略图
-        const thumbnailPromises = res.data.files
-          .filter((file: any) => file.has_thumbnail && !thumbnailCache.value.has(file.file_id))
-          .map(async (file: any) => {
-            try {
-              const blobUrl = await getThumbnail(file.file_id)
-              if (blobUrl) {
-                thumbnailCache.value.set(file.file_id, blobUrl)
-              }
-            } catch (error) {
-              // 缩略图加载失败不影响主流程
-              proxy?.$log.warn(t('files.thumbnailLoadFailed') + `: ${file.file_id}`, error)
-            }
-          })
-
-        // 不等待缩略图加载完成，后台加载
-        Promise.all(thumbnailPromises).catch(() => {
+        // 不等待缩略图加载完成，后台并发加载
+        loadThumbnails(res.data.files).catch(() => {
           // 静默处理错误
         })
       } else {
@@ -165,6 +174,7 @@ export function useFileList() {
     loadFileList,
     navigateToPath: navigateToDirectory,
     getThumbnailUrl,
+    loadThumbnails,
     handlePageChange,
     handleSizeChange,
     loading,

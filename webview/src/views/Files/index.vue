@@ -396,6 +396,7 @@
     loadFileList,
     navigateToPath,
     getThumbnailUrl,
+    loadThumbnails,
     loading: fileListLoading,
     sortBy,
     sortOrder,
@@ -404,7 +405,8 @@
 
   const { searchKeyword, isSearching, searchResults, performSearch, clearSearch, hasSearchKeyword } = useFileSearch(
     sortBy,
-    sortOrder
+    sortOrder,
+    loadThumbnails
   )
   const displayData = computed<FileListResponse>(() =>
     hasSearchKeyword.value ? searchResults.value : fileListData.value

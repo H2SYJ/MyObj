@@ -1,3 +1,4 @@
+import { computed, type Ref } from 'vue'
 import { searchUserFiles } from '@/api/file'
 import { useSearch } from '@/composables'
 import type { FileListResponse, FileItem } from '@/types'
@@ -6,7 +7,11 @@ import type { FileSortBy, FileSortOrder } from './useFileList'
 /**
  * 文件搜索 composable（用户文件）
  */
-export function useFileSearch(sortBy: Ref<FileSortBy>, sortOrder: Ref<FileSortOrder>) {
+export function useFileSearch(
+  sortBy: Ref<FileSortBy>,
+  sortOrder: Ref<FileSortOrder>,
+  loadThumbnails: (files: FileItem[]) => Promise<void>
+) {
   // 结果转换函数：将后端返回的文件转换为 FileItem 格式
   const transformResult = (files: any[]): FileItem[] => {
     return files.map((file: any) => ({
@@ -37,11 +42,19 @@ export function useFileSearch(sortBy: Ref<FileSortBy>, sortOrder: Ref<FileSortOr
     page_size: search.pageSize.value
   }))
 
+  const performSearch = async (...args: Parameters<typeof search.performSearch>) => {
+    await search.performSearch(...args)
+    // 搜索结果复用“我的文件”的缩略图缓存，不阻塞结果展示
+    loadThumbnails(search.searchResults.value).catch(() => {
+      // 单个缩略图加载失败不影响搜索结果
+    })
+  }
+
   return {
     searchKeyword: search.searchKeyword,
     isSearching: search.isSearching,
     searchResults,
-    performSearch: search.performSearch,
+    performSearch,
     clearSearch: search.clearSearch,
     hasSearchKeyword: search.hasSearchKeyword
   }
