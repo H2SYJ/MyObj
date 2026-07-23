@@ -1,313 +1,335 @@
 <template>
-  <div class="files-page">
-    <Breadcrumb
-      :breadcrumbs="breadcrumbs"
-      :format-breadcrumb-name="formatBreadcrumbName"
-      :current-path="currentPath"
-      @navigate="navigateToPath"
-    />
-
-    <PageToolbar v-if="!isMobile" :selected-count="toolbarSelectedCount">
-      <template #primary>
-        <template v-if="toolbarSelectedCount > 0">
+  <WorkspacePage :title="t('route.files')">
+    <template #icon>
+      <el-icon :size="24">
+        <FolderOpened />
+      </el-icon>
+    </template>
+    <template v-if="!isMobile" #actions>
+      <Transition name="file-selection-toolbar" mode="out-in">
+        <div v-if="toolbarSelectedCount > 0" key="selection" class="file-header-actions">
+          <span class="file-selection-count">{{ t('files.selected', { count: toolbarSelectedCount }) }}</span>
           <el-button icon="Download" @click="handleSelectionDownload">{{ t('files.download') }}</el-button>
           <el-button icon="FolderOpened" @click="handleMoveFile">{{ t('files.move') }}</el-button>
           <el-button type="danger" plain icon="Delete" @click="handleSelectionDelete">{{
             t('files.delete')
           }}</el-button>
           <el-button text @click="clearCurrentSelection">{{ t('files.cancelSelect') }}</el-button>
-        </template>
-        <template v-else>
+        </div>
+        <div v-else key="default" class="file-header-actions">
           <el-button type="primary" icon="Upload" @click="handleUpload">{{ t('files.upload') }}</el-button>
           <el-button icon="FolderAdd" @click="showNewFolderDialog = true">{{ t('files.newFolder') }}</el-button>
-        </template>
-      </template>
-
-      <el-dropdown trigger="click">
-        <el-button icon="Sort">{{
-          t(`files.sort${sortBy === 'name' ? 'Name' : sortBy === 'size' ? 'Size' : 'Time'}`)
-        }}</el-button>
-        <template #dropdown>
-          <el-dropdown-menu>
-            <el-dropdown-item @click="changeSorting('name')">{{ t('files.sortName') }}</el-dropdown-item>
-            <el-dropdown-item @click="changeSorting('time')">{{ t('files.sortTime') }}</el-dropdown-item>
-            <el-dropdown-item @click="changeSorting('size')">{{ t('files.sortSize') }}</el-dropdown-item>
-            <el-dropdown-item divided @click="changeSorting(sortBy, sortOrder === 'asc' ? 'desc' : 'asc')">
-              {{ sortOrder === 'asc' ? t('files.sortDesc') : t('files.sortAsc') }}
-            </el-dropdown-item>
-          </el-dropdown-menu>
-        </template>
-      </el-dropdown>
-      <el-button-group>
-        <el-button
-          :type="viewMode === 'grid' ? 'primary' : 'default'"
-          icon="Grid"
-          :aria-label="t('files.gridView')"
-          @click="setViewMode('grid')"
+        </div>
+      </Transition>
+    </template>
+    <template #toolbar>
+      <div class="file-workspace-toolbar">
+        <Breadcrumb
+          embedded
+          class="file-workspace-breadcrumb"
+          :breadcrumbs="breadcrumbs"
+          :format-breadcrumb-name="formatBreadcrumbName"
+          :current-path="currentPath"
+          @navigate="navigateToPath"
         />
-        <el-button
-          :type="viewMode === 'list' ? 'primary' : 'default'"
-          icon="List"
-          :aria-label="t('files.listView')"
-          @click="setViewMode('list')"
-        />
-      </el-button-group>
-    </PageToolbar>
-
-    <div
-      ref="contentRef"
-      class="file-content-area"
-      :class="{ 'is-dragging': isDraggingFiles }"
-      tabindex="0"
-      @contextmenu="handleBlankContextMenu"
-      @pointerdown="startBoxSelection"
-      @pointermove="updateBoxSelection"
-      @pointerup="finishBoxSelection"
-      @pointercancel="finishBoxSelection"
-      @dragenter.prevent="handleDragOver"
-      @dragover.prevent="handleDragOver"
-      @dragleave="handleDragLeave"
-      @drop.prevent="handleDrop"
-    >
-      <Skeleton v-if="(fileListLoading || isSearching) && entries.length === 0" :count="12" :view-mode="viewMode" />
-
-      <FileGrid
-        v-else-if="viewMode === 'grid'"
-        :entries="entries"
-        :is-selected="isSelectedEntry"
-        :get-thumbnail-url="getThumbnailUrl"
-        @entry-click="handleEntryClick"
-        @entry-toggle="toggleEntry"
-        @entry-open="handleEntryOpen"
-        @entry-context="openEntryContextMenu"
-        @entry-long-press="handleEntryLongPress"
-      />
-      <FileList
-        v-else
-        :entries="entries"
-        :is-selected="isSelectedEntry"
-        :get-thumbnail-url="getThumbnailUrl"
-        @entry-click="handleEntryClick"
-        @entry-toggle="toggleEntry"
-        @entry-open="handleEntryOpen"
-        @entry-context="openEntryContextMenu"
-        @entry-long-press="handleEntryLongPress"
-      />
-
-      <EmptyState
-        v-if="!fileListLoading && !isSearching && entries.length === 0"
-        :type="hasSearchKeyword ? 'search' : 'folder'"
-        :show-actions="false"
-      />
-
-      <div v-if="boxSelection.active" class="selection-box" :style="selectionBoxStyle"></div>
-      <div v-if="isDraggingFiles" class="drop-overlay">
-        <el-icon :size="44"><UploadFilled /></el-icon>
-        <strong>{{ t('files.dropUpload') }}</strong>
-        <span>{{ t('files.folderUploadUnsupported') }}</span>
+        <div v-if="!isMobile" class="file-view-toolbar">
+          <el-dropdown trigger="click">
+            <el-button icon="Sort">{{
+              t(`files.sort${sortBy === 'name' ? 'Name' : sortBy === 'size' ? 'Size' : 'Time'}`)
+            }}</el-button>
+            <template #dropdown>
+              <el-dropdown-menu>
+                <el-dropdown-item @click="changeSorting('name')">{{ t('files.sortName') }}</el-dropdown-item>
+                <el-dropdown-item @click="changeSorting('time')">{{ t('files.sortTime') }}</el-dropdown-item>
+                <el-dropdown-item @click="changeSorting('size')">{{ t('files.sortSize') }}</el-dropdown-item>
+                <el-dropdown-item divided @click="changeSorting(sortBy, sortOrder === 'asc' ? 'desc' : 'asc')">
+                  {{ sortOrder === 'asc' ? t('files.sortDesc') : t('files.sortAsc') }}
+                </el-dropdown-item>
+              </el-dropdown-menu>
+            </template>
+          </el-dropdown>
+          <el-button-group>
+            <el-button
+              :type="viewMode === 'grid' ? 'primary' : 'default'"
+              icon="Grid"
+              :aria-label="t('files.gridView')"
+              @click="setViewMode('grid')"
+            />
+            <el-button
+              :type="viewMode === 'list' ? 'primary' : 'default'"
+              icon="List"
+              :aria-label="t('files.listView')"
+              @click="setViewMode('list')"
+            />
+          </el-button-group>
+        </div>
       </div>
+    </template>
+
+    <div class="files-page">
+      <div
+        ref="contentRef"
+        class="file-content-area"
+        :class="{ 'is-dragging': isDraggingFiles }"
+        tabindex="0"
+        @contextmenu="handleBlankContextMenu"
+        @pointerdown="startBoxSelection"
+        @pointermove="updateBoxSelection"
+        @pointerup="finishBoxSelection"
+        @pointercancel="finishBoxSelection"
+        @dragenter.prevent="handleDragOver"
+        @dragover.prevent="handleDragOver"
+        @dragleave="handleDragLeave"
+        @drop.prevent="handleDrop"
+      >
+        <Skeleton v-if="(fileListLoading || isSearching) && entries.length === 0" :count="12" :view-mode="viewMode" />
+
+        <FileGrid
+          v-else-if="viewMode === 'grid'"
+          :entries="entries"
+          :is-selected="isSelectedEntry"
+          :get-thumbnail-url="getThumbnailUrl"
+          @entry-click="handleEntryClick"
+          @entry-toggle="toggleEntry"
+          @entry-open="handleEntryOpen"
+          @entry-context="openEntryContextMenu"
+          @entry-long-press="handleEntryLongPress"
+        />
+        <FileList
+          v-else
+          :entries="entries"
+          :is-selected="isSelectedEntry"
+          :get-thumbnail-url="getThumbnailUrl"
+          @entry-click="handleEntryClick"
+          @entry-toggle="toggleEntry"
+          @entry-open="handleEntryOpen"
+          @entry-context="openEntryContextMenu"
+          @entry-long-press="handleEntryLongPress"
+        />
+
+        <EmptyState
+          v-if="!fileListLoading && !isSearching && entries.length === 0"
+          :type="hasSearchKeyword ? 'search' : 'folder'"
+          :show-actions="false"
+        />
+
+        <div v-if="boxSelection.active" class="selection-box" :style="selectionBoxStyle"></div>
+        <div v-if="isDraggingFiles" class="drop-overlay">
+          <el-icon :size="44"><UploadFilled /></el-icon>
+          <strong>{{ t('files.dropUpload') }}</strong>
+          <span>{{ t('files.folderUploadUnsupported') }}</span>
+        </div>
+      </div>
+
+      <MobileInfiniteList
+        v-if="isMobile && displayPagination.total > 0"
+        :loading="fileListLoading || isSearching"
+        :has-more="mobileHasMore"
+        @load-more="loadNextMobilePage"
+        @retry="loadNextMobilePage"
+      />
     </div>
 
-    <div v-if="!isMobile && displayPagination.total > 0" class="pagination-wrapper">
+    <template v-if="!isMobile && displayPagination.total > 0" #footer>
       <pagination
         :page="displayPagination.page"
         :limit="displayPagination.pageSize"
         :total="displayPagination.total"
         :page-sizes="[20, 50, 100]"
         float="center"
-        @pagination="handlePagination"
         class="pagination"
+        @pagination="handlePagination"
       />
-    </div>
+    </template>
 
-    <MobileInfiniteList
-      v-if="isMobile && displayPagination.total > 0"
-      :loading="fileListLoading || isSearching"
-      :has-more="mobileHasMore"
-      @load-more="loadNextMobilePage"
-      @retry="loadNextMobilePage"
-    />
-
-    <button
-      v-if="isMobile && !mobileSelectionMode && !hasOpenDialog && !contextMenu.visible"
-      type="button"
-      class="page-fab"
-      :aria-label="t('files.pageActions')"
-      @click="openPageMenuFromButton"
-    >
-      <el-icon><Plus /></el-icon>
-    </button>
-
-    <div v-if="isMobile && mobileSelectionMode && !hasOpenDialog" class="mobile-selection-bar">
-      <span>{{ t('files.selected', { count: selectedCount }) }}</span>
-      <button type="button" :disabled="selectedCount === 0" @click="handleSelectionDownload">
-        <el-icon><Download /></el-icon><span>{{ t('files.download') }}</span>
+    <template #floating>
+      <button
+        v-if="isMobile && !mobileSelectionMode && !hasOpenDialog && !contextMenu.visible"
+        type="button"
+        class="page-fab"
+        :aria-label="t('files.pageActions')"
+        @click="openPageMenuFromButton"
+      >
+        <el-icon><Plus /></el-icon>
       </button>
-      <button type="button" :disabled="selectedCount === 0" @click="handleMoveFile">
-        <el-icon><FolderOpened /></el-icon><span>{{ t('files.move') }}</span>
-      </button>
-      <button type="button" :disabled="selectedCount === 0" class="danger" @click="handleSelectionDelete">
-        <el-icon><Delete /></el-icon><span>{{ t('files.delete') }}</span>
-      </button>
-      <button type="button" @click="clearCurrentSelection">
-        <el-icon><Close /></el-icon><span>{{ t('files.cancelSelect') }}</span>
-      </button>
-    </div>
 
-    <FileContextMenu
-      :visible="contextMenu.visible"
-      :x="contextMenu.x"
-      :y="contextMenu.y"
-      :title="contextMenuTitle"
-      :items="contextMenuItems"
-      @action="handleMenuAction"
-      @close="closeContextMenu"
-    />
+      <div v-if="isMobile && mobileSelectionMode && !hasOpenDialog" class="mobile-selection-bar">
+        <span>{{ t('files.selected', { count: selectedCount }) }}</span>
+        <button type="button" :disabled="selectedCount === 0" @click="handleSelectionDownload">
+          <el-icon><Download /></el-icon><span>{{ t('files.download') }}</span>
+        </button>
+        <button type="button" :disabled="selectedCount === 0" @click="handleMoveFile">
+          <el-icon><FolderOpened /></el-icon><span>{{ t('files.move') }}</span>
+        </button>
+        <button type="button" :disabled="selectedCount === 0" class="danger" @click="handleSelectionDelete">
+          <el-icon><Delete /></el-icon><span>{{ t('files.delete') }}</span>
+        </button>
+        <button type="button" @click="clearCurrentSelection">
+          <el-icon><Close /></el-icon><span>{{ t('files.cancelSelect') }}</span>
+        </button>
+      </div>
+    </template>
 
-    <el-dialog v-model="showNewFolderDialog" :title="t('files.newFolder')" width="500px" @close="handleDialogClose">
-      <el-form ref="folderFormRef" :model="folderForm" :rules="folderRules" label-width="100px">
-        <el-form-item :label="t('files.folderName')" prop="dir_path">
-          <el-input
-            v-model="folderForm.dir_path"
-            :placeholder="t('files.folderNamePlaceholder')"
-            clearable
-            maxlength="50"
-            show-word-limit
-            @keyup.enter="handleCreateFolder"
-          />
-        </el-form-item>
-      </el-form>
-      <template #footer>
-        <el-button @click="showNewFolderDialog = false">{{ t('common.cancel') }}</el-button>
-        <el-button type="primary" :loading="creating" @click="handleCreateFolder">{{ t('common.confirm') }}</el-button>
-      </template>
-    </el-dialog>
+    <template #overlays>
+      <FileContextMenu
+        :visible="contextMenu.visible"
+        :x="contextMenu.x"
+        :y="contextMenu.y"
+        :title="contextMenuTitle"
+        :items="contextMenuItems"
+        @action="handleMenuAction"
+        @close="closeContextMenu"
+      />
 
-    <UploadEncryptDialog v-model="showUploadEncryptDialog" @confirm="handleUploadEncryptConfirm" />
+      <el-dialog v-model="showNewFolderDialog" :title="t('files.newFolder')" width="500px" @close="handleDialogClose">
+        <el-form ref="folderFormRef" :model="folderForm" :rules="folderRules" label-width="100px">
+          <el-form-item :label="t('files.folderName')" prop="dir_path">
+            <el-input
+              v-model="folderForm.dir_path"
+              :placeholder="t('files.folderNamePlaceholder')"
+              clearable
+              maxlength="50"
+              show-word-limit
+              @keyup.enter="handleCreateFolder"
+            />
+          </el-form-item>
+        </el-form>
+        <template #footer>
+          <el-button @click="showNewFolderDialog = false">{{ t('common.cancel') }}</el-button>
+          <el-button type="primary" :loading="creating" @click="handleCreateFolder">{{
+            t('common.confirm')
+          }}</el-button>
+        </template>
+      </el-dialog>
 
-    <el-dialog v-model="showMoveDialog" :title="t('files.move')" width="500px">
-      <el-form label-width="100px">
-        <el-form-item :label="t('files.selectedItems')">
-          <div class="selected-tags">
-            <el-tag v-for="entry in selectedEntries" :key="entry.key" class="file-tag">
-              {{ entryName(entry) }}
-            </el-tag>
-          </div>
-        </el-form-item>
-        <el-form-item :label="t('files.targetFolder')">
-          <el-tree-select
-            v-model="targetFolderId"
-            :data="folderTreeData"
-            :render-after-expand="false"
-            :placeholder="t('files.targetFolderPlaceholder')"
-            :default-expanded-keys="[currentPath]"
-            :loading="loadingTree"
-            style="width: 100%"
-            check-strictly
-            node-key="value"
-            :props="{ label: 'label', children: 'children', disabled: 'disabled' }"
-          />
-        </el-form-item>
-      </el-form>
-      <template #footer>
-        <el-button @click="showMoveDialog = false">{{ t('common.cancel') }}</el-button>
-        <el-button type="primary" :loading="moving" @click="handleConfirmMove">{{ t('files.confirmMove') }}</el-button>
-      </template>
-    </el-dialog>
+      <UploadEncryptDialog v-model="showUploadEncryptDialog" @confirm="handleUploadEncryptConfirm" />
 
-    <share-dialog
-      v-model="showShareDialog"
-      :file-info="{
-        file_id: shareForm.file_id,
-        file_name: shareForm.file_name,
-        file_size: getFileSize(shareForm.file_id)
-      }"
-      @success="handleShareSuccess"
-    />
+      <el-dialog v-model="showMoveDialog" :title="t('files.move')" width="500px">
+        <el-form label-width="100px">
+          <el-form-item :label="t('files.selectedItems')">
+            <div class="selected-tags">
+              <el-tag v-for="entry in selectedEntries" :key="entry.key" class="file-tag">
+                {{ entryName(entry) }}
+              </el-tag>
+            </div>
+          </el-form-item>
+          <el-form-item :label="t('files.targetFolder')">
+            <el-tree-select
+              v-model="targetFolderId"
+              :data="folderTreeData"
+              :render-after-expand="false"
+              :placeholder="t('files.targetFolderPlaceholder')"
+              :default-expanded-keys="[currentPath]"
+              :loading="loadingTree"
+              style="width: 100%"
+              check-strictly
+              node-key="value"
+              :props="{ label: 'label', children: 'children', disabled: 'disabled' }"
+            />
+          </el-form-item>
+        </el-form>
+        <template #footer>
+          <el-button @click="showMoveDialog = false">{{ t('common.cancel') }}</el-button>
+          <el-button type="primary" :loading="moving" @click="handleConfirmMove">{{
+            t('files.confirmMove')
+          }}</el-button>
+        </template>
+      </el-dialog>
 
-    <el-dialog v-model="showDownloadPasswordDialog" :title="t('files.downloadPassword')" width="450px">
-      <el-form label-width="100px">
-        <el-form-item :label="t('files.fileName')"
-          ><el-text>{{ downloadPasswordForm.file_name }}</el-text></el-form-item
-        >
-        <el-form-item :label="t('files.filePassword')">
-          <el-input
-            v-model="downloadPasswordForm.file_password"
-            type="password"
-            :placeholder="t('files.filePasswordPlaceholder')"
-            show-password
-            @keyup.enter="confirmDownloadPassword"
-          />
-        </el-form-item>
-      </el-form>
-      <template #footer>
-        <el-button @click="showDownloadPasswordDialog = false">{{ t('common.cancel') }}</el-button>
-        <el-button type="primary" :loading="downloadingFile" @click="confirmDownloadPassword">{{
-          t('common.confirm')
-        }}</el-button>
-      </template>
-    </el-dialog>
+      <share-dialog
+        v-model="showShareDialog"
+        :file-info="{
+          file_id: shareForm.file_id,
+          file_name: shareForm.file_name,
+          file_size: getFileSize(shareForm.file_id)
+        }"
+        @success="handleShareSuccess"
+      />
 
-    <el-dialog
-      v-model="showRenameFileDialog"
-      :title="t('files.rename')"
-      width="500px"
-      @close="handleRenameFileDialogClose"
-    >
-      <el-form ref="renameFileFormRef" :model="renameFileForm" :rules="renameFileRules" label-width="100px">
-        <el-form-item :label="t('files.oldFileName')"
-          ><el-text>{{ renameFileForm.old_file_name }}</el-text></el-form-item
-        >
-        <el-form-item :label="t('files.newFileName')" prop="new_file_name">
-          <el-input
-            v-model="renameFileForm.new_file_name"
-            :placeholder="t('files.fileNamePlaceholder')"
-            clearable
-            maxlength="255"
-            show-word-limit
-            @keyup.enter="handleConfirmRenameFile"
-          />
-        </el-form-item>
-      </el-form>
-      <template #footer>
-        <el-button @click="showRenameFileDialog = false">{{ t('common.cancel') }}</el-button>
-        <el-button type="primary" :loading="renamingFile" @click="handleConfirmRenameFile">{{
-          t('common.confirm')
-        }}</el-button>
-      </template>
-    </el-dialog>
+      <el-dialog v-model="showDownloadPasswordDialog" :title="t('files.downloadPassword')" width="450px">
+        <el-form label-width="100px">
+          <el-form-item :label="t('files.fileName')"
+            ><el-text>{{ downloadPasswordForm.file_name }}</el-text></el-form-item
+          >
+          <el-form-item :label="t('files.filePassword')">
+            <el-input
+              v-model="downloadPasswordForm.file_password"
+              type="password"
+              :placeholder="t('files.filePasswordPlaceholder')"
+              show-password
+              @keyup.enter="confirmDownloadPassword"
+            />
+          </el-form-item>
+        </el-form>
+        <template #footer>
+          <el-button @click="showDownloadPasswordDialog = false">{{ t('common.cancel') }}</el-button>
+          <el-button type="primary" :loading="downloadingFile" @click="confirmDownloadPassword">{{
+            t('common.confirm')
+          }}</el-button>
+        </template>
+      </el-dialog>
 
-    <el-dialog
-      v-model="showRenameDirDialog"
-      :title="t('files.renameDir')"
-      width="500px"
-      @close="handleRenameDirDialogClose"
-    >
-      <el-form ref="renameDirFormRef" :model="renameDirForm" :rules="renameDirRules" label-width="100px">
-        <el-form-item :label="t('files.oldDirName')"
-          ><el-text>{{ renameDirForm.old_dir_name }}</el-text></el-form-item
-        >
-        <el-form-item :label="t('files.newDirName')" prop="new_dir_name">
-          <el-input
-            v-model="renameDirForm.new_dir_name"
-            :placeholder="t('files.newDirNamePlaceholder')"
-            clearable
-            maxlength="50"
-            show-word-limit
-            @keyup.enter="handleConfirmRenameDir"
-          />
-        </el-form-item>
-      </el-form>
-      <template #footer>
-        <el-button @click="showRenameDirDialog = false">{{ t('common.cancel') }}</el-button>
-        <el-button type="primary" :loading="renamingDir" @click="handleConfirmRenameDir">{{
-          t('common.confirm')
-        }}</el-button>
-      </template>
-    </el-dialog>
+      <el-dialog
+        v-model="showRenameFileDialog"
+        :title="t('files.rename')"
+        width="500px"
+        @close="handleRenameFileDialogClose"
+      >
+        <el-form ref="renameFileFormRef" :model="renameFileForm" :rules="renameFileRules" label-width="100px">
+          <el-form-item :label="t('files.oldFileName')"
+            ><el-text>{{ renameFileForm.old_file_name }}</el-text></el-form-item
+          >
+          <el-form-item :label="t('files.newFileName')" prop="new_file_name">
+            <el-input
+              v-model="renameFileForm.new_file_name"
+              :placeholder="t('files.fileNamePlaceholder')"
+              clearable
+              maxlength="255"
+              show-word-limit
+              @keyup.enter="handleConfirmRenameFile"
+            />
+          </el-form-item>
+        </el-form>
+        <template #footer>
+          <el-button @click="showRenameFileDialog = false">{{ t('common.cancel') }}</el-button>
+          <el-button type="primary" :loading="renamingFile" @click="handleConfirmRenameFile">{{
+            t('common.confirm')
+          }}</el-button>
+        </template>
+      </el-dialog>
 
-    <preview v-model="previewVisible" :file="previewFile" />
-  </div>
+      <el-dialog
+        v-model="showRenameDirDialog"
+        :title="t('files.renameDir')"
+        width="500px"
+        @close="handleRenameDirDialogClose"
+      >
+        <el-form ref="renameDirFormRef" :model="renameDirForm" :rules="renameDirRules" label-width="100px">
+          <el-form-item :label="t('files.oldDirName')"
+            ><el-text>{{ renameDirForm.old_dir_name }}</el-text></el-form-item
+          >
+          <el-form-item :label="t('files.newDirName')" prop="new_dir_name">
+            <el-input
+              v-model="renameDirForm.new_dir_name"
+              :placeholder="t('files.newDirNamePlaceholder')"
+              clearable
+              maxlength="50"
+              show-word-limit
+              @keyup.enter="handleConfirmRenameDir"
+            />
+          </el-form-item>
+        </el-form>
+        <template #footer>
+          <el-button @click="showRenameDirDialog = false">{{ t('common.cancel') }}</el-button>
+          <el-button type="primary" :loading="renamingDir" @click="handleConfirmRenameDir">{{
+            t('common.confirm')
+          }}</el-button>
+        </template>
+      </el-dialog>
+
+      <preview v-model="previewVisible" :file="previewFile" />
+    </template>
+  </WorkspacePage>
 </template>
 
 <script setup lang="ts">
@@ -353,7 +375,7 @@
   import { useMoveFile } from './composables/useMoveFile'
   import { useFileSearch } from './composables/useFileSearch'
   import { useFileViewMode } from './composables/useFileViewMode'
-  import { PageToolbar } from '@/components/desktop'
+  import WorkspacePage from '@/components/WorkspacePage/index.vue'
 
   const { t } = useI18n()
   const { proxy } = getCurrentInstance() as ComponentInternalInstance
@@ -950,21 +972,61 @@
     height: 100%;
     display: flex;
     flex-direction: column;
-    gap: 8px;
     overflow: hidden;
-    padding: 4px;
   }
-  /* 复杂选择器需整体声明为全局，避免 scoped 编译后误作用到桌面壳层。 */
-  :global(.desktop-shell .files-page) {
-    padding: var(--desktop-page-padding);
-    gap: 12px;
+
+  .file-header-actions,
+  .file-workspace-toolbar,
+  .file-view-toolbar {
+    display: flex;
+    align-items: center;
+    gap: 10px;
   }
-  :global(.desktop-shell .file-content-area) {
-    border: 1px solid var(--desktop-border);
-    border-radius: var(--desktop-radius-lg);
-    background: var(--desktop-surface);
-    box-shadow: var(--desktop-shadow-sm);
+
+  .file-header-actions {
+    justify-content: flex-end;
+    flex-wrap: wrap;
   }
+
+  .file-selection-count {
+    color: var(--primary-color);
+    font-size: 13px;
+    font-weight: 700;
+    white-space: nowrap;
+  }
+
+  .file-workspace-toolbar {
+    min-height: 40px;
+    justify-content: space-between;
+  }
+
+  .file-workspace-breadcrumb {
+    min-width: 0;
+    flex: 1;
+  }
+
+  .file-view-toolbar {
+    flex: 0 0 auto;
+    justify-content: flex-end;
+  }
+
+  .file-selection-toolbar-enter-active,
+  .file-selection-toolbar-leave-active {
+    transition:
+      opacity 160ms ease,
+      transform 160ms ease;
+  }
+
+  .file-selection-toolbar-enter-from {
+    opacity: 0;
+    transform: translateY(-6px);
+  }
+
+  .file-selection-toolbar-leave-to {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+
   .file-content-area {
     position: relative;
     flex: 1;
@@ -1001,11 +1063,6 @@
   .drop-overlay span {
     color: var(--el-text-color-secondary);
     font-size: 13px;
-  }
-  .pagination-wrapper {
-    flex-shrink: 0;
-    padding-top: 8px;
-    border-top: 1px solid var(--el-border-color-lighter);
   }
   .pagination {
     justify-content: center;
@@ -1072,14 +1129,20 @@
   .mobile-selection-bar button:disabled {
     opacity: 0.4;
   }
+
+  @media (prefers-reduced-motion: reduce) {
+    .file-selection-toolbar-enter-active,
+    .file-selection-toolbar-leave-active {
+      transition: none;
+    }
+  }
+
   @media (max-width: 767px) {
-    .files-page {
-      gap: 4px;
+    .file-workspace-toolbar {
+      min-height: 28px;
     }
+
     .file-content-area {
-      padding-bottom: 72px;
-    }
-    .pagination-wrapper {
       padding-bottom: 72px;
     }
   }

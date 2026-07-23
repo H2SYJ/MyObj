@@ -1,17 +1,19 @@
 <template>
-  <div class="breadcrumb-container glass-panel-sm">
+  <div class="breadcrumb-container glass-panel-sm" :class="{ 'is-embedded': embedded }">
     <div class="breadcrumb-content">
       <!-- 左侧：导航操作 -->
       <div class="breadcrumb-left">
         <!-- 返回上一级按钮 -->
         <el-button
-          v-if="canGoBack"
           icon="ArrowLeft"
           circle
           size="small"
           class="nav-button"
+          :class="{ 'is-placeholder': !canGoBack }"
+          :aria-hidden="!canGoBack"
+          :tabindex="canGoBack ? 0 : -1"
+          :title="canGoBack ? t('files.goBack') : undefined"
           @click="handleGoBack"
-          :title="t('files.goBack')"
         />
 
         <!-- 面包屑导航 -->
@@ -34,6 +36,7 @@
 </template>
 
 <script setup lang="ts">
+  import { computed } from 'vue'
   import type { Breadcrumb } from '@/types'
   import { useI18n } from '@/composables'
 
@@ -43,10 +46,12 @@
     breadcrumbs: Breadcrumb[]
     formatBreadcrumbName: (name: string) => string
     currentPath?: number
+    embedded?: boolean
   }
 
   const props = withDefaults(defineProps<Props>(), {
-    currentPath: 0
+    currentPath: 0,
+    embedded: false
   })
 
   const emit = defineEmits<{
@@ -67,10 +72,9 @@
   }
 
   const handleGoBack = () => {
-    if (props.breadcrumbs.length > 1) {
-      const previousDirectoryId = props.breadcrumbs[props.breadcrumbs.length - 2].id
-      emit('navigate', previousDirectoryId)
-    }
+    if (!canGoBack.value) return
+    const previousDirectoryId = props.breadcrumbs[props.breadcrumbs.length - 2].id
+    emit('navigate', previousDirectoryId)
     emit('go-back')
   }
 </script>
@@ -82,6 +86,15 @@
     padding: 8px 16px;
     border-radius: 8px;
     transition: all 0.3s;
+  }
+
+  .breadcrumb-container.is-embedded {
+    margin-bottom: 0;
+    padding: 0;
+    border: 0;
+    border-radius: 0;
+    background: transparent;
+    box-shadow: none;
   }
 
   .breadcrumb-content {
@@ -114,6 +127,11 @@
   .nav-button:hover {
     color: var(--primary-color);
     background: var(--el-color-primary-light-9);
+  }
+
+  .nav-button.is-placeholder {
+    visibility: hidden;
+    pointer-events: none;
   }
 
   html.dark .nav-button {
@@ -195,6 +213,10 @@
       padding: 6px 12px;
     }
 
+    .breadcrumb-container.is-embedded {
+      padding: 0;
+    }
+
     .breadcrumb-left {
       gap: 6px;
     }
@@ -214,6 +236,11 @@
     .breadcrumb-container {
       padding: 6px 10px;
       margin-bottom: 8px;
+    }
+
+    .breadcrumb-container.is-embedded {
+      margin-bottom: 0;
+      padding: 0;
     }
 
     .breadcrumb-link {
