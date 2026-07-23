@@ -22,12 +22,14 @@ type TaskEventListener = {
 
 const EVENT_KINDS: TaskEventKind[] = ['sync', 'download.task', 'upload.task', 'package.task', 'heartbeat']
 const RECONNECT_DELAY = 1000
+const MAX_RECONNECT_ATTEMPTS = 3
 const WATCHDOG_TIMEOUT = 45_000
 
 class TaskEventClient {
   private source: EventSource | null = null
   private reconnectTimer: number | null = null
   private watchdogTimer: number | null = null
+  private reconnectAttempts = 0
   private stopped = true
   private readonly state = ref<TaskEventConnectionState>('stopped')
   private readonly listeners = new Map<TaskEventKind, Set<TaskEventListener>>()
@@ -42,6 +44,7 @@ class TaskEventClient {
 
   stop() {
     this.stopped = true
+    this.reconnectAttempts = 0
     this.clearReconnectTimer()
     this.clearWatchdog()
     this.closeSource()
@@ -50,6 +53,7 @@ class TaskEventClient {
 
   reconnect() {
     if (this.stopped) return
+    this.reconnectAttempts = 0
     this.clearReconnectTimer()
     this.clearWatchdog()
     this.closeSource()
@@ -87,6 +91,7 @@ class TaskEventClient {
 
     source.onopen = () => {
       if (this.source !== source) return
+      this.reconnectAttempts = 0
       this.state.value = 'connected'
       this.touchWatchdog(source)
     }
@@ -95,8 +100,7 @@ class TaskEventClient {
       this.closeSource()
       this.clearWatchdog()
       if (this.stopped) return
-      this.state.value = 'disconnected'
-      this.scheduleReconnect()
+      this.retryOrDisconnect()
     }
   }
 
@@ -130,15 +134,24 @@ class TaskEventClient {
     this.watchdogTimer = window.setTimeout(() => {
       if (this.source !== source || this.stopped) return
       this.closeSource()
-      this.state.value = 'disconnected'
-      this.scheduleReconnect()
+      this.retryOrDisconnect()
     }, WATCHDOG_TIMEOUT)
+  }
+
+  private retryOrDisconnect() {
+    if (this.reconnectAttempts >= MAX_RECONNECT_ATTEMPTS) {
+      this.state.value = 'disconnected'
+      return
+    }
+    this.state.value = 'connecting'
+    this.scheduleReconnect()
   }
 
   private scheduleReconnect() {
     if (this.stopped || this.reconnectTimer !== null) return
     this.reconnectTimer = window.setTimeout(() => {
       this.reconnectTimer = null
+      this.reconnectAttempts += 1
       this.connect()
     }, RECONNECT_DELAY)
   }

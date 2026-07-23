@@ -96,13 +96,51 @@ describe('taskEventClient', () => {
     first.open()
     first.fail()
 
-    expect(taskEventClient.connectionState.value).toBe('disconnected')
+    expect(taskEventClient.connectionState.value).toBe('connecting')
     expect(first.closed).toBe(true)
     await vi.advanceTimersByTimeAsync(999)
     expect(MockEventSource.instances).toHaveLength(1)
     await vi.advanceTimersByTimeAsync(1)
     expect(MockEventSource.instances).toHaveLength(2)
     expect(fetchSpy).not.toHaveBeenCalled()
+  })
+
+  it('连续重连三次失败后才提示并停止自动重连', async () => {
+    taskEventClient.start()
+    const first = MockEventSource.instances[0]
+    first.open()
+    first.fail()
+
+    expect(taskEventClient.connectionState.value).toBe('connecting')
+
+    for (let attempt = 1; attempt <= 3; attempt += 1) {
+      await vi.advanceTimersByTimeAsync(1000)
+      expect(MockEventSource.instances).toHaveLength(attempt + 1)
+      MockEventSource.instances[attempt].fail()
+      expect(taskEventClient.connectionState.value).toBe(attempt < 3 ? 'connecting' : 'disconnected')
+    }
+
+    await vi.advanceTimersByTimeAsync(10_000)
+    expect(MockEventSource.instances).toHaveLength(4)
+  })
+
+  it('重连成功后清除失败计数', async () => {
+    taskEventClient.start()
+    MockEventSource.instances[0].open()
+    MockEventSource.instances[0].fail()
+
+    await vi.advanceTimersByTimeAsync(1000)
+    MockEventSource.instances[1].open()
+    expect(taskEventClient.connectionState.value).toBe('connected')
+
+    MockEventSource.instances[1].fail()
+    for (let attempt = 1; attempt <= 3; attempt += 1) {
+      await vi.advanceTimersByTimeAsync(1000)
+      MockEventSource.instances[attempt + 1].fail()
+    }
+
+    expect(MockEventSource.instances).toHaveLength(5)
+    expect(taskEventClient.connectionState.value).toBe('disconnected')
   })
 
   it('45秒无事件时重建连接并在sync时通知订阅者', async () => {
@@ -120,7 +158,7 @@ describe('taskEventClient', () => {
 
     await vi.advanceTimersByTimeAsync(45_000)
     expect(first.closed).toBe(true)
-    expect(taskEventClient.connectionState.value).toBe('disconnected')
+    expect(taskEventClient.connectionState.value).toBe('connecting')
     await vi.advanceTimersByTimeAsync(1000)
     expect(MockEventSource.instances).toHaveLength(2)
     unsubscribe()
