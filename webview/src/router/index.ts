@@ -58,7 +58,7 @@ export const routes: RouteRecordRaw[] = [
         path: '/tasks',
         name: 'Tasks',
         component: () => import('@/views/Tasks/index.vue'),
-        meta: { title: '任务中心', i18nKey: 'route.tasks', mobileTab: 'tasks' }
+        meta: { title: '传输列表', i18nKey: 'route.tasks', mobileTab: 'tasks' }
       },
       {
         path: '/trash',

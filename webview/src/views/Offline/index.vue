@@ -1,23 +1,19 @@
 <template>
-  <div class="offline-page desktop-content-page">
-    <!-- 标题栏 -->
-    <el-card shadow="never" class="header-card">
-      <div class="page-header">
-        <div class="header-left">
-          <h2>{{ t('offline.title') }}</h2>
-          <el-tag type="info">{{ t('offline.taskCount', { count: taskTotal }) }}</el-tag>
-        </div>
-        <div class="header-right">
-          <el-button type="primary" icon="Plus" @click="showDownloadDialog = true">{{
-            t('offline.newDownload')
-          }}</el-button>
-          <el-button icon="Refresh" @click="refreshTaskList">{{ t('common.refresh') }}</el-button>
-        </div>
-      </div>
-    </el-card>
+  <WorkspacePage :title="t('offline.title')">
+    <template #icon>
+      <el-icon :size="24">
+        <Download />
+      </el-icon>
+    </template>
+    <template #meta>{{ t('offline.taskCount', { count: taskTotal }) }}</template>
+    <template #actions>
+      <el-button type="primary" icon="Plus" @click="showDownloadDialog = true">{{
+        t('offline.newDownload')
+      }}</el-button>
+      <el-button icon="Refresh" @click="refreshTaskList">{{ t('common.refresh') }}</el-button>
+    </template>
 
-    <!-- 任务列表 -->
-    <el-card shadow="never" class="task-list-card">
+    <template v-if="selectedTaskIds.length > 0" #toolbar>
       <div v-if="selectedTaskIds.length > 0" class="batch-toolbar">
         <el-tag type="info" size="small">
           {{ t('offline.selectedTasks', { count: selectedTaskIds.length }) }}
@@ -45,233 +41,235 @@
           </el-button>
         </div>
       </div>
+    </template>
 
-      <!-- PC端：表格布局 -->
-      <el-table
-        ref="taskTableRef"
-        :data="taskList"
-        row-key="id"
-        v-loading="loading"
-        class="offline-table desktop-table"
-        @selection-change="handleTaskSelectionChange"
-      >
-        <el-table-column type="selection" width="44" :reserve-selection="true" />
-        <el-table-column :label="t('tasks.fileName')" min-width="180" class-name="mobile-name-column">
-          <template #default="{ row }">
-            <div class="file-name-cell">
-              <el-icon :size="24" class="offline-icon"><Document /></el-icon>
-              <div class="file-info">
-                <file-name-tooltip
-                  :file-name="row.file_name || t('offline.unknownFile')"
-                  view-mode="table"
-                  custom-class="file-name"
-                />
-                <div class="file-url mobile-hide" v-if="row.url">{{ truncateUrl(row.url) }}</div>
-              </div>
-            </div>
-          </template>
-        </el-table-column>
-
-        <el-table-column :label="t('tasks.status')" width="105" class-name="mobile-hide">
-          <template #default="{ row }">
-            <el-tag :type="getStatusType(row.state)">{{ row.state_text }}</el-tag>
-          </template>
-        </el-table-column>
-
-        <el-table-column :label="t('tasks.progress')" width="160" class-name="mobile-progress-column">
-          <template #default="{ row }">
-            <div class="progress-cell">
-              <el-progress
-                :percentage="row.progress"
-                :status="row.state === 3 ? 'success' : row.state === 4 || row.state === 5 ? 'exception' : undefined"
+    <!-- PC端：表格布局 -->
+    <el-table
+      ref="taskTableRef"
+      :data="taskList"
+      row-key="id"
+      v-loading="loading"
+      class="offline-table desktop-table"
+      @selection-change="handleTaskSelectionChange"
+    >
+      <el-table-column type="selection" width="44" :reserve-selection="true" />
+      <el-table-column :label="t('tasks.fileName')" min-width="180" class-name="mobile-name-column">
+        <template #default="{ row }">
+          <div class="file-name-cell">
+            <el-icon :size="24" class="offline-icon"><Document /></el-icon>
+            <div class="file-info">
+              <file-name-tooltip
+                :file-name="row.file_name || t('offline.unknownFile')"
+                view-mode="table"
+                custom-class="file-name"
               />
-              <span class="progress-text">
-                {{
-                  row.file_size > 0
-                    ? `${formatSize(row.downloaded_size)} / ${formatSize(row.file_size)}`
-                    : t('offline.downloadedOnly', { size: formatSize(row.downloaded_size) })
-                }}
-              </span>
-            </div>
-          </template>
-        </el-table-column>
-
-        <el-table-column :label="t('offline.speed')" width="80" class-name="mobile-hide">
-          <template #default="{ row }">
-            <span v-if="row.state === 1">{{ formatSpeed(row.speed) }}</span>
-            <span v-else>-</span>
-          </template>
-        </el-table-column>
-
-        <el-table-column :label="t('tasks.createTime')" width="145" class-name="mobile-hide">
-          <template #default="{ row }">
-            {{ formatDate(row.create_time) }}
-          </template>
-        </el-table-column>
-
-        <el-table-column :label="t('offline.errorInfo')" min-width="95" class-name="mobile-hide">
-          <template #default="{ row }">
-            <el-tooltip v-if="row.error_msg" :content="row.error_msg" placement="top">
-              <span class="error-msg-text">{{ row.error_msg }}</span>
-            </el-tooltip>
-            <span v-else class="no-error-text">-</span>
-          </template>
-        </el-table-column>
-
-        <el-table-column :label="t('tasks.operation')" width="180" class-name="mobile-actions-column">
-          <template #default="{ row }">
-            <div class="action-buttons">
-              <el-button
-                v-if="row.state === 1"
-                link
-                icon="VideoPause"
-                type="warning"
-                @click="pauseTask(row.id)"
-                size="small"
-              >
-                {{ t('tasks.pause') }}
-              </el-button>
-              <el-button
-                v-if="row.state === 2"
-                link
-                icon="VideoPlay"
-                type="primary"
-                @click="resumeTask(row)"
-                size="small"
-              >
-                {{ t('tasks.resume') }}
-              </el-button>
-              <el-button
-                v-if="row.state === 0 || row.state === 1 || row.state === 2"
-                link
-                icon="Close"
-                type="danger"
-                @click="cancelTask(row.id)"
-                size="small"
-              >
-                {{ t('tasks.cancel') }}
-              </el-button>
-              <el-button
-                v-if="row.state === 4 || row.state === 5"
-                link
-                icon="RefreshRight"
-                type="primary"
-                @click="retryTask(row)"
-                size="small"
-              >
-                {{ t('tasks.retry') }}
-              </el-button>
-              <el-button
-                v-if="row.state === 3 || row.state === 4 || row.state === 5"
-                link
-                icon="Delete"
-                type="danger"
-                @click="deleteTask(row.id)"
-                size="small"
-              >
-                {{ t('tasks.delete') }}
-              </el-button>
-            </div>
-          </template>
-        </el-table-column>
-      </el-table>
-
-      <!-- 移动端：卡片布局 -->
-      <div class="mobile-task-list" v-loading="loading">
-        <div
-          v-for="row in taskList"
-          :key="row.id"
-          class="mobile-task-item"
-          :class="{ selected: selectedTaskIds.includes(row.id) }"
-        >
-          <div class="task-item-header">
-            <div class="task-item-info">
-              <el-checkbox
-                :model-value="selectedTaskIds.includes(row.id)"
-                class="task-checkbox"
-                @change="() => toggleMobileTaskSelection(row)"
-              />
-              <el-icon :size="24" class="task-icon offline-icon"><Document /></el-icon>
-              <div class="task-name-wrapper">
-                <file-name-tooltip
-                  :file-name="row.file_name || row.url || t('offline.unknownFile')"
-                  view-mode="list"
-                  custom-class="task-name"
-                />
-                <div class="task-meta">
-                  <el-tag :type="getStatusType(row.state)" size="small" effect="plain">
-                    {{ row.state_text }}
-                  </el-tag>
-                  <span class="task-size">
-                    {{
-                      row.file_size > 0
-                        ? `${formatSize(row.downloaded_size)} / ${formatSize(row.file_size)}`
-                        : t('offline.downloadedOnly', { size: formatSize(row.downloaded_size) })
-                    }}
-                  </span>
-                  <span v-if="row.state === 1" class="task-speed">{{ formatSpeed(row.speed) }}</span>
-                </div>
-                <div v-if="row.url" class="task-url">{{ truncateUrl(row.url, 40) }}</div>
-              </div>
-            </div>
-            <div class="task-actions">
-              <el-button v-if="row.state === 1" link type="warning" @click.stop="pauseTask(row.id)" class="action-btn">
-                <el-icon><VideoPause /></el-icon>
-              </el-button>
-              <el-button v-if="row.state === 2" link type="primary" @click.stop="resumeTask(row)" class="action-btn">
-                <el-icon><VideoPlay /></el-icon>
-              </el-button>
-              <el-button
-                v-if="row.state === 0 || row.state === 1 || row.state === 2"
-                link
-                type="danger"
-                @click.stop="cancelTask(row.id)"
-                class="action-btn"
-              >
-                <el-icon><Close /></el-icon>
-              </el-button>
-              <el-button
-                v-if="row.state === 4 || row.state === 5"
-                link
-                type="primary"
-                @click.stop="retryTask(row)"
-                class="action-btn"
-              >
-                <el-icon><RefreshRight /></el-icon>
-              </el-button>
-              <el-button
-                v-if="row.state === 3 || row.state === 4 || row.state === 5"
-                link
-                type="danger"
-                @click.stop="deleteTask(row.id)"
-                class="action-btn"
-              >
-                <el-icon><Delete /></el-icon>
-              </el-button>
+              <div class="file-url mobile-hide" v-if="row.url">{{ truncateUrl(row.url) }}</div>
             </div>
           </div>
-          <div class="task-progress-wrapper">
+        </template>
+      </el-table-column>
+
+      <el-table-column :label="t('tasks.status')" width="105" class-name="mobile-hide">
+        <template #default="{ row }">
+          <el-tag :type="getStatusType(row.state)">{{ row.state_text }}</el-tag>
+        </template>
+      </el-table-column>
+
+      <el-table-column :label="t('tasks.progress')" width="160" class-name="mobile-progress-column">
+        <template #default="{ row }">
+          <div class="progress-cell">
             <el-progress
               :percentage="row.progress"
               :status="row.state === 3 ? 'success' : row.state === 4 || row.state === 5 ? 'exception' : undefined"
-              :stroke-width="6"
-              text-inside
-              class="task-progress"
             />
+            <span class="progress-text">
+              {{
+                row.file_size > 0
+                  ? `${formatSize(row.downloaded_size)} / ${formatSize(row.file_size)}`
+                  : t('offline.downloadedOnly', { size: formatSize(row.downloaded_size) })
+              }}
+            </span>
+          </div>
+        </template>
+      </el-table-column>
+
+      <el-table-column :label="t('offline.speed')" width="80" class-name="mobile-hide">
+        <template #default="{ row }">
+          <span v-if="row.state === 1">{{ formatSpeed(row.speed) }}</span>
+          <span v-else>-</span>
+        </template>
+      </el-table-column>
+
+      <el-table-column :label="t('tasks.createTime')" width="145" class-name="mobile-hide">
+        <template #default="{ row }">
+          {{ formatDate(row.create_time) }}
+        </template>
+      </el-table-column>
+
+      <el-table-column :label="t('offline.errorInfo')" min-width="95" class-name="mobile-hide">
+        <template #default="{ row }">
+          <el-tooltip v-if="row.error_msg" :content="row.error_msg" placement="top">
+            <span class="error-msg-text">{{ row.error_msg }}</span>
+          </el-tooltip>
+          <span v-else class="no-error-text">-</span>
+        </template>
+      </el-table-column>
+
+      <el-table-column :label="t('tasks.operation')" width="180" class-name="mobile-actions-column">
+        <template #default="{ row }">
+          <div class="action-buttons">
+            <el-button
+              v-if="row.state === 1"
+              link
+              icon="VideoPause"
+              type="warning"
+              @click="pauseTask(row.id)"
+              size="small"
+            >
+              {{ t('tasks.pause') }}
+            </el-button>
+            <el-button
+              v-if="row.state === 2"
+              link
+              icon="VideoPlay"
+              type="primary"
+              @click="resumeTask(row)"
+              size="small"
+            >
+              {{ t('tasks.resume') }}
+            </el-button>
+            <el-button
+              v-if="row.state === 0 || row.state === 1 || row.state === 2"
+              link
+              icon="Close"
+              type="danger"
+              @click="cancelTask(row.id)"
+              size="small"
+            >
+              {{ t('tasks.cancel') }}
+            </el-button>
+            <el-button
+              v-if="row.state === 4 || row.state === 5"
+              link
+              icon="RefreshRight"
+              type="primary"
+              @click="retryTask(row)"
+              size="small"
+            >
+              {{ t('tasks.retry') }}
+            </el-button>
+            <el-button
+              v-if="row.state === 3 || row.state === 4 || row.state === 5"
+              link
+              icon="Delete"
+              type="danger"
+              @click="deleteTask(row.id)"
+              size="small"
+            >
+              {{ t('tasks.delete') }}
+            </el-button>
+          </div>
+        </template>
+      </el-table-column>
+    </el-table>
+
+    <!-- 移动端：卡片布局 -->
+    <div class="mobile-task-list" v-loading="loading">
+      <div
+        v-for="row in taskList"
+        :key="row.id"
+        class="mobile-task-item"
+        :class="{ selected: selectedTaskIds.includes(row.id) }"
+      >
+        <div class="task-item-header">
+          <div class="task-item-info">
+            <el-checkbox
+              :model-value="selectedTaskIds.includes(row.id)"
+              class="task-checkbox"
+              @change="() => toggleMobileTaskSelection(row)"
+            />
+            <el-icon :size="24" class="task-icon offline-icon"><Document /></el-icon>
+            <div class="task-name-wrapper">
+              <file-name-tooltip
+                :file-name="row.file_name || row.url || t('offline.unknownFile')"
+                view-mode="list"
+                custom-class="task-name"
+              />
+              <div class="task-meta">
+                <el-tag :type="getStatusType(row.state)" size="small" effect="plain">
+                  {{ row.state_text }}
+                </el-tag>
+                <span class="task-size">
+                  {{
+                    row.file_size > 0
+                      ? `${formatSize(row.downloaded_size)} / ${formatSize(row.file_size)}`
+                      : t('offline.downloadedOnly', { size: formatSize(row.downloaded_size) })
+                  }}
+                </span>
+                <span v-if="row.state === 1" class="task-speed">{{ formatSpeed(row.speed) }}</span>
+              </div>
+              <div v-if="row.url" class="task-url">{{ truncateUrl(row.url, 40) }}</div>
+            </div>
+          </div>
+          <div class="task-actions">
+            <el-button v-if="row.state === 1" link type="warning" @click.stop="pauseTask(row.id)" class="action-btn">
+              <el-icon><VideoPause /></el-icon>
+            </el-button>
+            <el-button v-if="row.state === 2" link type="primary" @click.stop="resumeTask(row)" class="action-btn">
+              <el-icon><VideoPlay /></el-icon>
+            </el-button>
+            <el-button
+              v-if="row.state === 0 || row.state === 1 || row.state === 2"
+              link
+              type="danger"
+              @click.stop="cancelTask(row.id)"
+              class="action-btn"
+            >
+              <el-icon><Close /></el-icon>
+            </el-button>
+            <el-button
+              v-if="row.state === 4 || row.state === 5"
+              link
+              type="primary"
+              @click.stop="retryTask(row)"
+              class="action-btn"
+            >
+              <el-icon><RefreshRight /></el-icon>
+            </el-button>
+            <el-button
+              v-if="row.state === 3 || row.state === 4 || row.state === 5"
+              link
+              type="danger"
+              @click.stop="deleteTask(row.id)"
+              class="action-btn"
+            >
+              <el-icon><Delete /></el-icon>
+            </el-button>
           </div>
         </div>
+        <div class="task-progress-wrapper">
+          <el-progress
+            :percentage="row.progress"
+            :status="row.state === 3 ? 'success' : row.state === 4 || row.state === 5 ? 'exception' : undefined"
+            :stroke-width="6"
+            text-inside
+            class="task-progress"
+          />
+        </div>
       </div>
+    </div>
 
-      <el-empty v-if="taskList.length === 0 && !loading" :description="t('offline.noDownloads')" />
-      <MobileInfiniteList
-        v-if="isMobile && taskList.length > 0"
-        :loading="loading"
-        :has-more="taskList.length < taskTotal"
-        @load-more="loadNextMobileTaskPage"
-        @retry="loadNextMobileTaskPage"
-      />
+    <el-empty v-if="taskList.length === 0 && !loading" :description="t('offline.noDownloads')" />
+    <MobileInfiniteList
+      v-if="isMobile && taskList.length > 0"
+      :loading="loading"
+      :has-more="taskList.length < taskTotal"
+      @load-more="loadNextMobileTaskPage"
+      @retry="loadNextMobileTaskPage"
+    />
+
+    <template v-if="!isMobile && taskTotal > taskPageSize" #footer>
       <el-pagination
-        v-if="!isMobile && taskTotal > taskPageSize"
         v-model:current-page="taskPage"
         v-model:page-size="taskPageSize"
         :total="taskTotal"
@@ -281,351 +279,353 @@
         @current-change="handleTaskPageChange"
         @size-change="handleTaskPageSizeChange"
       />
-    </el-card>
+    </template>
 
-    <!-- 统一下载对话框 -->
-    <el-dialog
-      v-model="showDownloadDialog"
-      :title="t('offline.newDownload')"
-      :width="isMobile ? '95%' : '800px'"
-      :fullscreen="isMobile"
-      @open="handleDownloadDialogOpen"
-      @close="handleDownloadDialogClose"
-      :destroy-on-close="true"
-      class="download-dialog"
-    >
-      <template v-if="showDownloadDialog">
-        <!-- 输入区域：支持文本输入和文件上传 -->
-        <div class="input-section">
-          <el-tabs v-model="inputType" class="input-tabs">
-            <el-tab-pane :label="t('offline.inputLink')" name="text">
-              <el-form-item :label="t('offline.downloadLink')">
-                <el-input
-                  v-model="downloadForm.inputText"
-                  :placeholder="t('offline.downloadLinkPlaceholder')"
-                  type="textarea"
-                  :rows="3"
-                  @input="handleInputTextChange"
-                />
-                <div class="input-tip">
-                  <el-icon><InfoFilled /></el-icon>
-                  <span>{{ t('offline.downloadTip') }}</span>
-                </div>
-              </el-form-item>
-            </el-tab-pane>
-            <el-tab-pane :label="t('offline.uploadTorrent')" name="file">
-              <el-upload
-                ref="torrentUploadRef"
-                :auto-upload="false"
-                :on-change="handleTorrentFileChange"
-                :limit="1"
-                accept=".torrent"
-                drag
-                class="torrent-upload"
-              >
-                <el-icon class="el-icon--upload"><UploadFilled /></el-icon>
-                <div class="el-upload__text">
-                  {{ t('offline.dragTorrentHere') }}
-                </div>
-                <template #tip>
-                  <div class="el-upload__tip">
-                    {{ t('offline.torrentFileTip') }}
-                  </div>
-                </template>
-              </el-upload>
-              <div v-if="torrentFileName" class="torrent-file-info">
-                <el-icon><Document /></el-icon>
-                <span>{{ torrentFileName }}</span>
-                <el-button link type="danger" @click="clearTorrentFile">{{ t('offline.clear') }}</el-button>
-              </div>
-            </el-tab-pane>
-          </el-tabs>
-
-          <!-- 输入类型提示 -->
-          <div v-if="detectedInputType" class="detected-type-tip">
-            <el-icon :class="detectedInputType === 'url' ? 'input-icon-success' : 'input-icon-primary'" :size="16">
-              <component :is="detectedInputType === 'url' ? 'Check' : 'InfoFilled'" />
-            </el-icon>
-            <span v-if="detectedInputType === 'url'">{{ t('offline.detectedAsUrl') }}</span>
-            <span v-else-if="detectedInputType === 'magnet'">{{ t('offline.detectedAsMagnet') }}</span>
-            <span v-else-if="detectedInputType === 'torrent'">{{ t('offline.detectedAsTorrent') }}</span>
-          </div>
-        </div>
-
-        <!-- URL 下载模式：直接显示表单 -->
-        <el-form
-          v-if="detectedInputType === 'url' && !torrentParseResult"
-          :model="downloadForm"
-          :rules="downloadRules"
-          ref="downloadFormRef"
-          label-width="100px"
-          style="margin-top: 20px"
-        >
-          <el-form-item :label="t('offline.saveLocation')">
-            <el-tree-select
-              v-model="downloadForm.save_path"
-              :data="folderTreeData"
-              :render-after-expand="false"
-              :placeholder="t('offline.selectSaveDirectory')"
-              :loading="loadingTree"
-              style="width: 100%"
-              check-strictly
-              :props="{ label: 'label', children: 'children' }"
-              :default-expand-all="true"
-              node-key="value"
-            />
-          </el-form-item>
-          <el-form-item :label="t('offline.downloadType')">
-            <el-select v-model="downloadForm.download_type" style="width: 100%">
-              <el-option :label="t('offline.downloadTypeAuto')" value="auto" />
-              <el-option :label="t('offline.downloadTypeHttp')" value="http" />
-              <el-option :label="t('offline.downloadTypeHls')" value="hls" />
-            </el-select>
-          </el-form-item>
-          <template v-if="showHLSOptions">
-            <el-form-item v-if="showHLSFileName" :label="t('offline.outputFileName')">
-              <el-input v-model="downloadForm.file_name" :placeholder="t('offline.outputFileNamePlaceholder')" />
-            </el-form-item>
-            <el-form-item :label="t('offline.requestHeaders')">
-              <div class="hls-header-editor">
-                <div v-for="(header, index) in hlsHeaderRows" :key="header.id" class="hls-header-row">
+    <template #overlays>
+      <!-- 统一下载对话框 -->
+      <el-dialog
+        v-model="showDownloadDialog"
+        :title="t('offline.newDownload')"
+        :width="isMobile ? '95%' : '800px'"
+        :fullscreen="isMobile"
+        @open="handleDownloadDialogOpen"
+        @close="handleDownloadDialogClose"
+        :destroy-on-close="true"
+        class="download-dialog"
+      >
+        <template v-if="showDownloadDialog">
+          <!-- 输入区域：支持文本输入和文件上传 -->
+          <div class="input-section">
+            <el-tabs v-model="inputType" class="input-tabs">
+              <el-tab-pane :label="t('offline.inputLink')" name="text">
+                <el-form-item :label="t('offline.downloadLink')">
                   <el-input
-                    v-model="header.name"
-                    :placeholder="t('offline.headerName')"
-                    @paste="handleHeaderPaste($event, index, 'create')"
+                    v-model="downloadForm.inputText"
+                    :placeholder="t('offline.downloadLinkPlaceholder')"
+                    type="textarea"
+                    :rows="3"
+                    @input="handleInputTextChange"
                   />
-                  <el-input v-model="header.value" :placeholder="t('offline.headerValue')" />
-                  <el-button link type="danger" @click="removeHeaderRow(index, 'create')">{{
-                    t('common.delete')
-                  }}</el-button>
-                </div>
-                <el-button link type="primary" @click="addHeaderRow('create')"
-                  >+ {{ t('offline.addHeader') }}</el-button
+                  <div class="input-tip">
+                    <el-icon><InfoFilled /></el-icon>
+                    <span>{{ t('offline.downloadTip') }}</span>
+                  </div>
+                </el-form-item>
+              </el-tab-pane>
+              <el-tab-pane :label="t('offline.uploadTorrent')" name="file">
+                <el-upload
+                  ref="torrentUploadRef"
+                  :auto-upload="false"
+                  :on-change="handleTorrentFileChange"
+                  :limit="1"
+                  accept=".torrent"
+                  drag
+                  class="torrent-upload"
                 >
-                <div class="input-tip">{{ t('offline.headerPasteTip') }}</div>
-              </div>
-            </el-form-item>
-            <el-form-item :label="t('offline.headerHosts')">
-              <el-select
-                v-model="downloadForm.header_hosts"
-                multiple
-                filterable
-                allow-create
-                default-first-option
-                :placeholder="t('offline.headerHostsPlaceholder')"
+                  <el-icon class="el-icon--upload"><UploadFilled /></el-icon>
+                  <div class="el-upload__text">
+                    {{ t('offline.dragTorrentHere') }}
+                  </div>
+                  <template #tip>
+                    <div class="el-upload__tip">
+                      {{ t('offline.torrentFileTip') }}
+                    </div>
+                  </template>
+                </el-upload>
+                <div v-if="torrentFileName" class="torrent-file-info">
+                  <el-icon><Document /></el-icon>
+                  <span>{{ torrentFileName }}</span>
+                  <el-button link type="danger" @click="clearTorrentFile">{{ t('offline.clear') }}</el-button>
+                </div>
+              </el-tab-pane>
+            </el-tabs>
+
+            <!-- 输入类型提示 -->
+            <div v-if="detectedInputType" class="detected-type-tip">
+              <el-icon :class="detectedInputType === 'url' ? 'input-icon-success' : 'input-icon-primary'" :size="16">
+                <component :is="detectedInputType === 'url' ? 'Check' : 'InfoFilled'" />
+              </el-icon>
+              <span v-if="detectedInputType === 'url'">{{ t('offline.detectedAsUrl') }}</span>
+              <span v-else-if="detectedInputType === 'magnet'">{{ t('offline.detectedAsMagnet') }}</span>
+              <span v-else-if="detectedInputType === 'torrent'">{{ t('offline.detectedAsTorrent') }}</span>
+            </div>
+          </div>
+
+          <!-- URL 下载模式：直接显示表单 -->
+          <el-form
+            v-if="detectedInputType === 'url' && !torrentParseResult"
+            :model="downloadForm"
+            :rules="downloadRules"
+            ref="downloadFormRef"
+            label-width="100px"
+            style="margin-top: 20px"
+          >
+            <el-form-item :label="t('offline.saveLocation')">
+              <el-tree-select
+                v-model="downloadForm.save_path"
+                :data="folderTreeData"
+                :render-after-expand="false"
+                :placeholder="t('offline.selectSaveDirectory')"
+                :loading="loadingTree"
                 style="width: 100%"
+                check-strictly
+                :props="{ label: 'label', children: 'children' }"
+                :default-expand-all="true"
+                node-key="value"
               />
             </el-form-item>
-          </template>
-          <el-form-item :label="t('offline.encryptStorage')">
-            <el-switch v-model="downloadForm.enable_encryption" />
-          </el-form-item>
-          <el-form-item
-            v-if="downloadForm.enable_encryption"
-            :label="t('offline.encryptPassword')"
-            prop="file_password"
-          >
-            <el-input
-              v-model="downloadForm.file_password"
-              type="password"
-              :placeholder="t('offline.encryptPasswordPlaceholder')"
-              show-password
-              maxlength="32"
-            />
-            <div style="font-size: 12px; color: var(--el-text-color-secondary); margin-top: 4px">
-              {{ t('offline.encryptPasswordTip') }}
-            </div>
-          </el-form-item>
-        </el-form>
+            <el-form-item :label="t('offline.downloadType')">
+              <el-select v-model="downloadForm.download_type" style="width: 100%">
+                <el-option :label="t('offline.downloadTypeAuto')" value="auto" />
+                <el-option :label="t('offline.downloadTypeHttp')" value="http" />
+                <el-option :label="t('offline.downloadTypeHls')" value="hls" />
+              </el-select>
+            </el-form-item>
+            <template v-if="showHLSOptions">
+              <el-form-item v-if="showHLSFileName" :label="t('offline.outputFileName')">
+                <el-input v-model="downloadForm.file_name" :placeholder="t('offline.outputFileNamePlaceholder')" />
+              </el-form-item>
+              <el-form-item :label="t('offline.requestHeaders')">
+                <div class="hls-header-editor">
+                  <div v-for="(header, index) in hlsHeaderRows" :key="header.id" class="hls-header-row">
+                    <el-input
+                      v-model="header.name"
+                      :placeholder="t('offline.headerName')"
+                      @paste="handleHeaderPaste($event, index, 'create')"
+                    />
+                    <el-input v-model="header.value" :placeholder="t('offline.headerValue')" />
+                    <el-button link type="danger" @click="removeHeaderRow(index, 'create')">{{
+                      t('common.delete')
+                    }}</el-button>
+                  </div>
+                  <el-button link type="primary" @click="addHeaderRow('create')"
+                    >+ {{ t('offline.addHeader') }}</el-button
+                  >
+                  <div class="input-tip">{{ t('offline.headerPasteTip') }}</div>
+                </div>
+              </el-form-item>
+              <el-form-item :label="t('offline.headerHosts')">
+                <el-select
+                  v-model="downloadForm.header_hosts"
+                  multiple
+                  filterable
+                  allow-create
+                  default-first-option
+                  :placeholder="t('offline.headerHostsPlaceholder')"
+                  style="width: 100%"
+                />
+              </el-form-item>
+            </template>
+            <el-form-item :label="t('offline.encryptStorage')">
+              <el-switch v-model="downloadForm.enable_encryption" />
+            </el-form-item>
+            <el-form-item
+              v-if="downloadForm.enable_encryption"
+              :label="t('offline.encryptPassword')"
+              prop="file_password"
+            >
+              <el-input
+                v-model="downloadForm.file_password"
+                type="password"
+                :placeholder="t('offline.encryptPasswordPlaceholder')"
+                show-password
+                maxlength="32"
+              />
+              <div style="font-size: 12px; color: var(--el-text-color-secondary); margin-top: 4px">
+                {{ t('offline.encryptPasswordTip') }}
+              </div>
+            </el-form-item>
+          </el-form>
 
-        <!-- 种子/磁力链接模式：解析按钮 -->
-        <div
-          v-if="(detectedInputType === 'magnet' || detectedInputType === 'torrent') && !torrentParseResult"
-          class="parse-section"
-        >
+          <!-- 种子/磁力链接模式：解析按钮 -->
+          <div
+            v-if="(detectedInputType === 'magnet' || detectedInputType === 'torrent') && !torrentParseResult"
+            class="parse-section"
+          >
+            <el-button
+              type="primary"
+              :loading="parsing"
+              :disabled="!canParse"
+              @click="handleParseTorrent"
+              style="width: 100%"
+            >
+              {{ t('offline.parseTorrent') }}
+            </el-button>
+          </div>
+
+          <!-- 解析结果：文件列表 -->
+          <div v-if="torrentParseResult" class="parse-result-section">
+            <div class="torrent-info">
+              <h4>{{ torrentParseResult.name }}</h4>
+              <div class="torrent-meta">
+                <el-tag type="info">{{ t('offline.fileCount', { count: torrentParseResult.files.length }) }}</el-tag>
+                <el-tag type="info">{{ formatSize(torrentParseResult.total_size) }}</el-tag>
+              </div>
+            </div>
+            <el-divider />
+            <div class="file-selection-section">
+              <div class="selection-header">
+                <el-checkbox v-model="selectAllFiles" :indeterminate="isIndeterminate" @change="handleSelectAll">
+                  {{ t('offline.allSelect') }}
+                </el-checkbox>
+                <span class="selected-count">{{
+                  t('offline.selectedFiles', { count: selectedFileIndexes.length })
+                }}</span>
+              </div>
+              <el-scrollbar height="300px" class="file-list-scrollbar">
+                <el-table
+                  ref="torrentFileTableRef"
+                  :data="torrentParseResult.files"
+                  @selection-change="handleFileSelectionChange"
+                  :row-key="(row: any) => row.index"
+                >
+                  <el-table-column type="selection" width="55" :reserve-selection="true" />
+                  <el-table-column :label="t('tasks.fileName')" min-width="200">
+                    <template #default="{ row }">
+                      <file-name-tooltip :file-name="row.name" view-mode="table" custom-class="torrent-file-name" />
+                    </template>
+                  </el-table-column>
+                  <el-table-column :label="t('tasks.fileSize')" width="120">
+                    <template #default="{ row }">
+                      {{ formatSize(row.size) }}
+                    </template>
+                  </el-table-column>
+                  <el-table-column :label="t('offline.filePath')" min-width="150" class-name="mobile-hide">
+                    <template #default="{ row }">
+                      <span class="file-path">{{ row.path }}</span>
+                    </template>
+                  </el-table-column>
+                </el-table>
+              </el-scrollbar>
+            </div>
+          </div>
+
+          <!-- 种子下载配置表单（解析后显示） -->
+          <el-form
+            v-if="torrentParseResult"
+            :model="downloadForm"
+            :rules="downloadRules"
+            ref="downloadFormRef"
+            label-width="100px"
+            style="margin-top: 20px"
+          >
+            <el-form-item :label="t('offline.saveLocation')">
+              <el-tree-select
+                v-model="downloadForm.save_path"
+                :data="folderTreeData"
+                :render-after-expand="false"
+                :placeholder="t('offline.selectSaveDirectory')"
+                :loading="loadingTree"
+                style="width: 100%"
+                check-strictly
+                :props="{ label: 'label', children: 'children' }"
+                :default-expand-all="true"
+                node-key="value"
+              />
+            </el-form-item>
+            <el-form-item :label="t('offline.encryptStorage')">
+              <el-switch v-model="downloadForm.enable_encryption" />
+            </el-form-item>
+            <el-form-item
+              v-if="downloadForm.enable_encryption"
+              :label="t('offline.encryptPassword')"
+              prop="file_password"
+            >
+              <el-input
+                v-model="downloadForm.file_password"
+                type="password"
+                :placeholder="t('offline.encryptPasswordPlaceholder')"
+                show-password
+                maxlength="32"
+              />
+              <div style="font-size: 12px; color: var(--el-text-color-secondary); margin-top: 4px">
+                {{ t('offline.encryptPasswordTip') }}
+              </div>
+            </el-form-item>
+          </el-form>
+        </template>
+
+        <template #footer>
+          <el-button @click="showDownloadDialog = false">{{ t('common.cancel') }}</el-button>
+          <!-- URL 下载模式 -->
           <el-button
+            v-if="detectedInputType === 'url' && !torrentParseResult"
+            type="primary"
+            :loading="creating"
+            @click="handleCreateUrlDownload"
+          >
+            {{ t('offline.createTask') }}
+          </el-button>
+          <!-- 种子/磁力链接模式：解析按钮 -->
+          <el-button
+            v-else-if="(detectedInputType === 'magnet' || detectedInputType === 'torrent') && !torrentParseResult"
             type="primary"
             :loading="parsing"
             :disabled="!canParse"
             @click="handleParseTorrent"
-            style="width: 100%"
           >
             {{ t('offline.parseTorrent') }}
           </el-button>
-        </div>
-
-        <!-- 解析结果：文件列表 -->
-        <div v-if="torrentParseResult" class="parse-result-section">
-          <div class="torrent-info">
-            <h4>{{ torrentParseResult.name }}</h4>
-            <div class="torrent-meta">
-              <el-tag type="info">{{ t('offline.fileCount', { count: torrentParseResult.files.length }) }}</el-tag>
-              <el-tag type="info">{{ formatSize(torrentParseResult.total_size) }}</el-tag>
-            </div>
-          </div>
-          <el-divider />
-          <div class="file-selection-section">
-            <div class="selection-header">
-              <el-checkbox v-model="selectAllFiles" :indeterminate="isIndeterminate" @change="handleSelectAll">
-                {{ t('offline.allSelect') }}
-              </el-checkbox>
-              <span class="selected-count">{{
-                t('offline.selectedFiles', { count: selectedFileIndexes.length })
-              }}</span>
-            </div>
-            <el-scrollbar height="300px" class="file-list-scrollbar">
-              <el-table
-                ref="torrentFileTableRef"
-                :data="torrentParseResult.files"
-                @selection-change="handleFileSelectionChange"
-                :row-key="(row: any) => row.index"
-              >
-                <el-table-column type="selection" width="55" :reserve-selection="true" />
-                <el-table-column :label="t('tasks.fileName')" min-width="200">
-                  <template #default="{ row }">
-                    <file-name-tooltip :file-name="row.name" view-mode="table" custom-class="torrent-file-name" />
-                  </template>
-                </el-table-column>
-                <el-table-column :label="t('tasks.fileSize')" width="120">
-                  <template #default="{ row }">
-                    {{ formatSize(row.size) }}
-                  </template>
-                </el-table-column>
-                <el-table-column :label="t('offline.filePath')" min-width="150" class-name="mobile-hide">
-                  <template #default="{ row }">
-                    <span class="file-path">{{ row.path }}</span>
-                  </template>
-                </el-table-column>
-              </el-table>
-            </el-scrollbar>
-          </div>
-        </div>
-
-        <!-- 种子下载配置表单（解析后显示） -->
-        <el-form
-          v-if="torrentParseResult"
-          :model="downloadForm"
-          :rules="downloadRules"
-          ref="downloadFormRef"
-          label-width="100px"
-          style="margin-top: 20px"
-        >
-          <el-form-item :label="t('offline.saveLocation')">
-            <el-tree-select
-              v-model="downloadForm.save_path"
-              :data="folderTreeData"
-              :render-after-expand="false"
-              :placeholder="t('offline.selectSaveDirectory')"
-              :loading="loadingTree"
-              style="width: 100%"
-              check-strictly
-              :props="{ label: 'label', children: 'children' }"
-              :default-expand-all="true"
-              node-key="value"
-            />
-          </el-form-item>
-          <el-form-item :label="t('offline.encryptStorage')">
-            <el-switch v-model="downloadForm.enable_encryption" />
-          </el-form-item>
-          <el-form-item
-            v-if="downloadForm.enable_encryption"
-            :label="t('offline.encryptPassword')"
-            prop="file_password"
+          <!-- 种子/磁力链接模式：开始下载按钮 -->
+          <el-button
+            v-else-if="torrentParseResult"
+            type="primary"
+            :loading="creatingTorrent"
+            :disabled="selectedFileIndexes.length === 0"
+            @click="handleStartTorrentDownload"
           >
-            <el-input
-              v-model="downloadForm.file_password"
-              type="password"
-              :placeholder="t('offline.encryptPasswordPlaceholder')"
-              show-password
-              maxlength="32"
-            />
-            <div style="font-size: 12px; color: var(--el-text-color-secondary); margin-top: 4px">
-              {{ t('offline.encryptPasswordTip') }}
+            {{ t('offline.startDownload', { count: selectedFileIndexes.length }) }}
+          </el-button>
+        </template>
+      </el-dialog>
+
+      <el-dialog
+        v-model="showResumeHeadersDialog"
+        :title="headerDialogMode === 'retry' ? t('offline.updateHeadersRetryTitle') : t('offline.updateHeadersTitle')"
+        width="680px"
+      >
+        <el-form label-width="110px">
+          <el-form-item :label="t('offline.requestHeaders')">
+            <div class="hls-header-editor">
+              <div v-for="(header, index) in resumeHeaderRows" :key="header.id" class="hls-header-row">
+                <el-input
+                  v-model="header.name"
+                  :placeholder="t('offline.headerName')"
+                  @paste="handleHeaderPaste($event, index, 'resume')"
+                />
+                <el-input v-model="header.value" :placeholder="t('offline.headerValue')" />
+                <el-button link type="danger" @click="removeHeaderRow(index, 'resume')">{{
+                  t('common.delete')
+                }}</el-button>
+              </div>
+              <el-button link type="primary" @click="addHeaderRow('resume')">+ {{ t('offline.addHeader') }}</el-button>
+              <div class="input-tip">{{ t('offline.headerPasteTip') }}</div>
             </div>
+          </el-form-item>
+          <el-form-item :label="t('offline.headerHosts')">
+            <el-select
+              v-model="resumeHeaderHosts"
+              multiple
+              filterable
+              allow-create
+              default-first-option
+              :placeholder="t('offline.headerHostsPlaceholder')"
+              style="width: 100%"
+            />
+          </el-form-item>
+          <el-form-item v-if="resumeTargetTask?.requires_password" :label="t('offline.encryptPassword')">
+            <el-input v-model="resumeFilePassword" type="password" show-password />
           </el-form-item>
         </el-form>
-      </template>
-
-      <template #footer>
-        <el-button @click="showDownloadDialog = false">{{ t('common.cancel') }}</el-button>
-        <!-- URL 下载模式 -->
-        <el-button
-          v-if="detectedInputType === 'url' && !torrentParseResult"
-          type="primary"
-          :loading="creating"
-          @click="handleCreateUrlDownload"
-        >
-          {{ t('offline.createTask') }}
-        </el-button>
-        <!-- 种子/磁力链接模式：解析按钮 -->
-        <el-button
-          v-else-if="(detectedInputType === 'magnet' || detectedInputType === 'torrent') && !torrentParseResult"
-          type="primary"
-          :loading="parsing"
-          :disabled="!canParse"
-          @click="handleParseTorrent"
-        >
-          {{ t('offline.parseTorrent') }}
-        </el-button>
-        <!-- 种子/磁力链接模式：开始下载按钮 -->
-        <el-button
-          v-else-if="torrentParseResult"
-          type="primary"
-          :loading="creatingTorrent"
-          :disabled="selectedFileIndexes.length === 0"
-          @click="handleStartTorrentDownload"
-        >
-          {{ t('offline.startDownload', { count: selectedFileIndexes.length }) }}
-        </el-button>
-      </template>
-    </el-dialog>
-
-    <el-dialog
-      v-model="showResumeHeadersDialog"
-      :title="headerDialogMode === 'retry' ? t('offline.updateHeadersRetryTitle') : t('offline.updateHeadersTitle')"
-      width="680px"
-    >
-      <el-form label-width="110px">
-        <el-form-item :label="t('offline.requestHeaders')">
-          <div class="hls-header-editor">
-            <div v-for="(header, index) in resumeHeaderRows" :key="header.id" class="hls-header-row">
-              <el-input
-                v-model="header.name"
-                :placeholder="t('offline.headerName')"
-                @paste="handleHeaderPaste($event, index, 'resume')"
-              />
-              <el-input v-model="header.value" :placeholder="t('offline.headerValue')" />
-              <el-button link type="danger" @click="removeHeaderRow(index, 'resume')">{{
-                t('common.delete')
-              }}</el-button>
-            </div>
-            <el-button link type="primary" @click="addHeaderRow('resume')">+ {{ t('offline.addHeader') }}</el-button>
-            <div class="input-tip">{{ t('offline.headerPasteTip') }}</div>
-          </div>
-        </el-form-item>
-        <el-form-item :label="t('offline.headerHosts')">
-          <el-select
-            v-model="resumeHeaderHosts"
-            multiple
-            filterable
-            allow-create
-            default-first-option
-            :placeholder="t('offline.headerHostsPlaceholder')"
-            style="width: 100%"
-          />
-        </el-form-item>
-        <el-form-item v-if="resumeTargetTask?.requires_password" :label="t('offline.encryptPassword')">
-          <el-input v-model="resumeFilePassword" type="password" show-password />
-        </el-form-item>
-      </el-form>
-      <template #footer>
-        <el-button @click="showResumeHeadersDialog = false">{{ t('common.cancel') }}</el-button>
-        <el-button type="primary" :loading="resumingWithHeaders" @click="confirmResumeWithHeaders">
-          {{ headerDialogMode === 'retry' ? t('tasks.retry') : t('tasks.resume') }}
-        </el-button>
-      </template>
-    </el-dialog>
-  </div>
+        <template #footer>
+          <el-button @click="showResumeHeadersDialog = false">{{ t('common.cancel') }}</el-button>
+          <el-button type="primary" :loading="resumingWithHeaders" @click="confirmResumeWithHeaders">
+            {{ headerDialogMode === 'retry' ? t('tasks.retry') : t('tasks.resume') }}
+          </el-button>
+        </template>
+      </el-dialog>
+    </template>
+  </WorkspacePage>
 </template>
 
 <script setup lang="ts">
@@ -650,6 +650,7 @@
   import { useResponsive, useI18n, useMobileLayerHistory } from '@/composables'
   import { useLatestRequest } from '@/composables/core/useLatestRequest'
   import { MobileInfiniteList } from '@/components/mobile'
+  import WorkspacePage from '@/components/WorkspacePage/index.vue'
 
   const { proxy } = getCurrentInstance() as ComponentInternalInstance
   const { t } = useI18n()
@@ -1566,72 +1567,6 @@
     margin-bottom: 8px;
   }
 
-  .offline-page {
-    height: 100%;
-    display: flex;
-    flex-direction: column;
-    gap: 16px;
-  }
-
-  .header-card {
-    flex-shrink: 0;
-  }
-
-  .page-header {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-  }
-
-  .header-left {
-    display: flex;
-    align-items: center;
-    gap: 16px;
-  }
-
-  .header-left h2 {
-    margin: 0;
-    font-size: 20px;
-    font-weight: 600;
-  }
-
-  .header-right {
-    display: flex;
-    gap: 12px;
-  }
-
-  .header-right .el-button {
-    transition: all 0.2s;
-  }
-
-  html.dark .header-right .el-button {
-    background-color: var(--el-bg-color);
-    border-color: var(--el-border-color);
-    color: var(--el-text-color-primary);
-  }
-
-  html.dark .header-right .el-button:hover {
-    background-color: var(--el-fill-color-light);
-    border-color: var(--primary-color);
-    color: var(--primary-color);
-  }
-
-  html.dark .header-right .el-button--primary {
-    background-color: var(--primary-color);
-    border-color: var(--primary-color);
-    color: var(--el-text-color-primary);
-  }
-
-  html.dark .header-right .el-button--primary:hover {
-    background-color: var(--primary-hover);
-    border-color: var(--primary-hover);
-  }
-
-  .task-list-card {
-    flex: 1;
-    overflow: hidden;
-  }
-
   .batch-toolbar {
     display: flex;
     align-items: center;
@@ -1864,40 +1799,6 @@
 
     .mobile-task-list {
       display: block;
-    }
-
-    .header-card {
-      padding: 12px 16px;
-    }
-
-    .page-header {
-      flex-direction: column;
-      align-items: flex-start;
-      gap: 12px;
-    }
-
-    .header-left {
-      width: 100%;
-      justify-content: space-between;
-    }
-
-    .header-left h2 {
-      font-size: 18px;
-    }
-
-    .header-right {
-      width: 100%;
-      justify-content: space-between;
-      gap: 8px;
-    }
-
-    .header-right .el-button:first-child {
-      flex: 1;
-    }
-
-    .header-right .el-button:last-child {
-      flex-shrink: 0;
-      min-width: auto;
     }
 
     .file-info {

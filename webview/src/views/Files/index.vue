@@ -942,11 +942,12 @@
     overflow: hidden;
     padding: 4px;
   }
-  :global(.desktop-shell) .files-page {
+  /* 复杂选择器需整体声明为全局，避免 scoped 编译后误作用到桌面壳层。 */
+  :global(.desktop-shell .files-page) {
     padding: var(--desktop-page-padding);
     gap: 12px;
   }
-  :global(.desktop-shell) .file-content-area {
+  :global(.desktop-shell .file-content-area) {
     border: 1px solid var(--desktop-border);
     border-radius: var(--desktop-radius-lg);
     background: var(--desktop-surface);

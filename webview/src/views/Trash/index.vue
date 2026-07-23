@@ -1,55 +1,28 @@
 <template>
-  <div class="trash-page desktop-content-page">
-    <!-- 工具栏 -->
-    <el-card shadow="never" class="toolbar-card">
-      <div class="toolbar">
-        <div class="toolbar-content">
-          <!-- 选择提示 -->
-          <div class="toolbar-selection" v-if="selectedIds.length > 0">
-            <el-tag type="info" size="small">{{ t('common.selected', { count: selectedIds.length }) }}</el-tag>
-          </div>
-
-          <!-- 操作按钮组 -->
-          <div class="toolbar-actions">
-            <!-- 第一行：需要选择的操作 -->
-            <div class="action-row action-row-primary">
-              <el-button
-                icon="RefreshRight"
-                :disabled="selectedIds.length === 0"
-                @click="handleRestore"
-                size="small"
-                class="action-btn"
-              >
-                {{ t('trash.restore') }}
-              </el-button>
-              <el-button
-                icon="Delete"
-                type="danger"
-                :disabled="selectedIds.length === 0"
-                @click="handleDeletePermanently"
-                size="small"
-                class="action-btn"
-              >
-                {{ t('trash.permanentDelete') }}
-              </el-button>
-            </div>
-
-            <!-- 第二行：独立操作 -->
-            <div class="action-row action-row-secondary">
-              <el-button
-                icon="Delete"
-                type="danger"
-                @click="handleEmptyTrash"
-                size="small"
-                class="action-btn action-btn-full"
-              >
-                {{ t('trash.empty') }}
-              </el-button>
-            </div>
-          </div>
-        </div>
-      </div>
-    </el-card>
+  <WorkspacePage :title="t('trash.title')">
+    <template #icon>
+      <el-icon :size="24">
+        <Delete />
+      </el-icon>
+    </template>
+    <template #meta>{{ t('trash.fileCount', { count: total }) }}</template>
+    <template #actions>
+      <el-button v-if="!isHandheld" icon="RefreshRight" :disabled="selectedIds.length === 0" @click="handleRestore">
+        {{ t('trash.restore') }}
+      </el-button>
+      <el-button
+        v-if="!isHandheld"
+        icon="Delete"
+        type="danger"
+        :disabled="selectedIds.length === 0"
+        @click="handleDeletePermanently"
+      >
+        {{ t('trash.permanentDelete') }}
+      </el-button>
+      <el-button icon="Delete" type="danger" @click="handleEmptyTrash">
+        {{ t('trash.empty') }}
+      </el-button>
+    </template>
 
     <!-- PC端：表格布局 -->
     <el-table
@@ -229,31 +202,33 @@
       @load-more="loadNextMobilePage"
       @retry="loadNextMobilePage"
     />
-    <div v-if="isHandheld && selectedIds.length > 0" class="mobile-trash-batch-bar">
-      <span>{{ t('common.selected', { count: selectedIds.length }) }}</span>
-      <el-button link type="primary" @click="handleRestore"
-        ><el-icon><RefreshRight /></el-icon>{{ t('trash.restore') }}</el-button
-      >
-      <el-button link type="danger" @click="handleDeletePermanently"
-        ><el-icon><Delete /></el-icon>{{ t('trash.permanentDelete') }}</el-button
-      >
-      <el-button link @click="selectedIds = []">{{ t('common.cancel') }}</el-button>
-    </div>
-
     <!-- 空状态 -->
     <EmptyState v-if="!loading && fileList.length === 0" type="trash" :show-actions="false" compact />
 
-    <!-- 分页 -->
-    <pagination
-      v-if="!isHandheld && total > 0"
-      v-model:page="currentPage"
-      v-model:limit="pageSize"
-      :total="total"
-      :page-sizes="[20, 50, 100]"
-      @pagination="handlePagination"
-      class="pagination"
-    />
-  </div>
+    <template v-if="!isHandheld && total > 0" #footer>
+      <pagination
+        v-model:page="currentPage"
+        v-model:limit="pageSize"
+        :total="total"
+        :page-sizes="[20, 50, 100]"
+        @pagination="handlePagination"
+        class="pagination"
+      />
+    </template>
+
+    <template #floating>
+      <div v-if="isHandheld && selectedIds.length > 0" class="mobile-trash-batch-bar">
+        <span>{{ t('common.selected', { count: selectedIds.length }) }}</span>
+        <el-button link type="primary" @click="handleRestore"
+          ><el-icon><RefreshRight /></el-icon>{{ t('trash.restore') }}</el-button
+        >
+        <el-button link type="danger" @click="handleDeletePermanently"
+          ><el-icon><Delete /></el-icon>{{ t('trash.permanentDelete') }}</el-button
+        >
+        <el-button link @click="selectedIds = []">{{ t('common.cancel') }}</el-button>
+      </div>
+    </template>
+  </WorkspacePage>
 </template>
 
 <script setup lang="ts">
@@ -273,6 +248,7 @@
   import { useUserStore } from '@/stores'
   import EmptyState from '@/components/EmptyState/index.vue'
   import { retainBatchFailures } from '@/utils/desktop/batch'
+  import WorkspacePage from '@/components/WorkspacePage/index.vue'
 
   const { proxy } = getCurrentInstance() as ComponentInternalInstance
   const userStore = useUserStore()
@@ -555,66 +531,6 @@
 </script>
 
 <style scoped>
-  .trash-page {
-    padding: 20px;
-    background: var(--bg-color);
-    min-height: calc(100vh - 60px);
-    display: flex;
-    flex-direction: column;
-    gap: 16px;
-  }
-
-  .toolbar-card {
-    flex-shrink: 0;
-  }
-
-  .toolbar {
-    width: 100%;
-  }
-
-  .toolbar-content {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    gap: 16px;
-  }
-
-  .toolbar-selection {
-    display: flex;
-    align-items: center;
-    flex-shrink: 0;
-  }
-
-  .toolbar-actions {
-    display: flex;
-    align-items: center;
-    gap: 10px;
-    flex: 1;
-    justify-content: flex-end;
-  }
-
-  .action-row {
-    display: flex;
-    gap: 10px;
-    align-items: center;
-  }
-
-  .action-row-primary {
-    display: flex;
-  }
-
-  .action-row-secondary {
-    display: flex;
-  }
-
-  .action-btn {
-    min-width: auto;
-  }
-
-  .action-btn-full {
-    min-width: 100px;
-  }
-
   .file-name-cell {
     display: flex;
     align-items: flex-start;
@@ -964,57 +880,6 @@
 
     .mobile-trash-list {
       display: block;
-    }
-
-    .trash-page {
-      padding: 12px;
-      gap: 12px;
-    }
-
-    .toolbar-card {
-      padding: 12px 16px;
-    }
-
-    .toolbar-content {
-      flex-direction: column;
-      align-items: stretch;
-      gap: 10px;
-    }
-
-    .toolbar-selection {
-      width: 100%;
-      justify-content: flex-start;
-    }
-
-    .toolbar-actions {
-      flex-direction: column;
-      width: 100%;
-      gap: 8px;
-      align-items: stretch;
-    }
-
-    .action-row {
-      width: 100%;
-      gap: 8px;
-    }
-
-    .action-row-primary {
-      display: flex;
-    }
-
-    .action-row-secondary {
-      display: flex;
-    }
-
-    .action-btn {
-      flex: 1;
-      font-size: 13px;
-      padding: 8px 12px;
-    }
-
-    .action-btn-full {
-      flex: 1;
-      width: 100%;
     }
 
     .pagination {

@@ -4,7 +4,7 @@ export default {
     shares: '我的分享',
     offline: '离线下载',
     subscriptions: '订阅管理',
-    tasks: '任务中心',
+    tasks: '传输列表',
     trash: '回收站',
     square: '文件广场',
     me: '我的',
@@ -534,6 +534,7 @@ export default {
   trash: {
     folderItems: '共 {count} 项',
     title: '回收站',
+    fileCount: '共 {count} 项',
     restore: '还原',
     permanentDelete: '永久删除',
     empty: '清空回收站',

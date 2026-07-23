@@ -4,7 +4,7 @@ export default {
     shares: 'Shares',
     offline: 'Offline Download',
     subscriptions: 'Subscriptions',
-    tasks: 'Task Center',
+    tasks: 'Transfer List',
     trash: 'Trash',
     square: 'Square',
     me: 'Me',
@@ -538,6 +538,7 @@ export default {
   trash: {
     folderItems: '{count} items',
     title: 'Trash',
+    fileCount: '{count} items',
     restore: 'Restore',
     permanentDelete: 'Permanent Delete',
     empty: 'Empty Trash',

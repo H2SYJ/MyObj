@@ -1,12 +1,32 @@
 <template>
-  <div class="tasks-page desktop-content-page">
+  <WorkspacePage :title="t('route.tasks')">
+    <template #icon>
+      <el-icon :size="24">
+        <List />
+      </el-icon>
+    </template>
+    <template #meta>{{ t('tasks.taskCount', { count: activeTaskTotal }) }}</template>
+    <template v-if="activeTab === 'upload'" #actions>
+      <el-button
+        v-if="uploadTotal > 0"
+        type="danger"
+        icon="Delete"
+        :loading="cleanLoading"
+        @click="clearAllUploadTasks"
+      >
+        {{ t('tasks.clearAll') }}
+      </el-button>
+      <el-button type="warning" icon="View" @click="showExpiredDialog = true">
+        {{ t('tasks.viewExpired') }}
+        <el-badge v-if="expiredTaskCount > 0" :value="expiredTaskCount" class="expired-badge" />
+      </el-button>
+    </template>
+
     <el-tabs v-model="activeTab" class="task-tabs">
       <el-tab-pane :label="t('tasks.upload')" name="upload">
         <UploadTaskTable
           :tasks="uploadTasks"
           :loading="uploadLoading"
-          :clean-loading="cleanLoading"
-          :expired-count="expiredTaskCount"
           :current-page="uploadCurrentPage"
           :page-size="uploadPageSize"
           :total="uploadTotal"
@@ -16,12 +36,9 @@
           @cancel="cancelUpload"
           @delete="deleteUpload"
           @retry="retryFinalize"
-          @view-expired="showExpiredDialog = true"
-          @clear-all="clearAllUploadTasks"
           @pagination="handleUploadPagination"
           @load-more="loadMoreUploadTasks"
         />
-        <ExpiredTasksDialog v-model="showExpiredDialog" @refresh="handleExpiredRefresh" />
       </el-tab-pane>
 
       <el-tab-pane :label="t('tasks.download')" name="download">
@@ -41,7 +58,11 @@
         />
       </el-tab-pane>
     </el-tabs>
-  </div>
+
+    <template #overlays>
+      <ExpiredTasksDialog v-model="showExpiredDialog" @refresh="handleExpiredRefresh" />
+    </template>
+  </WorkspacePage>
 </template>
 
 <script setup lang="ts">
@@ -50,6 +71,7 @@
   import UploadTaskTable from './components/UploadTaskTable.vue'
   import DownloadTaskTable from './components/DownloadTaskTable.vue'
   import ExpiredTasksDialog from './components/ExpiredTasksDialog.vue'
+  import WorkspacePage from '@/components/WorkspacePage/index.vue'
   import { useUploadTasks } from './composables/useUploadTasks'
   import { useDownloadTasks } from './composables/useDownloadTasks'
 
@@ -123,6 +145,8 @@
     resumeDownloadTask
   } = useDownloadTasks()
 
+  const activeTaskTotal = computed(() => (activeTab.value === 'upload' ? uploadTotal.value : downloadTotal.value))
+
   // 处理下载任务分页
   const handleDownloadPagination = ({ page, limit }: { page: number; limit: number }) => {
     loadDownloadTasks(true, page, limit)
@@ -180,17 +204,7 @@
 </script>
 
 <style scoped>
-  .tasks-page {
-    height: 100%;
-  }
-
   @media (max-width: 767px) {
-    .tasks-page {
-      min-height: 100%;
-      padding: 12px;
-      background: var(--bg-color);
-    }
-
     .task-tabs :deep(.el-tabs__header) {
       margin: 0 0 12px;
       padding: 4px;

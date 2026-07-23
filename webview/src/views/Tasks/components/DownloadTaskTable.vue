@@ -1,5 +1,5 @@
 <template>
-  <el-card shadow="never" class="task-card">
+  <div class="task-content">
     <!-- PC端：表格布局 -->
     <div class="table-wrapper" v-if="props.tasks.length > 0">
       <el-table :data="tasks" v-loading="loading" class="task-table desktop-table">
@@ -179,7 +179,7 @@
       @pagination="handlePagination"
       class="pagination"
     />
-  </el-card>
+  </div>
 </template>
 
 <script setup lang="ts">
@@ -250,19 +250,11 @@
 </script>
 
 <style scoped>
-  .task-card {
-    padding: 0;
+  .task-content {
     display: flex;
     flex-direction: column;
     height: 100%;
-  }
-
-  .task-card :deep(.el-card__body) {
-    display: flex;
-    flex-direction: column;
-    flex: 1;
     min-height: 0;
-    padding: 0;
   }
 
   .file-name-cell {
@@ -539,15 +531,6 @@
   }
 
   /* 深色模式样式 */
-  html.dark .task-card {
-    background: var(--card-bg);
-    border-color: var(--el-border-color);
-  }
-
-  html.dark .task-card :deep(.el-card__body) {
-    background: var(--card-bg);
-  }
-
   html.dark .pagination {
     border-top-color: var(--el-border-color);
   }

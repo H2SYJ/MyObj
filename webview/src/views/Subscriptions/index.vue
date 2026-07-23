@@ -1,52 +1,50 @@
 <template>
-  <div class="subscriptions-page desktop-content-page">
-    <el-card shadow="never" class="subscriptions-header-card">
-      <div class="header">
-        <div>
-          <h2>{{ t('subscriptions.title') }}</h2>
-          <span>{{ t('subscriptions.description') }}</span>
-        </div>
-        <div>
-          <el-button type="primary" icon="Plus" @click="openCreate">{{ t('subscriptions.create') }}</el-button
-          ><el-button icon="Refresh" @click="load">{{ t('common.refresh') }}</el-button>
-        </div>
-      </div>
-    </el-card>
-    <el-card v-if="!isHandheld" shadow="never">
-      <el-table :data="subscriptions" v-loading="loading">
-        <el-table-column prop="name" :label="t('subscriptions.subscription')" min-width="180" />
-        <el-table-column :label="t('subscriptions.plugin')" min-width="160"
-          ><template #default="{ row }"
-            >{{ pluginName(row.plugin_id) }} v{{ row.plugin_version }}</template
-          ></el-table-column
-        >
-        <el-table-column prop="schedule_time" :label="t('subscriptions.dailyTime')" width="100" />
-        <el-table-column prop="save_path" :label="t('subscriptions.savePath')" min-width="180" />
-        <el-table-column :label="t('subscriptions.status')" width="150"
-          ><template #default="{ row }"
-            ><el-tag :type="statusType(row.status)">{{ statusLabel(row.status) }}</el-tag></template
-          ></el-table-column
-        >
-        <el-table-column :label="t('subscriptions.enabled')" width="80"
-          ><template #default="{ row }"
-            ><el-switch
-              :model-value="row.enabled"
-              :disabled="row.status === 'needs_permission'"
-              @change="value => toggle(row, !!value)" /></template
-        ></el-table-column>
-        <el-table-column :label="t('subscriptions.operation')" width="300" fixed="right">
-          <template #default="{ row }">
-            <el-button link type="primary" @click="run(row)">{{ t('subscriptions.runNow') }}</el-button>
-            <el-button link @click="showHistory(row)">{{ t('subscriptions.history') }}</el-button>
-            <el-button link @click="openEdit(row)">{{ t('common.edit') }}</el-button>
-            <el-button v-if="row.status === 'needs_permission'" link type="warning" @click="confirmPermissions(row)">{{
-              t('subscriptions.confirmPermissions')
-            }}</el-button>
-            <el-button link type="danger" @click="remove(row)">{{ t('common.delete') }}</el-button>
-          </template>
-        </el-table-column>
-      </el-table>
-    </el-card>
+  <WorkspacePage :title="t('subscriptions.title')" :description="t('subscriptions.description')">
+    <template #icon>
+      <el-icon :size="24">
+        <Clock />
+      </el-icon>
+    </template>
+    <template #actions>
+      <el-button v-if="!isHandheld" type="primary" icon="Plus" @click="openCreate">{{
+        t('subscriptions.create')
+      }}</el-button>
+      <el-button icon="Refresh" @click="load">{{ t('common.refresh') }}</el-button>
+    </template>
+
+    <el-table v-if="!isHandheld" :data="subscriptions" v-loading="loading">
+      <el-table-column prop="name" :label="t('subscriptions.subscription')" min-width="180" />
+      <el-table-column :label="t('subscriptions.plugin')" min-width="160"
+        ><template #default="{ row }"
+          >{{ pluginName(row.plugin_id) }} v{{ row.plugin_version }}</template
+        ></el-table-column
+      >
+      <el-table-column prop="schedule_time" :label="t('subscriptions.dailyTime')" width="100" />
+      <el-table-column prop="save_path" :label="t('subscriptions.savePath')" min-width="180" />
+      <el-table-column :label="t('subscriptions.status')" width="150"
+        ><template #default="{ row }"
+          ><el-tag :type="statusType(row.status)">{{ statusLabel(row.status) }}</el-tag></template
+        ></el-table-column
+      >
+      <el-table-column :label="t('subscriptions.enabled')" width="80"
+        ><template #default="{ row }"
+          ><el-switch
+            :model-value="row.enabled"
+            :disabled="row.status === 'needs_permission'"
+            @change="value => toggle(row, !!value)" /></template
+      ></el-table-column>
+      <el-table-column :label="t('subscriptions.operation')" width="300" fixed="right">
+        <template #default="{ row }">
+          <el-button link type="primary" @click="run(row)">{{ t('subscriptions.runNow') }}</el-button>
+          <el-button link @click="showHistory(row)">{{ t('subscriptions.history') }}</el-button>
+          <el-button link @click="openEdit(row)">{{ t('common.edit') }}</el-button>
+          <el-button v-if="row.status === 'needs_permission'" link type="warning" @click="confirmPermissions(row)">{{
+            t('subscriptions.confirmPermissions')
+          }}</el-button>
+          <el-button link type="danger" @click="remove(row)">{{ t('common.delete') }}</el-button>
+        </template>
+      </el-table-column>
+    </el-table>
 
     <div v-else class="mobile-subscription-list" v-loading="loading">
       <article v-for="subscription in subscriptions" :key="subscription.id" class="mobile-subscription-card">
@@ -80,195 +78,204 @@
       <el-empty v-if="!loading && subscriptions.length === 0" :description="t('subscriptions.empty')" />
     </div>
 
-    <button
-      v-if="isHandheld"
-      type="button"
-      class="subscription-fab"
-      :aria-label="t('subscriptions.create')"
-      @click="openCreate"
-    >
-      <el-icon><Plus /></el-icon>
-    </button>
+    <template #floating>
+      <button
+        v-if="isHandheld"
+        type="button"
+        class="subscription-fab"
+        :aria-label="t('subscriptions.create')"
+        @click="openCreate"
+      >
+        <el-icon><Plus /></el-icon>
+      </button>
+    </template>
 
-    <MobileActionSheet
-      v-model="mobileActionsVisible"
-      :title="t('subscriptions.actionsTitle')"
-      :actions="mobileActions"
-      history-key="subscription-actions"
-      @select="handleMobileAction"
-    />
+    <template #overlays>
+      <MobileActionSheet
+        v-model="mobileActionsVisible"
+        :title="t('subscriptions.actionsTitle')"
+        :actions="mobileActions"
+        history-key="subscription-actions"
+        @select="handleMobileAction"
+      />
 
-    <el-dialog
-      v-model="dialogVisible"
-      :title="editingId ? t('subscriptions.editTitle') : t('subscriptions.createTitle')"
-      width="640px"
-      :fullscreen="isHandheld"
-    >
-      <el-form label-width="120px">
-        <el-form-item :label="t('subscriptions.name')"><el-input v-model="form.name" /></el-form-item>
-        <el-form-item :label="t('subscriptions.plugin')">
-          <el-select v-model="form.plugin_id" :disabled="!!editingId" style="width: 100%" @change="pluginChanged">
-            <el-option
-              v-for="plugin in plugins"
-              :key="plugin.id"
-              :label="`${plugin.name} v${plugin.version}`"
-              :value="plugin.id"
-            />
-          </el-select>
-        </el-form-item>
-        <template v-for="field in selectedPlugin?.config_fields || []" :key="field.key">
-          <el-form-item :label="field.label" :required="field.required">
-            <el-switch v-if="field.type === 'boolean'" v-model="form.config[field.key]" />
-            <el-input-number v-else-if="field.type === 'number'" v-model="form.config[field.key]" style="width: 100%" />
-            <el-select v-else-if="field.type === 'select'" v-model="form.config[field.key]" style="width: 100%">
+      <el-dialog
+        v-model="dialogVisible"
+        :title="editingId ? t('subscriptions.editTitle') : t('subscriptions.createTitle')"
+        width="640px"
+        :fullscreen="isHandheld"
+      >
+        <el-form label-width="120px">
+          <el-form-item :label="t('subscriptions.name')"><el-input v-model="form.name" /></el-form-item>
+          <el-form-item :label="t('subscriptions.plugin')">
+            <el-select v-model="form.plugin_id" :disabled="!!editingId" style="width: 100%" @change="pluginChanged">
               <el-option
-                v-for="option in field.options"
-                :key="String(option.value)"
-                :label="option.label"
-                :value="option.value"
+                v-for="plugin in plugins"
+                :key="plugin.id"
+                :label="`${plugin.name} v${plugin.version}`"
+                :value="plugin.id"
               />
             </el-select>
-            <el-input
-              v-else
-              v-model="form.config[field.key]"
-              :type="field.type"
-              :placeholder="
-                field.secret && configuredSecrets.includes(field.key)
-                  ? t('subscriptions.secretConfigured')
-                  : field.description
-              "
-              :show-password="field.type === 'password'"
+          </el-form-item>
+          <template v-for="field in selectedPlugin?.config_fields || []" :key="field.key">
+            <el-form-item :label="field.label" :required="field.required">
+              <el-switch v-if="field.type === 'boolean'" v-model="form.config[field.key]" />
+              <el-input-number
+                v-else-if="field.type === 'number'"
+                v-model="form.config[field.key]"
+                style="width: 100%"
+              />
+              <el-select v-else-if="field.type === 'select'" v-model="form.config[field.key]" style="width: 100%">
+                <el-option
+                  v-for="option in field.options"
+                  :key="String(option.value)"
+                  :label="option.label"
+                  :value="option.value"
+                />
+              </el-select>
+              <el-input
+                v-else
+                v-model="form.config[field.key]"
+                :type="field.type"
+                :placeholder="
+                  field.secret && configuredSecrets.includes(field.key)
+                    ? t('subscriptions.secretConfigured')
+                    : field.description
+                "
+                :show-password="field.type === 'password'"
+              />
+            </el-form-item>
+          </template>
+          <el-form-item :label="t('subscriptions.executionTime')"
+            ><el-time-picker v-model="form.schedule_time" value-format="HH:mm" format="HH:mm"
+          /></el-form-item>
+          <el-form-item :label="t('subscriptions.savePath')" required
+            ><el-input v-model="form.save_path" placeholder="/离线下载/订阅"
+          /></el-form-item>
+          <el-form-item :label="t('subscriptions.initialLimit')"
+            ><el-input-number v-model="form.initial_limit" :min="1" :max="100"
+          /></el-form-item>
+          <el-form-item :label="t('subscriptions.runLimit')"
+            ><el-input-number v-model="form.max_items_per_run" :min="1" :max="500"
+          /></el-form-item>
+          <el-form-item :label="t('subscriptions.pluginPermissions')">
+            <el-checkbox-group v-model="form.granted_permissions">
+              <el-checkbox
+                v-for="permission in selectedPlugin?.permissions || []"
+                :key="permission"
+                :value="permission"
+                :disabled="permission === 'network.public_http'"
+              >
+                {{ permissionLabel(permission) }}
+              </el-checkbox>
+            </el-checkbox-group>
+            <el-alert
+              v-if="selectedPlugin?.permissions.includes('downloads.custom_headers')"
+              :title="t('subscriptions.customHeadersWarning')"
+              type="warning"
+              :closable="false"
             />
           </el-form-item>
-        </template>
-        <el-form-item :label="t('subscriptions.executionTime')"
-          ><el-time-picker v-model="form.schedule_time" value-format="HH:mm" format="HH:mm"
-        /></el-form-item>
-        <el-form-item :label="t('subscriptions.savePath')" required
-          ><el-input v-model="form.save_path" placeholder="/离线下载/订阅"
-        /></el-form-item>
-        <el-form-item :label="t('subscriptions.initialLimit')"
-          ><el-input-number v-model="form.initial_limit" :min="1" :max="100"
-        /></el-form-item>
-        <el-form-item :label="t('subscriptions.runLimit')"
-          ><el-input-number v-model="form.max_items_per_run" :min="1" :max="500"
-        /></el-form-item>
-        <el-form-item :label="t('subscriptions.pluginPermissions')">
-          <el-checkbox-group v-model="form.granted_permissions">
-            <el-checkbox
-              v-for="permission in selectedPlugin?.permissions || []"
-              :key="permission"
-              :value="permission"
-              :disabled="permission === 'network.public_http'"
-            >
-              {{ permissionLabel(permission) }}
-            </el-checkbox>
-          </el-checkbox-group>
-          <el-alert
-            v-if="selectedPlugin?.permissions.includes('downloads.custom_headers')"
-            :title="t('subscriptions.customHeadersWarning')"
-            type="warning"
-            :closable="false"
-          />
-        </el-form-item>
-      </el-form>
-      <template #footer
-        ><el-button @click="dialogVisible = false">{{ t('common.cancel') }}</el-button
-        ><el-button type="primary" :loading="saving" @click="save">{{ t('common.save') }}</el-button></template
-      >
-    </el-dialog>
+        </el-form>
+        <template #footer
+          ><el-button @click="dialogVisible = false">{{ t('common.cancel') }}</el-button
+          ><el-button type="primary" :loading="saving" @click="save">{{ t('common.save') }}</el-button></template
+        >
+      </el-dialog>
 
-    <el-drawer
-      v-model="historyVisible"
-      :title="t('subscriptions.historyTitle', { name: historyTarget?.name || '' })"
-      :size="isHandheld ? '100%' : '75%'"
-    >
-      <el-tabs v-model="historyTab" v-loading="historyLoading" @tab-change="loadHistory">
-        <el-tab-pane :label="t('subscriptions.items')" name="items">
-          <el-table v-if="!isHandheld" :data="items" size="small">
-            <el-table-column prop="title" :label="t('subscriptions.itemTitle')" min-width="180" />
-            <el-table-column prop="save_path" :label="t('subscriptions.savePath')" min-width="160" />
-            <el-table-column prop="status" :label="t('subscriptions.submissionStatus')" width="120" />
-            <el-table-column :label="t('subscriptions.requestHeaders')" min-width="180"
-              ><template #default="{ row }"
-                ><span v-if="row.has_request_headers">{{
-                  t('subscriptions.headersConfigured', {
-                    names: row.request_header_names.join(', ') || t('subscriptions.valueUnavailable')
+      <el-drawer
+        v-model="historyVisible"
+        :title="t('subscriptions.historyTitle', { name: historyTarget?.name || '' })"
+        :size="isHandheld ? '100%' : '75%'"
+      >
+        <el-tabs v-model="historyTab" v-loading="historyLoading" @tab-change="loadHistory">
+          <el-tab-pane :label="t('subscriptions.items')" name="items">
+            <el-table v-if="!isHandheld" :data="items" size="small">
+              <el-table-column prop="title" :label="t('subscriptions.itemTitle')" min-width="180" />
+              <el-table-column prop="save_path" :label="t('subscriptions.savePath')" min-width="160" />
+              <el-table-column prop="status" :label="t('subscriptions.submissionStatus')" width="120" />
+              <el-table-column :label="t('subscriptions.requestHeaders')" min-width="180"
+                ><template #default="{ row }"
+                  ><span v-if="row.has_request_headers">{{
+                    t('subscriptions.headersConfigured', {
+                      names: row.request_header_names.join(', ') || t('subscriptions.valueUnavailable')
+                    })
+                  }}</span
+                  ><span v-else>-</span
+                  ><el-tag v-if="row.requires_headers" type="danger" size="small">{{
+                    t('subscriptions.waitingCredentials')
+                  }}</el-tag></template
+                ></el-table-column
+              >
+              <el-table-column :label="t('subscriptions.thumbnail')" min-width="150"
+                ><template #default="{ row }"
+                  ><el-tag size="small">{{ row.thumbnail_status }}</el-tag
+                  ><el-button v-if="row.thumbnail_status === 'failed'" link @click="retryThumbnail(row)">{{
+                    t('error.retry')
+                  }}</el-button></template
+                ></el-table-column
+              >
+            </el-table>
+            <div v-else class="mobile-history-list">
+              <article v-for="item in items" :key="item.id" class="history-card">
+                <strong>{{ item.title }}</strong>
+                <span>{{ item.save_path }}</span>
+                <div>
+                  <el-tag size="small">{{ item.status }}</el-tag
+                  ><el-tag size="small">{{ item.thumbnail_status }}</el-tag>
+                </div>
+                <small v-if="item.has_request_headers">{{
+                  t('subscriptions.requestHeadersValue', {
+                    names: item.request_header_names.join(', ') || t('subscriptions.valueUnavailable')
                   })
-                }}</span
-                ><span v-else>-</span
-                ><el-tag v-if="row.requires_headers" type="danger" size="small">{{
-                  t('subscriptions.waitingCredentials')
-                }}</el-tag></template
-              ></el-table-column
-            >
-            <el-table-column :label="t('subscriptions.thumbnail')" min-width="150"
-              ><template #default="{ row }"
-                ><el-tag size="small">{{ row.thumbnail_status }}</el-tag
-                ><el-button v-if="row.thumbnail_status === 'failed'" link @click="retryThumbnail(row)">{{
-                  t('error.retry')
-                }}</el-button></template
-              ></el-table-column
-            >
-          </el-table>
-          <div v-else class="mobile-history-list">
-            <article v-for="item in items" :key="item.id" class="history-card">
-              <strong>{{ item.title }}</strong>
-              <span>{{ item.save_path }}</span>
-              <div>
-                <el-tag size="small">{{ item.status }}</el-tag
-                ><el-tag size="small">{{ item.thumbnail_status }}</el-tag>
-              </div>
-              <small v-if="item.has_request_headers">{{
-                t('subscriptions.requestHeadersValue', {
-                  names: item.request_header_names.join(', ') || t('subscriptions.valueUnavailable')
-                })
-              }}</small>
-            </article>
-          </div>
-        </el-tab-pane>
-        <el-tab-pane :label="t('subscriptions.runs')" name="runs">
-          <el-table v-if="!isHandheld" :data="runs" size="small"
-            ><el-table-column prop="created_at" :label="t('subscriptions.time')" width="180" /><el-table-column
-              prop="trigger"
-              :label="t('subscriptions.trigger')"
-              width="100" /><el-table-column
-              prop="status"
-              :label="t('subscriptions.status')"
-              width="120" /><el-table-column
-              prop="items_found"
-              :label="t('subscriptions.found')"
-              width="80" /><el-table-column
-              prop="tasks_created"
-              :label="t('subscriptions.submitted')"
-              width="80" /><el-table-column prop="error_msg" :label="t('subscriptions.error')" min-width="220"
-          /></el-table>
-          <div v-else class="mobile-history-list">
-            <article v-for="runItem in runs" :key="runItem.id" class="history-card">
-              <div class="history-title">
-                <strong>{{ runItem.created_at }}</strong
-                ><el-tag size="small">{{ runItem.status }}</el-tag>
-              </div>
-              <span>{{
-                t('subscriptions.runSummary', {
-                  trigger: runItem.trigger,
-                  found: runItem.items_found,
-                  submitted: runItem.tasks_created
-                })
-              }}</span>
-              <small v-if="runItem.error_msg" class="history-error">{{ runItem.error_msg }}</small>
-            </article>
-          </div>
-        </el-tab-pane>
-      </el-tabs>
-    </el-drawer>
-  </div>
+                }}</small>
+              </article>
+            </div>
+          </el-tab-pane>
+          <el-tab-pane :label="t('subscriptions.runs')" name="runs">
+            <el-table v-if="!isHandheld" :data="runs" size="small"
+              ><el-table-column prop="created_at" :label="t('subscriptions.time')" width="180" /><el-table-column
+                prop="trigger"
+                :label="t('subscriptions.trigger')"
+                width="100" /><el-table-column
+                prop="status"
+                :label="t('subscriptions.status')"
+                width="120" /><el-table-column
+                prop="items_found"
+                :label="t('subscriptions.found')"
+                width="80" /><el-table-column
+                prop="tasks_created"
+                :label="t('subscriptions.submitted')"
+                width="80" /><el-table-column prop="error_msg" :label="t('subscriptions.error')" min-width="220"
+            /></el-table>
+            <div v-else class="mobile-history-list">
+              <article v-for="runItem in runs" :key="runItem.id" class="history-card">
+                <div class="history-title">
+                  <strong>{{ runItem.created_at }}</strong
+                  ><el-tag size="small">{{ runItem.status }}</el-tag>
+                </div>
+                <span>{{
+                  t('subscriptions.runSummary', {
+                    trigger: runItem.trigger,
+                    found: runItem.items_found,
+                    submitted: runItem.tasks_created
+                  })
+                }}</span>
+                <small v-if="runItem.error_msg" class="history-error">{{ runItem.error_msg }}</small>
+              </article>
+            </div>
+          </el-tab-pane>
+        </el-tabs>
+      </el-drawer>
+    </template>
+  </WorkspacePage>
 </template>
 
 <script setup lang="ts">
   import { ElMessage, ElMessageBox } from 'element-plus'
   import type { TabsPaneContext } from 'element-plus'
   import { MobileActionSheet, type MobileSheetAction } from '@/components/mobile'
+  import WorkspacePage from '@/components/WorkspacePage/index.vue'
   import { useI18n, useMobileLayerHistory, useResponsive } from '@/composables'
   import { useLatestRequest } from '@/composables/core/useLatestRequest'
   import type { InstalledPlugin } from '@/api/plugin'
@@ -498,24 +505,6 @@
 </script>
 
 <style scoped>
-  .subscriptions-page {
-    display: flex;
-    flex-direction: column;
-    gap: 16px;
-  }
-  .header {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    gap: 16px;
-  }
-  .header h2 {
-    margin: 0 0 6px;
-  }
-  .header span {
-    color: var(--el-text-color-secondary);
-  }
-
   .mobile-subscription-list,
   .mobile-history-list {
     display: grid;
@@ -591,14 +580,6 @@
   }
 
   @media (max-width: 767px) {
-    .subscriptions-page {
-      min-height: 100%;
-      padding: 12px 12px 86px;
-      gap: 12px;
-    }
-    .subscriptions-header-card {
-      display: none;
-    }
     :deep(.el-drawer__header) {
       padding-top: calc(16px + env(safe-area-inset-top));
     }

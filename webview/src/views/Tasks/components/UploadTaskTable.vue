@@ -1,26 +1,5 @@
 <template>
-  <el-card shadow="never" class="task-card">
-    <div class="card-header">
-      <span class="task-count">{{ t('tasks.taskCount', { count: tasks.length }) }}</span>
-      <div class="header-actions">
-        <el-button
-          v-if="tasks.length > 0"
-          type="danger"
-          size="small"
-          icon="Delete"
-          @click="$emit('clear-all')"
-          :loading="clearAllLoading"
-          class="clear-all-btn"
-        >
-          {{ t('tasks.clearAll') }}
-        </el-button>
-        <el-button type="warning" size="small" icon="View" @click="$emit('view-expired')" class="expired-btn">
-          {{ t('tasks.viewExpired')
-          }}<el-badge v-if="(expiredCount || 0) > 0" :value="expiredCount" class="expired-badge" />
-        </el-button>
-      </div>
-    </div>
-
+  <div class="task-content">
     <!-- PC端：表格布局 -->
     <div class="table-wrapper" v-if="props.tasks.length > 0">
       <el-table :data="tasks" v-loading="loading" class="task-table desktop-table">
@@ -300,7 +279,7 @@
       @pagination="handlePagination"
       class="pagination"
     />
-  </el-card>
+  </div>
 </template>
 
 <script setup lang="ts">
@@ -323,8 +302,6 @@
   const props = defineProps<{
     tasks: any[]
     loading: boolean
-    cleanLoading: boolean
-    expiredCount?: number
     currentPage?: number
     pageSize?: number
     total?: number
@@ -337,13 +314,9 @@
     cancel: [taskId: string]
     delete: [taskId: string]
     retry: [taskId: string]
-    'view-expired': []
-    'clear-all': []
     pagination: [{ page: number; limit: number }]
     loadMore: []
   }>()
-
-  const clearAllLoading = computed(() => props.cleanLoading)
 
   const currentPage = ref(props.currentPage || 1)
   const pageSize = ref(props.pageSize || 20)
@@ -374,50 +347,15 @@
 </script>
 
 <style scoped>
-  .task-card {
-    padding: 0;
+  .task-content {
     display: flex;
     flex-direction: column;
     height: 100%;
-  }
-
-  .task-card :deep(.el-card__body) {
-    display: flex;
-    flex-direction: column;
-    flex: 1;
     min-height: 0;
-    padding: 0;
-  }
-
-  .card-header {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    padding: 16px;
-    border-bottom: 1px solid var(--el-border-color-lighter);
   }
 
   .upload-task-icon {
     color: var(--el-color-primary);
-  }
-
-  .task-count {
-    font-size: 14px;
-    color: var(--el-text-color-regular);
-  }
-
-  .expired-badge {
-    margin-left: 4px;
-  }
-
-  .header-actions {
-    display: flex;
-    gap: 8px;
-    align-items: center;
-  }
-
-  .clear-all-btn {
-    margin-right: 8px;
   }
 
   .file-name-cell {
@@ -674,17 +612,6 @@
     .mobile-task-list {
       display: block;
     }
-
-    .card-header {
-      padding: 12px;
-      flex-wrap: wrap;
-      gap: 8px;
-    }
-
-    .expired-btn {
-      font-size: 12px;
-      padding: 6px 12px;
-    }
   }
 
   @media (max-width: 480px) {
@@ -730,23 +657,6 @@
   }
 
   /* 深色模式样式 */
-  html.dark .task-card {
-    background: var(--card-bg);
-    border-color: var(--el-border-color);
-  }
-
-  html.dark .task-card :deep(.el-card__body) {
-    background: var(--card-bg);
-  }
-
-  html.dark .card-header {
-    border-bottom-color: var(--el-border-color);
-  }
-
-  html.dark .task-count {
-    color: var(--el-text-color-primary);
-  }
-
   html.dark .pagination {
     border-top-color: var(--el-border-color);
   }

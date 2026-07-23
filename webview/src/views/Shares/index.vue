@@ -1,244 +1,240 @@
 <template>
-  <div class="shares-page desktop-content-page">
-    <!-- 头部卡片 -->
-    <div class="header-card glass-panel">
-      <div class="header">
-        <div class="header-left">
-          <div class="title-section">
-            <el-icon :size="24" class="title-icon"><Share /></el-icon>
-            <h2>{{ t('share.myShares') }}</h2>
-            <span class="share-count">{{ t('share.shareCount', { count: shareList.length }) }}</span>
-          </div>
-          <div v-if="selectedShares.length > 0" class="batch-selection-info">
-            <span class="selected-count">{{ t('share.selectedCount', { count: selectedShares.length }) }}</span>
-            <el-button type="danger" icon="Delete" size="small" @click="handleBatchDelete" :loading="batchDeleting">
-              {{ t('share.batchDelete') }}
-            </el-button>
-            <el-button link size="small" @click="clearSelection">
-              {{ t('share.cancelSelect') }}
-            </el-button>
-          </div>
-        </div>
-        <el-button type="primary" icon="Refresh" @click="loadShareList" :loading="loading">{{
-          t('common.refresh')
-        }}</el-button>
+  <WorkspacePage :title="t('share.myShares')">
+    <template #icon>
+      <el-icon :size="24">
+        <Share />
+      </el-icon>
+    </template>
+    <template #meta>{{ t('share.shareCount', { count: shareList.length }) }}</template>
+    <template v-if="selectedShares.length > 0" #header-extra>
+      <div class="batch-selection-info">
+        <span class="selected-count">{{ t('share.selectedCount', { count: selectedShares.length }) }}</span>
+        <el-button type="danger" icon="Delete" size="small" @click="handleBatchDelete" :loading="batchDeleting">
+          {{ t('share.batchDelete') }}
+        </el-button>
+        <el-button link size="small" @click="clearSelection">
+          {{ t('share.cancelSelect') }}
+        </el-button>
       </div>
-    </div>
+    </template>
+    <template #actions>
+      <el-button type="primary" icon="Refresh" @click="loadShareList" :loading="loading">{{
+        t('common.refresh')
+      }}</el-button>
+    </template>
 
     <!-- PC端：表格布局 -->
-    <div class="table-card glass-panel">
-      <el-table
-        ref="tableRef"
-        :data="shareList"
-        v-loading="loading"
-        class="shares-table desktop-table"
-        @selection-change="handleSelectionChange"
-      >
-        <el-table-column type="selection" width="55" align="center" />
-        <el-table-column :label="t('tasks.fileName')" min-width="200" class-name="mobile-name-column">
-          <template #default="{ row }">
-            <div class="file-name-cell">
-              <el-icon :size="24" class="share-icon"><Document /></el-icon>
-              <file-name-tooltip :file-name="row.file_name" view-mode="table" custom-class="file-name" />
-            </div>
-          </template>
-        </el-table-column>
-
-        <el-table-column :label="t('share.shareLink')" min-width="300" class-name="mobile-link-column">
-          <template #default="{ row }">
-            <div class="link-cell">
-              <el-input :model-value="getShareUrl(row.token)" readonly size="small" class="share-link-input">
-                <template #append>
-                  <el-button icon="CopyDocument" @click="copyShareLink(row)" :loading="copyingId === row.id">
-                    {{ t('common.copy') }}
-                  </el-button>
-                </template>
-              </el-input>
-            </div>
-          </template>
-        </el-table-column>
-
-        <el-table-column :label="t('share.sharePassword')" width="90" align="center" class-name="mobile-hide">
-          <template #default="{ row }">
-            <el-tooltip :content="row.password_hash ? t('share.hasPassword') : t('share.noPassword')" placement="top">
-              <div
-                class="status-badge"
-                :class="{ 'has-password': row.password_hash, 'no-password': !row.password_hash }"
-              >
-                <el-icon :size="16"><Lock /></el-icon>
-              </div>
-            </el-tooltip>
-          </template>
-        </el-table-column>
-
-        <el-table-column :label="t('share.downloadCount')" width="90" align="center" class-name="mobile-hide">
-          <template #default="{ row }">
-            <el-tooltip :content="t('share.downloadedTimes', { count: row.download_count || 0 })" placement="top">
-              <div class="download-badge">
-                <el-icon :size="14"><Download /></el-icon>
-                <span class="download-count-text">{{ row.download_count || 0 }}</span>
-              </div>
-            </el-tooltip>
-          </template>
-        </el-table-column>
-
-        <el-table-column :label="t('share.expireDate')" width="160" align="center" class-name="mobile-hide">
-          <template #default="{ row }">
-            <div class="time-cell">
-              <el-icon :size="14"><Clock /></el-icon>
-              <span :class="{ 'expired-text': isExpired(row.expires_at) }">
-                {{ formatDate(row.expires_at) }}
-              </span>
-            </div>
-          </template>
-        </el-table-column>
-
-        <el-table-column :label="t('share.createTime')" width="160" align="center" class-name="mobile-hide">
-          <template #default="{ row }">
-            <div class="time-cell">
-              <el-icon :size="14"><Calendar /></el-icon>
-              <span>{{ formatDate(row.created_at) }}</span>
-            </div>
-          </template>
-        </el-table-column>
-
-        <el-table-column
-          :label="t('tasks.operation')"
-          width="180"
-          fixed="right"
-          align="center"
-          class-name="mobile-actions-column"
-        >
-          <template #default="{ row }">
-            <div class="action-buttons">
-              <el-button link type="primary" icon="Edit" @click="handleUpdatePassword(row)" size="small">
-                {{ t('share.modifyPassword') }}
-              </el-button>
-              <el-button link type="danger" icon="Delete" @click="handleDelete(row)" size="small">
-                {{ t('common.delete') }}
-              </el-button>
-            </div>
-          </template>
-        </el-table-column>
-      </el-table>
-
-      <!-- 移动端：卡片布局 -->
-      <div class="mobile-share-list" v-loading="loading">
-        <div
-          v-for="row in shareList"
-          :key="row.id"
-          class="mobile-share-item"
-          :class="{ selected: isShareSelected(row.id) }"
-        >
-          <div class="share-item-header">
-            <el-checkbox
-              :model-value="isShareSelected(row.id)"
-              @change="toggleShareSelection(row)"
-              class="mobile-checkbox"
-            />
-            <div class="share-item-info">
-              <el-icon :size="24" class="share-icon"><Document /></el-icon>
-              <div class="share-name-wrapper">
-                <file-name-tooltip :file-name="row.file_name" view-mode="list" custom-class="share-name" />
-                <div class="share-meta">
-                  <div
-                    class="mobile-status-badge"
-                    :class="{ 'has-password': row.password_hash, 'no-password': !row.password_hash }"
-                  >
-                    <el-icon :size="14"><Lock /></el-icon>
-                    <span class="status-text">{{ row.password_hash ? t('share.password') : t('share.public') }}</span>
-                  </div>
-                  <div class="mobile-download-badge">
-                    <el-icon :size="12"><Download /></el-icon>
-                    <span class="download-text">{{ row.download_count || 0 }}</span>
-                  </div>
-                </div>
-              </div>
-            </div>
-            <div class="share-actions">
-              <el-button link @click.stop="openShareActions(row)" class="action-btn" aria-label="更多操作">
-                <el-icon><MoreFilled /></el-icon>
-              </el-button>
-            </div>
+    <el-table
+      ref="tableRef"
+      :data="shareList"
+      v-loading="loading"
+      class="shares-table desktop-table"
+      @selection-change="handleSelectionChange"
+    >
+      <el-table-column type="selection" width="55" align="center" />
+      <el-table-column :label="t('tasks.fileName')" min-width="200" class-name="mobile-name-column">
+        <template #default="{ row }">
+          <div class="file-name-cell">
+            <el-icon :size="24" class="share-icon"><Document /></el-icon>
+            <file-name-tooltip :file-name="row.file_name" view-mode="table" custom-class="file-name" />
           </div>
+        </template>
+      </el-table-column>
 
-          <div class="share-link-wrapper">
-            <el-input :model-value="getShareUrl(row.token)" readonly size="small" class="mobile-share-link-input">
+      <el-table-column :label="t('share.shareLink')" min-width="300" class-name="mobile-link-column">
+        <template #default="{ row }">
+          <div class="link-cell">
+            <el-input :model-value="getShareUrl(row.token)" readonly size="small" class="share-link-input">
               <template #append>
-                <el-button icon="CopyDocument" @click="copyShareLink(row)" :loading="copyingId === row.id" size="small">
+                <el-button icon="CopyDocument" @click="copyShareLink(row)" :loading="copyingId === row.id">
                   {{ t('common.copy') }}
                 </el-button>
               </template>
             </el-input>
           </div>
+        </template>
+      </el-table-column>
 
-          <div class="share-time-info">
-            <div class="time-item">
-              <el-icon :size="12"><Clock /></el-icon>
-              <span :class="{ 'expired-text': isExpired(row.expires_at) }">
-                {{ t('share.expire') }}：{{ formatDate(row.expires_at) }}
-              </span>
+      <el-table-column :label="t('share.sharePassword')" width="90" align="center" class-name="mobile-hide">
+        <template #default="{ row }">
+          <el-tooltip :content="row.password_hash ? t('share.hasPassword') : t('share.noPassword')" placement="top">
+            <div class="status-badge" :class="{ 'has-password': row.password_hash, 'no-password': !row.password_hash }">
+              <el-icon :size="16"><Lock /></el-icon>
             </div>
-            <div class="time-item">
-              <el-icon :size="12"><Calendar /></el-icon>
-              <span>{{ t('share.create') }}：{{ formatDate(row.created_at) }}</span>
+          </el-tooltip>
+        </template>
+      </el-table-column>
+
+      <el-table-column :label="t('share.downloadCount')" width="90" align="center" class-name="mobile-hide">
+        <template #default="{ row }">
+          <el-tooltip :content="t('share.downloadedTimes', { count: row.download_count || 0 })" placement="top">
+            <div class="download-badge">
+              <el-icon :size="14"><Download /></el-icon>
+              <span class="download-count-text">{{ row.download_count || 0 }}</span>
             </div>
+          </el-tooltip>
+        </template>
+      </el-table-column>
+
+      <el-table-column :label="t('share.expireDate')" width="160" align="center" class-name="mobile-hide">
+        <template #default="{ row }">
+          <div class="time-cell">
+            <el-icon :size="14"><Clock /></el-icon>
+            <span :class="{ 'expired-text': isExpired(row.expires_at) }">
+              {{ formatDate(row.expires_at) }}
+            </span>
+          </div>
+        </template>
+      </el-table-column>
+
+      <el-table-column :label="t('share.createTime')" width="160" align="center" class-name="mobile-hide">
+        <template #default="{ row }">
+          <div class="time-cell">
+            <el-icon :size="14"><Calendar /></el-icon>
+            <span>{{ formatDate(row.created_at) }}</span>
+          </div>
+        </template>
+      </el-table-column>
+
+      <el-table-column
+        :label="t('tasks.operation')"
+        width="180"
+        fixed="right"
+        align="center"
+        class-name="mobile-actions-column"
+      >
+        <template #default="{ row }">
+          <div class="action-buttons">
+            <el-button link type="primary" icon="Edit" @click="handleUpdatePassword(row)" size="small">
+              {{ t('share.modifyPassword') }}
+            </el-button>
+            <el-button link type="danger" icon="Delete" @click="handleDelete(row)" size="small">
+              {{ t('common.delete') }}
+            </el-button>
+          </div>
+        </template>
+      </el-table-column>
+    </el-table>
+
+    <!-- 移动端：卡片布局 -->
+    <div class="mobile-share-list" v-loading="loading">
+      <div
+        v-for="row in shareList"
+        :key="row.id"
+        class="mobile-share-item"
+        :class="{ selected: isShareSelected(row.id) }"
+      >
+        <div class="share-item-header">
+          <el-checkbox
+            :model-value="isShareSelected(row.id)"
+            @change="toggleShareSelection(row)"
+            class="mobile-checkbox"
+          />
+          <div class="share-item-info">
+            <el-icon :size="24" class="share-icon"><Document /></el-icon>
+            <div class="share-name-wrapper">
+              <file-name-tooltip :file-name="row.file_name" view-mode="list" custom-class="share-name" />
+              <div class="share-meta">
+                <div
+                  class="mobile-status-badge"
+                  :class="{ 'has-password': row.password_hash, 'no-password': !row.password_hash }"
+                >
+                  <el-icon :size="14"><Lock /></el-icon>
+                  <span class="status-text">{{ row.password_hash ? t('share.password') : t('share.public') }}</span>
+                </div>
+                <div class="mobile-download-badge">
+                  <el-icon :size="12"><Download /></el-icon>
+                  <span class="download-text">{{ row.download_count || 0 }}</span>
+                </div>
+              </div>
+            </div>
+          </div>
+          <div class="share-actions">
+            <el-button link @click.stop="openShareActions(row)" class="action-btn" aria-label="更多操作">
+              <el-icon><MoreFilled /></el-icon>
+            </el-button>
+          </div>
+        </div>
+
+        <div class="share-link-wrapper">
+          <el-input :model-value="getShareUrl(row.token)" readonly size="small" class="mobile-share-link-input">
+            <template #append>
+              <el-button icon="CopyDocument" @click="copyShareLink(row)" :loading="copyingId === row.id" size="small">
+                {{ t('common.copy') }}
+              </el-button>
+            </template>
+          </el-input>
+        </div>
+
+        <div class="share-time-info">
+          <div class="time-item">
+            <el-icon :size="12"><Clock /></el-icon>
+            <span :class="{ 'expired-text': isExpired(row.expires_at) }">
+              {{ t('share.expire') }}：{{ formatDate(row.expires_at) }}
+            </span>
+          </div>
+          <div class="time-item">
+            <el-icon :size="12"><Calendar /></el-icon>
+            <span>{{ t('share.create') }}：{{ formatDate(row.created_at) }}</span>
           </div>
         </div>
       </div>
-
-      <!-- 空状态显示 -->
-      <el-empty v-if="shareList.length === 0 && !loading" :description="t('share.noShareRecords')" />
     </div>
 
-    <!-- 修改密码对话框 -->
-    <el-dialog
-      v-model="showPasswordDialog"
-      :title="t('share.updatePassword')"
-      :width="isMobile ? '95%' : '450px'"
-      :close-on-click-modal="false"
-      :fullscreen="isMobile"
-      class="password-dialog"
-    >
-      <el-form label-width="80px">
-        <el-form-item :label="t('tasks.fileName')">
-          <el-input v-model="currentShare.file_name" disabled />
-        </el-form-item>
-        <el-form-item :label="t('share.newPassword')">
-          <el-input
-            v-model="newPassword"
-            :placeholder="t('share.updatePasswordPlaceholder')"
-            maxlength="20"
-            show-word-limit
-            clearable
-          >
-            <template #append>
-              <el-button @click="handleGenerateRandomPassword" size="small">{{ t('common.generate') }}</el-button>
-            </template>
-          </el-input>
-        </el-form-item>
-      </el-form>
+    <!-- 空状态显示 -->
+    <el-empty v-if="shareList.length === 0 && !loading" :description="t('share.noShareRecords')" />
 
-      <template #footer>
-        <el-button @click="showPasswordDialog = false">{{ t('common.cancel') }}</el-button>
-        <el-button type="primary" :loading="updating" @click="handleConfirmUpdatePassword">{{
-          t('share.confirmUpdate')
-        }}</el-button>
-      </template>
-    </el-dialog>
-    <MobileActionSheet
-      v-model="showActionSheet"
-      :title="actionShare?.file_name"
-      :actions="shareActions"
-      history-key="share-actions"
-      @select="handleShareAction"
-    />
-  </div>
+    <template #overlays>
+      <!-- 修改密码对话框 -->
+      <el-dialog
+        v-model="showPasswordDialog"
+        :title="t('share.updatePassword')"
+        :width="isMobile ? '95%' : '450px'"
+        :close-on-click-modal="false"
+        :fullscreen="isMobile"
+        class="password-dialog"
+      >
+        <el-form label-width="80px">
+          <el-form-item :label="t('tasks.fileName')">
+            <el-input v-model="currentShare.file_name" disabled />
+          </el-form-item>
+          <el-form-item :label="t('share.newPassword')">
+            <el-input
+              v-model="newPassword"
+              :placeholder="t('share.updatePasswordPlaceholder')"
+              maxlength="20"
+              show-word-limit
+              clearable
+            >
+              <template #append>
+                <el-button @click="handleGenerateRandomPassword" size="small">{{ t('common.generate') }}</el-button>
+              </template>
+            </el-input>
+          </el-form-item>
+        </el-form>
+
+        <template #footer>
+          <el-button @click="showPasswordDialog = false">{{ t('common.cancel') }}</el-button>
+          <el-button type="primary" :loading="updating" @click="handleConfirmUpdatePassword">{{
+            t('share.confirmUpdate')
+          }}</el-button>
+        </template>
+      </el-dialog>
+      <MobileActionSheet
+        v-model="showActionSheet"
+        :title="actionShare?.file_name"
+        :actions="shareActions"
+        history-key="share-actions"
+        @select="handleShareAction"
+      />
+    </template>
+  </WorkspacePage>
 </template>
 
 <script setup lang="ts">
   import { useResponsive, useI18n, useMobileLayerHistory } from '@/composables'
   import { MobileActionSheet } from '@/components/mobile'
+  import WorkspacePage from '@/components/WorkspacePage/index.vue'
   import type { MobileSheetAction } from '@/components/mobile/types'
   import { getShareList, deleteShare, batchDeleteShares, updateSharePassword } from '@/api/share'
   import type { ShareInfo } from '@/types'
@@ -454,66 +450,6 @@
 </script>
 
 <style scoped>
-  .shares-page {
-    height: 100%;
-    display: flex;
-    flex-direction: column;
-    gap: 20px;
-    padding: 4px;
-  }
-
-  .header-card {
-    padding: 16px 24px;
-    border-radius: 16px;
-    display: flex;
-    align-items: center;
-  }
-
-  .header {
-    display: flex;
-    justify-content: space-between;
-    align-items: flex-start;
-    width: 100%;
-    gap: 12px;
-  }
-
-  .header-left {
-    display: flex;
-    flex-direction: column;
-    gap: 12px;
-    flex: 1;
-    min-width: 0;
-  }
-
-  .title-section {
-    display: flex;
-    align-items: center;
-    gap: 12px;
-    flex-wrap: wrap;
-  }
-
-  .title-icon {
-    color: var(--primary-color);
-    filter: drop-shadow(0 2px 4px rgba(99, 102, 241, 0.3));
-  }
-
-  .title-section h2 {
-    margin: 0;
-    font-size: 20px;
-    font-weight: 700;
-    color: var(--text-primary);
-    background: linear-gradient(135deg, var(--text-primary) 0%, var(--text-secondary) 100%);
-    -webkit-background-clip: text;
-    background-clip: text;
-    -webkit-text-fill-color: transparent;
-  }
-
-  .share-count {
-    font-size: 14px;
-    color: var(--text-secondary);
-    margin-left: 8px;
-  }
-
   .batch-selection-info {
     display: flex;
     align-items: center;
@@ -532,15 +468,6 @@
     font-size: 14px;
     color: var(--primary-color);
     font-weight: 500;
-  }
-
-  .table-card {
-    flex: 1;
-    border-radius: 16px;
-    padding: 8px;
-    overflow: hidden;
-    display: flex;
-    flex-direction: column;
   }
 
   /* PC端表格样式 */
@@ -900,32 +827,6 @@
       display: block;
     }
 
-    .header-card {
-      padding: 12px 16px;
-    }
-
-    .header {
-      flex-direction: column;
-      align-items: stretch;
-    }
-
-    .header-left {
-      width: 100%;
-    }
-
-    .title-section {
-      gap: 8px;
-    }
-
-    .title-section h2 {
-      font-size: 18px;
-    }
-
-    .share-count {
-      font-size: 12px;
-      margin-left: 4px;
-    }
-
     .batch-selection-info {
       gap: 6px;
       padding: 6px 10px;
@@ -933,11 +834,6 @@
 
     .selected-count {
       font-size: 13px;
-    }
-
-    .header .el-button {
-      width: 100%;
-      margin-top: 8px;
     }
 
     .password-dialog :deep(.el-dialog) {
@@ -951,22 +847,6 @@
   }
 
   @media (max-width: 480px) {
-    .header-card {
-      padding: 10px 12px;
-    }
-
-    .title-section {
-      gap: 6px;
-    }
-
-    .title-section h2 {
-      font-size: 16px;
-    }
-
-    .share-count {
-      font-size: 11px;
-    }
-
     .batch-selection-info {
       gap: 4px;
       padding: 6px 8px;

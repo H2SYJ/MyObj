@@ -1,49 +1,46 @@
 <template>
-  <div class="square-container desktop-content-page">
-    <!-- 顶部工具栏 -->
-    <div class="toolbar">
-      <div class="breadcrumb">
-        <el-icon :size="24" class="square-icon"><Grid /></el-icon>
-        <span class="breadcrumb-item">{{ t('square.title') }}</span>
-        <span class="breadcrumb-desc">{{ t('square.desc') }}</span>
-      </div>
+  <WorkspacePage :title="t('square.title')" :description="t('square.desc')">
+    <template #icon>
+      <el-icon :size="24">
+        <Grid />
+      </el-icon>
+    </template>
+    <template #actions>
+      <el-button-group>
+        <el-button :type="viewMode === 'grid' ? 'primary' : ''" icon="Grid" @click="viewMode = 'grid'" />
+        <el-button :type="viewMode === 'list' ? 'primary' : ''" icon="List" @click="viewMode = 'list'" />
+      </el-button-group>
+    </template>
 
-      <div class="toolbar-actions">
-        <!-- 视图切换按钮 -->
-        <el-button-group>
-          <el-button :type="viewMode === 'grid' ? 'primary' : ''" icon="Grid" @click="viewMode = 'grid'" />
-          <el-button :type="viewMode === 'list' ? 'primary' : ''" icon="List" @click="viewMode = 'list'" />
-        </el-button-group>
-      </div>
-    </div>
+    <template #toolbar>
+      <!-- 筛选栏 -->
+      <div class="filter-bar">
+        <div class="filter-type-group">
+          <el-radio-group v-model="fileTypeFilter" @change="handleFilterChange" class="type-radio-group">
+            <el-radio-button value="all">{{ t('square.filterAll') }}</el-radio-button>
+            <el-radio-button value="image">{{ t('square.filterImage') }}</el-radio-button>
+            <el-radio-button value="video">{{ t('square.filterVideo') }}</el-radio-button>
+            <el-radio-button value="doc">{{ t('square.filterDoc') }}</el-radio-button>
+            <el-radio-button value="audio">{{ t('square.filterAudio') }}</el-radio-button>
+            <el-radio-button value="archive">{{ t('square.filterArchive') }}</el-radio-button>
+            <el-radio-button value="other">{{ t('square.filterOther') }}</el-radio-button>
+          </el-radio-group>
+        </div>
 
-    <!-- 筛选栏 -->
-    <div class="filter-bar">
-      <div class="filter-type-group">
-        <el-radio-group v-model="fileTypeFilter" @change="handleFilterChange" class="type-radio-group">
-          <el-radio-button value="all">{{ t('square.filterAll') }}</el-radio-button>
-          <el-radio-button value="image">{{ t('square.filterImage') }}</el-radio-button>
-          <el-radio-button value="video">{{ t('square.filterVideo') }}</el-radio-button>
-          <el-radio-button value="doc">{{ t('square.filterDoc') }}</el-radio-button>
-          <el-radio-button value="audio">{{ t('square.filterAudio') }}</el-radio-button>
-          <el-radio-button value="archive">{{ t('square.filterArchive') }}</el-radio-button>
-          <el-radio-button value="other">{{ t('square.filterOther') }}</el-radio-button>
-        </el-radio-group>
+        <div class="filter-sort-group">
+          <el-select
+            v-model="sortBy"
+            :placeholder="t('square.sortByPlaceholder')"
+            class="sort-select"
+            @change="handleSortChange"
+          >
+            <el-option :label="t('square.sortLatest')" value="time" />
+            <el-option :label="t('square.sortSize')" value="size" />
+            <el-option :label="t('square.sortName')" value="name" />
+          </el-select>
+        </div>
       </div>
-
-      <div class="filter-sort-group">
-        <el-select
-          v-model="sortBy"
-          :placeholder="t('square.sortByPlaceholder')"
-          class="sort-select"
-          @change="handleSortChange"
-        >
-          <el-option :label="t('square.sortLatest')" value="time" />
-          <el-option :label="t('square.sortSize')" value="size" />
-          <el-option :label="t('square.sortName')" value="name" />
-        </el-select>
-      </div>
-    </div>
+    </template>
 
     <!-- 文件网格视图 -->
     <div v-if="viewMode === 'grid'" class="file-grid" v-loading="loading">
@@ -170,8 +167,7 @@
       />
     </div>
 
-    <!-- 分页 -->
-    <div v-if="!isMobile" class="pagination">
+    <template v-if="!isMobile" #footer>
       <pagination
         v-model:page="currentPage"
         v-model:limit="pageSize"
@@ -179,11 +175,13 @@
         :page-sizes="[20, 50, 100]"
         @pagination="handlePagination"
       />
-    </div>
+    </template>
 
-    <!-- 文件预览组件 -->
-    <preview v-model="previewVisible" :file="previewFile" />
-  </div>
+    <template #overlays>
+      <!-- 文件预览组件 -->
+      <preview v-model="previewVisible" :file="previewFile" />
+    </template>
+  </WorkspacePage>
 </template>
 
 <script setup lang="ts">
@@ -195,6 +193,7 @@
   import { useFileDownload } from '@/composables/business/useFileDownload'
   import { useI18n } from '@/composables/core/useI18n'
   import { MobileInfiniteList } from '@/components/mobile'
+  import WorkspacePage from '@/components/WorkspacePage/index.vue'
 
   const { proxy } = getCurrentInstance() as ComponentInternalInstance
   const route = useRoute()
@@ -445,47 +444,6 @@
 </script>
 
 <style scoped>
-  .square-container {
-    display: flex;
-    flex-direction: column;
-    height: 100%;
-    background: var(--card-bg);
-    border-radius: 8px;
-    overflow: hidden;
-  }
-
-  .toolbar {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    padding: 20px 24px;
-    border-bottom: 1px solid var(--el-border-color);
-  }
-
-  .breadcrumb {
-    display: flex;
-    align-items: center;
-    gap: 12px;
-  }
-
-  .breadcrumb-item {
-    font-size: 18px;
-    font-weight: 600;
-    color: var(--el-text-color-primary);
-  }
-
-  .breadcrumb-desc {
-    font-size: 14px;
-    color: var(--el-text-color-secondary);
-    margin-left: 8px;
-  }
-
-  .toolbar-actions {
-    display: flex;
-    align-items: center;
-    gap: 16px;
-  }
-
   .filter-bar {
     display: flex;
     align-items: center;
@@ -655,46 +613,6 @@
 
   /* 移动端响应式 - 组件特定样式 */
   @media (max-width: 767px) {
-    .square-container {
-      border-radius: 0;
-    }
-
-    .toolbar {
-      padding: 12px 16px;
-      flex-direction: row;
-      align-items: center;
-      justify-content: space-between;
-      gap: 10px;
-    }
-
-    .breadcrumb {
-      flex: 1 1 auto;
-      min-width: 0;
-      order: 0;
-    }
-
-    .breadcrumb-item {
-      font-size: 16px;
-    }
-
-    .breadcrumb-desc {
-      display: none;
-    }
-
-    .toolbar-actions {
-      flex: 0 0 auto;
-      order: 0;
-      width: auto;
-      margin-left: auto;
-    }
-
-    .toolbar-actions :deep(.el-button) {
-      width: 44px;
-      min-width: 44px;
-      height: 44px;
-      padding: 0;
-    }
-
     .filter-bar {
       padding: 12px 16px;
       flex-direction: column;

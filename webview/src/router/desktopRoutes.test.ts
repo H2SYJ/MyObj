@@ -2,6 +2,8 @@
 
 import { describe, expect, it, vi } from 'vitest'
 import type { RouteRecordRaw } from 'vue-router'
+import enUS from '@/i18n/locales/en-US'
+import zhCN from '@/i18n/locales/zh-CN'
 import { routes } from './index'
 
 vi.mock('@/composables', () => ({ useSEO: () => ({ applySEO: vi.fn() }) }))
@@ -23,5 +25,12 @@ describe('桌面路由元数据', () => {
     expect(byPath.get('/share/:token')?.meta?.requiresAuth).toBe(false)
     expect(byPath.get('/admin')?.meta?.requiresAdmin).toBe(true)
     expect(['users', 'groups', 'permissions', 'disks', 'system', 'plugins'].every(path => byPath.has(path))).toBe(true)
+  })
+
+  it('传输页使用存在的路由翻译键', () => {
+    const byPath = new Map(flatten(routes).map(record => [record.path, record]))
+    expect(byPath.get('/tasks')?.meta?.i18nKey).toBe('route.tasks')
+    expect(zhCN.route.tasks).toBe('传输列表')
+    expect(enUS.route.tasks).toBe('Transfer List')
   })
 })
