@@ -35,7 +35,7 @@
         @selection-change="handleSelectionChange"
       >
         <el-table-column type="selection" width="55" align="center" />
-        <el-table-column :label="t('tasks.fileName')" min-width="250" class-name="mobile-name-column">
+        <el-table-column :label="t('tasks.fileName')" min-width="200" class-name="mobile-name-column">
           <template #default="{ row }">
             <div class="file-name-cell">
               <el-icon :size="24" class="share-icon"><Document /></el-icon>
@@ -44,7 +44,7 @@
           </template>
         </el-table-column>
 
-        <el-table-column :label="t('share.shareLink')" min-width="400" class-name="mobile-link-column">
+        <el-table-column :label="t('share.shareLink')" min-width="300" class-name="mobile-link-column">
           <template #default="{ row }">
             <div class="link-cell">
               <el-input :model-value="getShareUrl(row.token)" readonly size="small" class="share-link-input">
@@ -58,7 +58,7 @@
           </template>
         </el-table-column>
 
-        <el-table-column :label="t('share.sharePassword')" width="100" align="center" class-name="mobile-hide">
+        <el-table-column :label="t('share.sharePassword')" width="90" align="center" class-name="mobile-hide">
           <template #default="{ row }">
             <el-tooltip :content="row.password_hash ? t('share.hasPassword') : t('share.noPassword')" placement="top">
               <div
@@ -71,7 +71,7 @@
           </template>
         </el-table-column>
 
-        <el-table-column :label="t('share.downloadCount')" width="100" align="center" class-name="mobile-hide">
+        <el-table-column :label="t('share.downloadCount')" width="90" align="center" class-name="mobile-hide">
           <template #default="{ row }">
             <el-tooltip :content="t('share.downloadedTimes', { count: row.download_count || 0 })" placement="top">
               <div class="download-badge">
@@ -82,7 +82,7 @@
           </template>
         </el-table-column>
 
-        <el-table-column :label="t('share.expireDate')" width="180" align="center" class-name="mobile-hide">
+        <el-table-column :label="t('share.expireDate')" width="160" align="center" class-name="mobile-hide">
           <template #default="{ row }">
             <div class="time-cell">
               <el-icon :size="14"><Clock /></el-icon>
@@ -93,7 +93,7 @@
           </template>
         </el-table-column>
 
-        <el-table-column :label="t('share.createTime')" width="180" align="center" class-name="mobile-hide">
+        <el-table-column :label="t('share.createTime')" width="160" align="center" class-name="mobile-hide">
           <template #default="{ row }">
             <div class="time-cell">
               <el-icon :size="14"><Calendar /></el-icon>
@@ -104,7 +104,7 @@
 
         <el-table-column
           :label="t('tasks.operation')"
-          width="200"
+          width="180"
           fixed="right"
           align="center"
           class-name="mobile-actions-column"
@@ -526,7 +526,9 @@
 
   /* PC端表格样式 */
   .desktop-table {
-    display: table;
+    display: block;
+    width: 100%;
+    min-width: 0;
   }
 
   :deep(.el-table) {
