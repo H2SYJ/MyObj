@@ -103,6 +103,9 @@ func migrateVirtualDirectorySchema(db *gorm.DB) error {
 		if err := migrateDirectoryReferenceColumn(tx, "upload_chunk", "path_id", "directory_id"); err != nil {
 			return err
 		}
+		if err := repairMigratedUploadDirectoryReferences(tx, directories); err != nil {
+			return err
+		}
 		if err := migrateAbsolutePathColumn(tx, "download_task", "virtual_path", "save_path", true); err != nil {
 			return err
 		}
@@ -449,8 +452,12 @@ func validateCopiedVirtualDirectoryData(db *gorm.DB, expected []models.VirtualDi
 
 func preflightDirectoryReferences(db *gorm.DB, directories []models.VirtualDirectory) error {
 	owners := make(map[int]string, len(directories))
+	roots := make(map[string]int)
 	for _, directory := range directories {
 		owners[directory.ID] = directory.UserID
+		if directory.ParentID == 0 {
+			roots[directory.UserID] = directory.ID
+		}
 	}
 	for _, item := range []struct{ table, column string }{{"user_files", "virtual_path"}, {"upload_task", "path_id"}, {"upload_chunk", "path_id"}} {
 		if !db.Migrator().HasTable(item.table) || !db.Migrator().HasColumn(item.table, item.column) {
@@ -463,8 +470,52 @@ func preflightDirectoryReferences(db *gorm.DB, directories []models.VirtualDirec
 		}
 		for _, row := range rows {
 			id, err := strconv.Atoi(row.Value)
-			if err != nil || owners[id] != row.UserID {
-				return fmt.Errorf("表%s存在无效目录引用: user_id=%s %s=%q", item.table, row.UserID, item.column, row.Value)
+			if err == nil && owners[id] == row.UserID {
+				continue
+			}
+			// 上传期间目标目录可能被删除。只要用户根目录存在，迁移事务会把任务迁到根目录，
+			// 避免丢失仍可恢复的上传分片或让历史任务阻塞服务启动。
+			if item.table != "user_files" && roots[row.UserID] > 0 {
+				continue
+			}
+			return fmt.Errorf("表%s存在无效目录引用: user_id=%s %s=%q", item.table, row.UserID, item.column, row.Value)
+		}
+	}
+	return nil
+}
+
+func repairMigratedUploadDirectoryReferences(db *gorm.DB, directories []models.VirtualDirectory) error {
+	owners := make(map[int]string, len(directories))
+	roots := make(map[string]int)
+	for _, directory := range directories {
+		owners[directory.ID] = directory.UserID
+		if directory.ParentID == 0 {
+			roots[directory.UserID] = directory.ID
+		}
+	}
+	for _, table := range []string{"upload_task", "upload_chunk"} {
+		if !db.Migrator().HasTable(table) || !db.Migrator().HasColumn(table, "directory_id") {
+			continue
+		}
+		var rows []struct {
+			UserID      string
+			DirectoryID int
+		}
+		if err := db.Table(table).Select("user_id, directory_id").Scan(&rows).Error; err != nil {
+			return err
+		}
+		for _, row := range rows {
+			if owners[row.DirectoryID] == row.UserID {
+				continue
+			}
+			rootID := roots[row.UserID]
+			if rootID <= 0 {
+				return fmt.Errorf("表%s的用户%s缺少根目录，无法修复目录引用", table, row.UserID)
+			}
+			if err := db.Table(table).
+				Where("user_id = ? AND (directory_id = ? OR directory_id IS NULL)", row.UserID, row.DirectoryID).
+				Update("directory_id", rootID).Error; err != nil {
+				return fmt.Errorf("修复表%s的目录引用失败: %w", table, err)
 			}
 		}
 	}

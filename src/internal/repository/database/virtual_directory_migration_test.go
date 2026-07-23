@@ -156,6 +156,51 @@ func TestMigrateVirtualDirectorySchemaRejectsActiveDanglingFileReference(t *test
 	}
 }
 
+func TestMigrateVirtualDirectorySchemaRepairsDanglingUploadReferencesToRoot(t *testing.T) {
+	db := openVirtualDirectoryMigrationTestDB(t)
+	createLegacyDirectoryTables(t, db)
+	now := time.Now()
+	for _, values := range [][]interface{}{
+		{1, "user-a", "/", "", now, now},
+		{2, "user-a", "保留目录", "1", now, now},
+	} {
+		if err := db.Exec(`INSERT INTO virtual_path(id,user_id,path,parent_level,created_time,update_time) VALUES(?,?,?,?,?,?)`, values...).Error; err != nil {
+			t.Fatal(err)
+		}
+	}
+	for _, statement := range []string{
+		`CREATE TABLE upload_task (id TEXT PRIMARY KEY, user_id TEXT, path_id TEXT, status TEXT)`,
+		`CREATE TABLE upload_chunk (chunk_id INTEGER PRIMARY KEY, user_id TEXT, path_id TEXT)`,
+		`INSERT INTO upload_task(id,user_id,path_id,status) VALUES('task-invalid','user-a','22','uploading'),('task-null','user-a',NULL,'failed'),('task-valid','user-a','2','pending')`,
+		`INSERT INTO upload_chunk(chunk_id,user_id,path_id) VALUES(1,'user-a','23')`,
+	} {
+		if err := db.Exec(statement).Error; err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	if err := migrateVirtualDirectorySchema(db); err != nil {
+		t.Fatalf("无效上传目录引用应自动迁到根目录: %v", err)
+	}
+	var tasks []struct {
+		ID          string
+		DirectoryID int
+	}
+	if err := db.Table("upload_task").Select("id, directory_id").Order("id").Scan(&tasks).Error; err != nil {
+		t.Fatal(err)
+	}
+	if len(tasks) != 3 || tasks[0].ID != "task-invalid" || tasks[0].DirectoryID != 1 || tasks[1].ID != "task-null" || tasks[1].DirectoryID != 1 || tasks[2].ID != "task-valid" || tasks[2].DirectoryID != 2 {
+		t.Fatalf("上传任务目录迁移结果异常: %#v", tasks)
+	}
+	var chunkDirectoryID int
+	if err := db.Table("upload_chunk").Select("directory_id").Where("chunk_id = ?", 1).Scan(&chunkDirectoryID).Error; err != nil {
+		t.Fatal(err)
+	}
+	if chunkDirectoryID != 1 {
+		t.Fatalf("上传分片应迁到根目录，实际为%d", chunkDirectoryID)
+	}
+}
+
 func TestPreflightLegacyDirectoriesRejectsCycleAndBadReference(t *testing.T) {
 	now := time.Now()
 	for _, test := range []struct {
