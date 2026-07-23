@@ -16,15 +16,12 @@
       <!-- 筛选栏 -->
       <div class="filter-bar">
         <div class="filter-type-group">
-          <el-radio-group v-model="fileTypeFilter" @change="handleFilterChange" class="type-radio-group">
-            <el-radio-button value="all">{{ t('square.filterAll') }}</el-radio-button>
-            <el-radio-button value="image">{{ t('square.filterImage') }}</el-radio-button>
-            <el-radio-button value="video">{{ t('square.filterVideo') }}</el-radio-button>
-            <el-radio-button value="doc">{{ t('square.filterDoc') }}</el-radio-button>
-            <el-radio-button value="audio">{{ t('square.filterAudio') }}</el-radio-button>
-            <el-radio-button value="archive">{{ t('square.filterArchive') }}</el-radio-button>
-            <el-radio-button value="other">{{ t('square.filterOther') }}</el-radio-button>
-          </el-radio-group>
+          <SegmentedControl
+            v-model="fileTypeFilter"
+            :items="filterTypeItems"
+            :aria-label="t('square.title')"
+            @change="handleFilterChange"
+          />
         </div>
 
         <div class="filter-sort-group">
@@ -185,6 +182,7 @@
 </template>
 
 <script setup lang="ts">
+  import { Box, Document, Headset, Menu, MoreFilled, Picture, VideoPlay } from '@element-plus/icons-vue'
   import { formatSize, formatDate } from '@/utils'
   import { useResponsive } from '@/composables/ui/useResponsive'
   import { getPublicFileList, searchPublicFiles, type PublicFileItem, type PublicFileListParams } from '@/api/file'
@@ -193,6 +191,7 @@
   import { useFileDownload } from '@/composables/business/useFileDownload'
   import { useI18n } from '@/composables/core/useI18n'
   import { MobileInfiniteList } from '@/components/mobile'
+  import SegmentedControl from '@/components/SegmentedControl/index.vue'
   import WorkspacePage from '@/components/WorkspacePage/index.vue'
 
   const { proxy } = getCurrentInstance() as ComponentInternalInstance
@@ -208,6 +207,16 @@
   const sortBy = ref('time')
   const loading = ref(false)
   const isSearchMode = ref(false) // 是否处于搜索模式
+
+  const filterTypeItems = computed(() => [
+    { value: 'all', label: t('square.filterAll'), icon: Menu },
+    { value: 'image', label: t('square.filterImage'), icon: Picture },
+    { value: 'video', label: t('square.filterVideo'), icon: VideoPlay },
+    { value: 'doc', label: t('square.filterDoc'), icon: Document },
+    { value: 'audio', label: t('square.filterAudio'), icon: Headset },
+    { value: 'archive', label: t('square.filterArchive'), icon: Box },
+    { value: 'other', label: t('square.filterOther'), icon: MoreFilled }
+  ])
 
   // 公开文件列表
   const publicFiles = ref<PublicFileItem[]>([])
@@ -448,10 +457,8 @@
     display: flex;
     align-items: center;
     justify-content: space-between;
-    padding: 16px 24px;
-    background: var(--el-fill-color-light);
-    border-bottom: 1px solid var(--el-border-color);
-    gap: 16px;
+    padding: 2px 4px 0;
+    gap: 12px;
   }
 
   .filter-type-group {
@@ -459,18 +466,17 @@
     min-width: 0;
   }
 
-  .type-radio-group {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 8px;
-  }
-
   .filter-sort-group {
     flex-shrink: 0;
   }
 
   .sort-select {
-    width: 150px;
+    width: 160px;
+  }
+
+  .sort-select :deep(.el-select__wrapper) {
+    min-height: 48px;
+    border-radius: 12px;
   }
 
   .file-grid {
@@ -614,31 +620,14 @@
   /* 移动端响应式 - 组件特定样式 */
   @media (max-width: 767px) {
     .filter-bar {
-      padding: 12px 16px;
+      padding: 0;
       flex-direction: column;
-      gap: 12px;
+      align-items: stretch;
+      gap: 10px;
     }
 
     .filter-type-group {
       width: 100%;
-      overflow-x: auto;
-      -webkit-overflow-scrolling: touch;
-    }
-
-    .type-radio-group {
-      display: flex;
-      gap: 6px;
-      min-width: max-content;
-    }
-
-    .filter-bar :deep(.el-radio-button) {
-      flex-shrink: 0;
-    }
-
-    .filter-bar :deep(.el-radio-button__inner) {
-      padding: 8px 12px;
-      font-size: 12px;
-      white-space: nowrap;
     }
 
     .filter-sort-group {
@@ -703,11 +692,6 @@
       font-size: 11px;
       min-height: 2.31em; /* 2行 * 1.155行高（11px * 1.05） */
       max-height: 2.31em;
-    }
-
-    .filter-bar :deep(.el-radio-button__inner) {
-      padding: 6px 10px;
-      font-size: 11px;
     }
 
     .toolbar {
@@ -928,11 +912,6 @@
     border-bottom-color: var(--el-border-color);
   }
 
-  html.dark .filter-bar {
-    background: var(--el-fill-color-light);
-    border-bottom-color: var(--el-border-color);
-  }
-
   html.dark .file-card {
     background: var(--card-bg);
     border-color: var(--el-border-color);
@@ -944,18 +923,6 @@
 
   html.dark .file-card :deep(.el-card__body) {
     background: var(--card-bg);
-  }
-
-  html.dark .type-radio-group :deep(.el-radio-button__inner) {
-    background-color: var(--el-bg-color);
-    color: var(--el-text-color-primary);
-    border-color: var(--el-border-color);
-  }
-
-  html.dark .type-radio-group :deep(.el-radio-button__original-radio:checked + .el-radio-button__inner) {
-    background-color: var(--primary-color);
-    border-color: var(--primary-color);
-    color: var(--el-text-color-primary);
   }
 
   html.dark .toolbar-actions :deep(.el-button-group .el-button) {
