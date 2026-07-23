@@ -7,9 +7,9 @@
       @navigate="navigateToPath"
     />
 
-    <PageToolbar v-if="!isMobile" :selected-count="selectedCount">
+    <PageToolbar v-if="!isMobile" :selected-count="toolbarSelectedCount">
       <template #primary>
-        <template v-if="selectedCount > 0">
+        <template v-if="toolbarSelectedCount > 0">
           <el-button icon="Download" @click="handleSelectionDownload">{{ t('files.download') }}</el-button>
           <el-button icon="FolderOpened" @click="handleMoveFile">{{ t('files.move') }}</el-button>
           <el-button type="danger" plain icon="Delete" @click="handleSelectionDelete">{{
@@ -78,7 +78,7 @@
         :get-thumbnail-url="getThumbnailUrl"
         @entry-click="handleEntryClick"
         @entry-toggle="toggleEntry"
-        @entry-open="openEntry"
+        @entry-open="handleEntryOpen"
         @entry-context="openEntryContextMenu"
         @entry-long-press="handleEntryLongPress"
       />
@@ -89,7 +89,7 @@
         :get-thumbnail-url="getThumbnailUrl"
         @entry-click="handleEntryClick"
         @entry-toggle="toggleEntry"
-        @entry-open="openEntry"
+        @entry-open="handleEntryOpen"
         @entry-context="openEntryContextMenu"
         @entry-long-press="handleEntryLongPress"
       />
@@ -346,6 +346,7 @@
   import { fileEntry, folderEntry, getFileSelectionCapabilities, type ContextMenuItem, type FileEntry } from './types'
   import { useFileList, type FileSortBy, type FileSortOrder } from './composables/useFileList'
   import { useFileSelection } from './composables/useFileSelection'
+  import { useDelayedSelectionDisplay } from './composables/useDelayedSelectionDisplay'
   import { useFileOperations } from './composables/useFileOperations'
   import { useFolderOperations } from './composables/useFolderOperations'
   import { useRename } from './composables/useRename'
@@ -429,6 +430,11 @@
     selectAll,
     clearSelection
   } = useFileSelection(entries)
+  const {
+    displayedCount: toolbarSelectedCount,
+    scheduleDisplay: scheduleToolbarSelectionDisplay,
+    hideDisplay: hideToolbarSelectionDisplay
+  } = useDelayedSelectionDisplay(selectedCount)
 
   const clearCurrentSelection = () => {
     clearSelection()
@@ -697,6 +703,11 @@
     else await handleOpenFile(entry.file)
   }
 
+  const handleEntryOpen = (entry: FileEntry, trigger: 'double-click' | 'keyboard') => {
+    if (trigger === 'double-click') hideToolbarSelectionDisplay()
+    return openEntry(entry)
+  }
+
   const handleEntryClick = (entry: FileEntry, event: MouseEvent) => {
     if (isMobile.value) {
       if (mobileSelectionMode.value) toggleEntry(entry)
@@ -704,6 +715,7 @@
       return
     }
     selectEntryFromClick(entry, event)
+    scheduleToolbarSelectionDisplay()
   }
 
   const handleEntryLongPress = (entry: FileEntry) => {

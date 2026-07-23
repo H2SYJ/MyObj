@@ -16,9 +16,9 @@
       role="option"
       tabindex="0"
       @click="handleClick(entry, $event)"
-      @dblclick.prevent="$emit('entry-open', entry)"
+      @dblclick.prevent="$emit('entry-open', entry, 'double-click')"
       @contextmenu.prevent="$emit('entry-context', entry, $event)"
-      @keydown.enter.prevent="$emit('entry-open', entry)"
+      @keydown.enter.prevent="$emit('entry-open', entry, 'keyboard')"
       @keydown.space.prevent="$emit('entry-toggle', entry)"
       @keydown.shift.f10.prevent="$emit('entry-context', entry, $event)"
       @pointerdown="startLongPress(entry, $event)"
@@ -74,7 +74,7 @@
   const emit = defineEmits<{
     'entry-click': [entry: FileEntry, event: MouseEvent]
     'entry-toggle': [entry: FileEntry]
-    'entry-open': [entry: FileEntry]
+    'entry-open': [entry: FileEntry, trigger: 'double-click' | 'keyboard']
     'entry-context': [entry: FileEntry, event: MouseEvent | KeyboardEvent]
     'entry-long-press': [entry: FileEntry]
   }>()
