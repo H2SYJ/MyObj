@@ -30,9 +30,7 @@
         @focus="showSuggestions = true"
         @blur="handleSearchBlur"
         @clear="submitSearch"
-      >
-        <template #suffix><kbd>Enter</kbd></template>
-      </el-input>
+      />
       <SearchSuggestions
         v-if="showSuggestions"
         :suggestions="searchSuggestions"
@@ -202,14 +200,6 @@
   .desktop-header__search {
     position: relative;
     min-width: 0;
-  }
-  .desktop-header__search kbd {
-    padding: 2px 6px;
-    border: 1px solid var(--desktop-border);
-    border-radius: 5px;
-    background: var(--desktop-fill);
-    color: var(--text-placeholder);
-    font: 10px/1.4 inherit;
   }
   .desktop-user {
     max-width: 220px;
