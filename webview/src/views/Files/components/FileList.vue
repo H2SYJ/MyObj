@@ -1,6 +1,6 @@
 <template>
   <div class="file-list" role="listbox" aria-multiselectable="true">
-    <div class="list-header desktop-only" aria-hidden="true">
+    <div class="list-header" aria-hidden="true">
       <span>{{ t('trash.name') }}</span>
       <span>{{ t('trash.size') }}</span>
       <span>{{ t('admin.users.createTime') }}</span>
@@ -212,6 +212,7 @@
     font-size: 11px;
   }
   @media (max-width: 1024px) {
+    .list-header,
     .desktop-only {
       display: none;
     }
