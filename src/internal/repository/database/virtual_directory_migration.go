@@ -403,7 +403,8 @@ func validateCopiedVirtualDirectoryData(db *gorm.DB, expected []models.VirtualDi
 			UserID      string
 			DirectoryID int
 		}
-		if err := db.Table(item.table).Select("user_id, " + item.column + " AS directory_id").Scan(&rows).Error; err != nil {
+		if err := activeDirectoryReferenceQuery(db, item.table).
+			Select("user_id, " + item.column + " AS directory_id").Scan(&rows).Error; err != nil {
 			return err
 		}
 		for _, row := range rows {
@@ -456,7 +457,8 @@ func preflightDirectoryReferences(db *gorm.DB, directories []models.VirtualDirec
 			continue
 		}
 		var rows []struct{ UserID, Value string }
-		if err := db.Table(item.table).Select("user_id, " + item.column + " AS value").Scan(&rows).Error; err != nil {
+		if err := activeDirectoryReferenceQuery(db, item.table).
+			Select("user_id, " + item.column + " AS value").Scan(&rows).Error; err != nil {
 			return err
 		}
 		for _, row := range rows {
@@ -467,6 +469,17 @@ func preflightDirectoryReferences(db *gorm.DB, directories []models.VirtualDirec
 		}
 	}
 	return nil
+}
+
+// activeDirectoryReferenceQuery 只校验当前可见文件的目录引用。
+// 整目录进入回收站时，user_files 会被软删除，原目录节点则会被硬删除；
+// 恢复目录时会依据回收站映射写入新的目录ID，因此这类历史引用允许暂时悬空。
+func activeDirectoryReferenceQuery(db *gorm.DB, table string) *gorm.DB {
+	query := db.Table(table)
+	if table == "user_files" && db.Migrator().HasColumn(table, "deleted_at") {
+		query = query.Where("deleted_at IS NULL")
+	}
+	return query
 }
 
 func migrateDirectoryReferenceColumn(tx *gorm.DB, table, oldColumn, newColumn string) error {

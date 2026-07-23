@@ -113,6 +113,49 @@ func TestMigrateVirtualDirectorySchemaPreflightDoesNotWriteOnConflict(t *testing
 	}
 }
 
+func TestMigrateVirtualDirectorySchemaAllowsSoftDeletedDanglingFileReference(t *testing.T) {
+	db := openVirtualDirectoryMigrationTestDB(t)
+	createLegacyDirectoryTables(t, db)
+	now := time.Now()
+	if err := db.Exec(`INSERT INTO virtual_path(id,user_id,path,parent_level,created_time,update_time) VALUES(?,?,?,?,?,?)`, 1, "user-a", "/", "", now, now).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Exec(`INSERT INTO user_files(user_id,file_id,file_name,virtual_path,public,created_at,deleted_at,uf_id) VALUES(?,?,?,?,?,?,?,?)`, "user-a", "file-1", "回收站文件.mp4", "17", false, now, now, "uf-1").Error; err != nil {
+		t.Fatal(err)
+	}
+
+	if err := migrateVirtualDirectorySchema(db); err != nil {
+		t.Fatalf("软删除文件的历史目录引用不应阻止迁移: %v", err)
+	}
+	var directoryID int
+	if err := db.Table("user_files").Select("directory_id").Where("uf_id = ?", "uf-1").Scan(&directoryID).Error; err != nil {
+		t.Fatal(err)
+	}
+	if directoryID != 17 {
+		t.Fatalf("软删除文件的历史目录ID应保留，实际为%d", directoryID)
+	}
+}
+
+func TestMigrateVirtualDirectorySchemaRejectsActiveDanglingFileReference(t *testing.T) {
+	db := openVirtualDirectoryMigrationTestDB(t)
+	createLegacyDirectoryTables(t, db)
+	now := time.Now()
+	if err := db.Exec(`INSERT INTO virtual_path(id,user_id,path,parent_level,created_time,update_time) VALUES(?,?,?,?,?,?)`, 1, "user-a", "/", "", now, now).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Exec(`INSERT INTO user_files(user_id,file_id,file_name,virtual_path,public,created_at,uf_id) VALUES(?,?,?,?,?,?,?)`, "user-a", "file-1", "在线文件.mp4", "17", false, now, "uf-1").Error; err != nil {
+		t.Fatal(err)
+	}
+
+	err := migrateVirtualDirectorySchema(db)
+	if err == nil || !strings.Contains(err.Error(), "表user_files存在无效目录引用") {
+		t.Fatalf("在线文件的悬空目录引用应阻止迁移，实际为%v", err)
+	}
+	if db.Migrator().HasTable("virtual_directory") {
+		t.Fatal("预检失败前不应创建新目录表")
+	}
+}
+
 func TestPreflightLegacyDirectoriesRejectsCycleAndBadReference(t *testing.T) {
 	now := time.Now()
 	for _, test := range []struct {
