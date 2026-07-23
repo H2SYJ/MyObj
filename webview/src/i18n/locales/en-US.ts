@@ -1141,17 +1141,6 @@ export default {
     },
     playError: 'Video playback error'
   },
-  shortcuts: {
-    title: 'Keyboard Shortcuts',
-    search: 'Search',
-    searchDesc: 'Ctrl + K',
-    help: 'Help',
-    helpDesc: '?',
-    refresh: 'Refresh',
-    refreshDesc: 'F5',
-    noDescription: 'No description',
-    close: 'Close'
-  },
   searchSuggestions: {
     title: 'Search Suggestions',
     clearHistory: 'Clear History'

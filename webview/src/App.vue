@@ -1,13 +1,10 @@
 <script setup lang="ts">
   // App只作为路由容器，逻辑由router守卫和各页面处理
-  import { useTheme, useKeyboardShortcuts } from '@/composables'
+  import { useTheme } from '@/composables'
   import { useAppStore } from '@/stores'
 
   // 初始化主题系统
   useTheme()
-
-  // 初始化快捷键系统
-  useKeyboardShortcuts()
 
   // 获取 Element Plus 语言包
   const appStore = useAppStore()
@@ -16,9 +13,6 @@
 <template>
   <ElConfigProvider :locale="appStore.elementPlusLocale">
     <router-view />
-
-    <!-- 快捷键帮助对话框 -->
-    <ShortcutHelp />
   </ElConfigProvider>
 </template>
 

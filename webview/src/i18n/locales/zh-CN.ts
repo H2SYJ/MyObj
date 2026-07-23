@@ -1128,17 +1128,6 @@ export default {
     },
     playError: '视频播放错误'
   },
-  shortcuts: {
-    title: '快捷键帮助',
-    search: '搜索',
-    searchDesc: 'Ctrl + K',
-    help: '帮助',
-    helpDesc: '?',
-    refresh: '刷新',
-    refreshDesc: 'F5',
-    noDescription: '未描述',
-    close: '关闭'
-  },
   searchSuggestions: {
     title: '搜索建议',
     clearHistory: '清除历史'
