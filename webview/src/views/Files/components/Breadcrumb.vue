@@ -77,6 +77,7 @@
 
 <style scoped>
   .breadcrumb-container {
+    --breadcrumb-row-height: 24px;
     margin-bottom: 12px;
     padding: 8px 16px;
     border-radius: 8px;
@@ -87,6 +88,7 @@
     display: flex;
     align-items: center;
     gap: 8px;
+    min-height: var(--breadcrumb-row-height);
   }
 
   .breadcrumb-left {
@@ -97,7 +99,10 @@
     min-width: 0;
   }
 
-  .nav-button {
+  .breadcrumb-container .breadcrumb-left .nav-button {
+    width: var(--breadcrumb-row-height);
+    height: var(--breadcrumb-row-height);
+    min-height: var(--breadcrumb-row-height);
     flex-shrink: 0;
     color: var(--text-secondary);
     transition: all 0.2s;
