@@ -8,6 +8,8 @@ import {
 import { useI18n, useResponsive } from '@/composables'
 import type { OfflineDownloadTask } from '@/api/download'
 import { useLatestRequest } from '@/composables/core/useLatestRequest'
+import { getDownloadStatusText } from '@/utils'
+import type { TaskEvent } from '@/utils/taskEvents'
 
 export function useDownloadTasks() {
   const { proxy } = getCurrentInstance() as ComponentInternalInstance
@@ -99,6 +101,21 @@ export function useDownloadTasks() {
     await loadDownloadTasks(showLoading, currentPage.value, pageSize.value)
   }
 
+  const applyDownloadTaskEvent = (event: TaskEvent): boolean => {
+    const payload = event.payload as Partial<OfflineDownloadTask> | undefined
+    if (payload?.type !== undefined && payload.type !== 7) return false
+    if (event.action === 'created' || event.action === 'deleted') return true
+    const index = downloadTasks.value.findIndex(task => task.id === event.resource_id)
+    if (index < 0 || !payload) return true
+    const current = downloadTasks.value[index]
+    downloadTasks.value.splice(index, 1, {
+      ...current,
+      ...payload,
+      state_text: payload.state === undefined ? current.state_text : getDownloadStatusText(payload.state)
+    })
+    return false
+  }
+
   // 取消下载
   const cancelDownload = async (taskId: string) => {
     try {
@@ -181,6 +198,7 @@ export function useDownloadTasks() {
     loadDownloadTasks,
     loadMore,
     refreshDownloadTasks,
+    applyDownloadTaskEvent,
     cancelDownload,
     deleteDownloadTask,
     pauseDownloadTask,

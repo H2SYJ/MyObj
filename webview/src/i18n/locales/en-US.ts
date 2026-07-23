@@ -353,6 +353,7 @@ export default {
     speed: 'Speed',
     timeRemaining: 'Time Remaining',
     completed: 'Completed',
+    cancelled: 'Cancelled',
     error: 'Error',
     fileName: 'File Name',
     fileSize: 'File Size',

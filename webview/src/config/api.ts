@@ -96,6 +96,7 @@ export const API_ENDPOINTS = {
     RESUME: '/download/resume',
     RETRY: '/download/retry',
     LOCAL_CREATE: '/download/local/create',
+    LOCAL_TASK: '/download/local/task',
     LOCAL_FILE: '/download/local/file'
   },
 

@@ -65,3 +65,18 @@ export const getUploadStatusText = (status: string): string => {
 export const getDownloadStatusType = (state: number): 'info' | 'primary' | 'warning' | 'success' | 'danger' => {
   return getTaskStatusType(state)
 }
+
+/**
+ * 获取下载任务状态文本
+ */
+export const getDownloadStatusText = (state: number): string => {
+  const textMap: Record<number, string> = {
+    0: '排队中',
+    1: '下载中',
+    2: '已暂停',
+    3: '已完成',
+    4: '失败',
+    5: '已取消'
+  }
+  return textMap[state] || '未知'
+}

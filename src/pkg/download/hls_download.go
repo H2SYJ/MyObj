@@ -41,6 +41,7 @@ type HLSDownloadOptions struct {
 	OutputFileName   string
 	Client           *http.Client
 	ReserveSpace     func(requiredSize int64) (int64, error)
+	ProgressCallback func(downloadedSize, speed int64, progress int)
 }
 
 type hlsProgress struct {
@@ -55,6 +56,7 @@ type hlsProgress struct {
 	lastUpdate        time.Time
 	reservedSize      int64
 	reserveSpace      func(int64) (int64, error)
+	progressCallback  func(downloadedSize, speed int64, progress int)
 }
 
 func DownloadHLSWithContext(ctx context.Context, taskID, rawURL, userID, tempDir string, repoFactory *impl.RepositoryFactory, opts *HLSDownloadOptions) (*HTTPDownloadResult, error) {
@@ -151,7 +153,7 @@ func DownloadHLSWithContext(ctx context.Context, taskID, rawURL, userID, tempDir
 func newHLSProgress(taskID, runToken string, repo *impl.RepositoryFactory, manifest *hlsManifest, opts *HLSDownloadOptions) *hlsProgress {
 	progress := &hlsProgress{
 		taskID: taskID, runToken: runToken, repo: repo, lastUpdate: time.Now(),
-		reservedSize: opts.ReservedSize, reserveSpace: opts.ReserveSpace,
+		reservedSize: opts.ReservedSize, reserveSpace: opts.ReserveSpace, progressCallback: opts.ProgressCallback,
 	}
 	for _, rendition := range manifest.Renditions {
 		for _, item := range rendition.Maps {
@@ -204,6 +206,9 @@ func (p *hlsProgress) complete(size int64, duration float64) error {
 	if !updated {
 		return context.Canceled
 	}
+	if p.progressCallback != nil {
+		p.progressCallback(p.downloadedBytes, speed, progressValue)
+	}
 	p.lastBytes = p.downloadedBytes
 	p.lastUpdate = now
 	return nil
@@ -225,6 +230,9 @@ func (p *hlsProgress) syncInitial() error {
 	if !updated {
 		return context.Canceled
 	}
+	if p.progressCallback != nil {
+		p.progressCallback(p.downloadedBytes, 0, progressValue)
+	}
 	return nil
 }
 
@@ -239,6 +247,9 @@ func (p *hlsProgress) markPackaging() error {
 	}
 	if !updated {
 		return context.Canceled
+	}
+	if p.progressCallback != nil {
+		p.progressCallback(p.downloadedBytes, 0, 99)
 	}
 	return nil
 }

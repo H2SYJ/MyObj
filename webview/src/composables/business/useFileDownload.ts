@@ -2,10 +2,16 @@
  * 文件下载 Composable
  * 统一处理文件下载逻辑，支持加密文件
  */
-import { createLocalFileDownload, getDownloadTaskList, getLocalFileDownloadUrl } from '@/api/download'
+import {
+  createLocalFileDownload,
+  getLocalFileDownloadTask,
+  getLocalFileDownloadUrl,
+  type OfflineDownloadTask
+} from '@/api/download'
 import cache from '@/plugins/cache'
 import type { FileItem } from '@/types'
 import { useI18n } from '@/composables'
+import { taskEventClient, type TaskEvent } from '@/utils/taskEvents'
 
 export interface DownloadPasswordForm {
   file_id: string
@@ -26,6 +32,101 @@ export function useFileDownload(options?: {
     file_password: ''
   })
   const downloadingFile = ref(false)
+
+  const waitForDownloadReady = async (taskId: string): Promise<OfflineDownloadTask> => {
+    let timeoutTimer: number | null = null
+    let unsubscribeTask: () => void = () => {}
+    let unsubscribeSync: () => void = () => {}
+    let reconcilePromise: Promise<OfflineDownloadTask | null> | null = null
+
+    const result = new Promise<OfflineDownloadTask>((resolve, reject) => {
+      let settled = false
+
+      const settleFromTask = (task: Partial<OfflineDownloadTask> | null | undefined) => {
+        if (settled || !task) return
+        if (task.state === 3) {
+          settled = true
+          resolve(task as OfflineDownloadTask)
+        } else if (task.state === 4) {
+          settled = true
+          reject(new Error(task.error_msg || t('tasks.downloadPrepareFailed') || '下载准备失败'))
+        } else if (task.state === 5) {
+          settled = true
+          reject(new Error(t('tasks.cancelled') || '下载任务已取消'))
+        }
+      }
+
+      const reconcile = () => {
+        if (settled) return Promise.resolve(null)
+        if (reconcilePromise) return reconcilePromise
+        reconcilePromise = getLocalFileDownloadTask(taskId)
+          .then(response => {
+            const task = response.code === 200 ? response.data || null : null
+            settleFromTask(task)
+            return task
+          })
+          .catch(error => {
+            proxy?.$log.warn('查询下载准备任务失败:', error)
+            return null
+          })
+          .finally(() => {
+            reconcilePromise = null
+          })
+        return reconcilePromise
+      }
+
+      unsubscribeTask = taskEventClient.subscribe('download.task', taskId, (event: TaskEvent) => {
+        settleFromTask(event.payload as Partial<OfflineDownloadTask> | undefined)
+      })
+      unsubscribeSync = taskEventClient.subscribe('sync', undefined, () => {
+        void reconcile()
+      })
+
+      void reconcile()
+      timeoutTimer = window.setTimeout(async () => {
+        const finalTask = await reconcile()
+        if (settled) return
+        settleFromTask(finalTask)
+        if (!settled) {
+          settled = true
+          reject(new Error(t('tasks.prepareTimeout') || '准备超时，请到任务中心查看'))
+        }
+      }, 30_000)
+    })
+
+    try {
+      return await result
+    } finally {
+      if (timeoutTimer !== null) window.clearTimeout(timeoutTimer)
+      unsubscribeTask()
+      unsubscribeSync()
+    }
+  }
+
+  const downloadPreparedFile = async (taskId: string, fileName: string) => {
+    const downloadUrl = getLocalFileDownloadUrl(taskId)
+    const token = cache.local.get('token')
+    const response = await fetch(downloadUrl, {
+      method: 'GET',
+      headers: { Authorization: token ? `Bearer ${token}` : '' },
+      credentials: 'include'
+    })
+    const contentType = response.headers.get('content-type') || ''
+    if (contentType.includes('application/json') || !response.ok) {
+      const errorData = await response.json().catch(() => ({}))
+      throw new Error(errorData.message || t('tasks.downloadFailed') || '下载失败')
+    }
+
+    const blobUrl = window.URL.createObjectURL(await response.blob())
+    const link = document.createElement('a')
+    link.href = blobUrl
+    link.download = fileName || 'download'
+    link.style.display = 'none'
+    document.body.appendChild(link)
+    link.click()
+    link.remove()
+    window.URL.revokeObjectURL(blobUrl)
+  }
 
   /**
    * 处理文件下载
@@ -56,139 +157,20 @@ export function useFileDownload(options?: {
         file_password: password
       })
 
-      if (res.code === 200) {
-        const taskId = res.data?.task_id
-        if (!taskId) {
-          proxy?.$modal.msgError(t('tasks.createTaskFailed') || '任务创建失败')
-          downloadingFile.value = false
-          return
-        }
-
-        proxy?.$modal.msgSuccess(t('tasks.preparingDownload') || '准备下载中，请稍候...')
-        showDownloadPasswordDialog.value = false
-
-        let retryCount = 0
-        const maxRetries = 30
-
-        const checkTaskStatus = async () => {
-          try {
-            const taskRes = await getDownloadTaskList({ page: 1, pageSize: 100, state: -1 })
-            if (taskRes.code === 200 && taskRes.data) {
-              const task = taskRes.data.tasks?.find((t: any) => t.id === taskId)
-
-              if (!task) {
-                proxy?.$log.error('未找到任务:', taskId)
-                retryCount++
-                if (retryCount < maxRetries) {
-                  setTimeout(checkTaskStatus, 1000)
-                } else {
-                  proxy?.$modal.msgError(t('tasks.taskNotFound') || '未找到下载任务')
-                  downloadingFile.value = false
-                }
-                return
-              }
-
-              proxy?.$log.debug('任务状态:', task.state, '任务信息:', task)
-
-              if (task.state === 3) {
-                // 任务完成，触发回调（可选）
-                if (options?.onTaskReady) {
-                  options.onTaskReady()
-                }
-
-                // 开始下载文件 - 使用 fetch 先检查响应
-                const downloadUrl = getLocalFileDownloadUrl(taskId)
-
-                proxy?.$log.debug('开始下载文件:', downloadUrl)
-
-                try {
-                  // 使用 fetch 先检查响应，确保是文件而不是 JSON 错误
-                  // 获取 token 用于 Authorization header
-                  const token = cache.local.get('token')
-                  const response = await fetch(downloadUrl, {
-                    method: 'GET',
-                    headers: {
-                      Authorization: token ? `Bearer ${token}` : ''
-                    },
-                    credentials: 'include' // 同时携带 Cookie 作为备用
-                  })
-
-                  // 检查响应类型，如果是 JSON 错误则显示错误信息
-                  const contentType = response.headers.get('content-type') || ''
-                  if (contentType.includes('application/json') || !response.ok) {
-                    const errorData = await response.json()
-                    proxy?.$modal.msgError(errorData.message || t('tasks.downloadFailed') || '下载失败')
-                    return
-                  }
-
-                  // 是文件，创建 blob 并下载
-                  const blob = await response.blob()
-                  const blobUrl = window.URL.createObjectURL(blob)
-                  const link = document.createElement('a')
-                  link.href = blobUrl
-                  link.download = task.file_name || 'download'
-                  link.style.display = 'none'
-                  document.body.appendChild(link)
-                  link.click()
-                  document.body.removeChild(link)
-                  window.URL.revokeObjectURL(blobUrl)
-
-                  proxy?.$modal.msgSuccess(t('tasks.downloadStarted') || '下载已开始')
-                } catch (error: any) {
-                  proxy?.$log.error('下载文件失败:', error)
-                  proxy?.$modal.msgError(
-                    (t('tasks.downloadFailed') || '下载失败') +
-                      ': ' +
-                      (error.message || t('common.unknownError') || '未知错误')
-                  )
-                }
-
-                downloadingFile.value = false
-                return
-              } else if (task.state === 4) {
-                proxy?.$log.error('任务失败:', task.error_msg)
-                proxy?.$modal.msgError(task.error_msg || t('tasks.downloadPrepareFailed') || '下载准备失败')
-                downloadingFile.value = false
-                return
-              }
-
-              retryCount++
-              if (retryCount < maxRetries) {
-                setTimeout(checkTaskStatus, 1000)
-              } else {
-                proxy?.$modal.msgWarning(t('tasks.prepareTimeout') || '准备超时，请到任务中心查看')
-                downloadingFile.value = false
-              }
-            } else {
-              proxy?.$log.error('获取任务列表失败:', taskRes)
-              retryCount++
-              if (retryCount < maxRetries) {
-                setTimeout(checkTaskStatus, 1000)
-              } else {
-                proxy?.$modal.msgError(t('tasks.getTaskStatusFailed') || '获取任务状态失败')
-                downloadingFile.value = false
-              }
-            }
-          } catch (error: any) {
-            proxy?.$log.error('查询任务状态异常:', error)
-            retryCount++
-            if (retryCount < maxRetries) {
-              setTimeout(checkTaskStatus, 1000)
-            } else {
-              proxy?.$modal.msgError(t('tasks.queryTaskStatusFailed') || '查询任务状态失败')
-              downloadingFile.value = false
-            }
-          }
-        }
-
-        setTimeout(checkTaskStatus, 1000)
-      } else {
-        proxy?.$modal.msgError(res.message || t('tasks.createDownloadTaskFailed') || '创建下载任务失败')
-        downloadingFile.value = false
+      if (res.code !== 200 || !res.data?.task_id) {
+        throw new Error(res.message || t('tasks.createDownloadTaskFailed') || '创建下载任务失败')
       }
+
+      proxy?.$modal.msgSuccess(t('tasks.preparingDownload') || '准备下载中，请稍候...')
+      showDownloadPasswordDialog.value = false
+      const task = await waitForDownloadReady(res.data.task_id)
+      if (options?.onTaskReady) options.onTaskReady()
+      await downloadPreparedFile(res.data.task_id, task.file_name || res.data.file_name)
+      proxy?.$modal.msgSuccess(t('tasks.downloadStarted') || '下载已开始')
     } catch (error: any) {
-      proxy?.$log.error('创建下载任务异常:', error)
-      proxy?.$modal.msgError(error.message || t('tasks.createDownloadTaskFailed') || '创建下载任务失败')
+      proxy?.$log.error('下载文件失败:', error)
+      proxy?.$modal.msgError(error.message || t('tasks.downloadFailed') || '下载失败')
+    } finally {
       downloadingFile.value = false
     }
   }

@@ -84,6 +84,7 @@ func initRouter(factory *service.ServerFactory, cache cache.Cache) *gin.Engine {
 		handlers.NewAdminHandler(factory.AdminService(), cache).Router(api)
 		handlers.NewPluginHandler(factory.PluginService(), cache).Router(api)
 		handlers.NewSubscriptionHandler(factory.SubscriptionService(), cache).Router(api)
+		handlers.NewEventHandler(factory.TaskEvents(), cache, factory).Router(api)
 		// TODO: 这里可以注册更多的路由处理器
 	}
 

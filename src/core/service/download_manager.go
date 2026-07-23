@@ -40,6 +40,35 @@ type DownloadManager struct {
 	activeBatches map[string]bool
 	secrets       map[string]string
 	torrentSem    chan struct{}
+	taskEvents    *TaskEventHub
+}
+
+func (m *DownloadManager) SetTaskEventHub(events *TaskEventHub) {
+	m.taskEvents = events
+}
+
+func (m *DownloadManager) publishTaskByID(taskID string, coalesce bool) {
+	if m.taskEvents == nil || taskID == "" {
+		return
+	}
+	if task, err := m.factory.DownloadTask().GetByID(context.Background(), taskID); err == nil {
+		m.taskEvents.Publish(downloadTaskEvent(task, "updated"), coalesce)
+	}
+}
+
+func (m *DownloadManager) progressPublisher(task *models.DownloadTask) func(int64, int64, int) {
+	return func(downloadedSize, speed int64, progress int) {
+		if m.taskEvents == nil {
+			return
+		}
+		snapshot := *task
+		snapshot.State = enum.DownloadTaskStateDownloading.Value()
+		snapshot.Progress = progress
+		snapshot.Speed = speed
+		snapshot.DownloadedSize = downloadedSize
+		snapshot.UpdateTime = custom_type.Now()
+		m.taskEvents.Publish(downloadTaskEvent(&snapshot, "updated"), true)
+	}
 }
 
 func NewDownloadManager(factory *impl.RepositoryFactory, tempDir string, policies ...*download.NetworkPolicy) *DownloadManager {
@@ -180,6 +209,7 @@ func (m *DownloadManager) startTask(task *models.DownloadTask) bool {
 	m.mu.Unlock()
 
 	task.RunToken = runToken
+	m.publishTaskByID(task.ID, false)
 	go m.runTask(ctx, task, filePassword, isTorrent)
 	return true
 }
@@ -235,6 +265,7 @@ func (m *DownloadManager) runTask(ctx context.Context, task *models.DownloadTask
 			SessionID:          task.BatchID,
 			DownloadLimiter:    m.networkPolicy.DownloadLimiter(),
 			UploadLimiter:      m.networkPolicy.BTUploadLimiter(),
+			ProgressCallback:   m.progressPublisher(task),
 		}
 		fileID, err = download.DownloadTorrentSingleFile(ctx, task.ID, task.URL, task.FileIndex, task.UserID, m.tempDir, m.factory, opts)
 	} else if task.Type == enum.DownloadTaskTypeHLS.Value() {
@@ -251,6 +282,7 @@ func (m *DownloadManager) runTask(ctx context.Context, task *models.DownloadTask
 			RequestHeaders:   requestHeaders,
 			HeaderHosts:      headerHosts,
 			OutputFileName:   task.FileName,
+			ProgressCallback: m.progressPublisher(task),
 			ReserveSpace: func(size int64) (int64, error) {
 				reserved, reserveErr := m.ensureReservation(task, size)
 				if reserveErr == nil {
@@ -283,6 +315,7 @@ func (m *DownloadManager) runTask(ctx context.Context, task *models.DownloadTask
 			RequestHeaders:   requestHeaders,
 			HeaderHosts:      headerHosts,
 			OutputFileName:   task.FileName,
+			ProgressCallback: m.progressPublisher(task),
 			ReserveSpace: func(size int64) (int64, error) {
 				reserved, reserveErr := m.ensureReservation(task, size)
 				if reserveErr == nil {
@@ -353,6 +386,9 @@ func (m *DownloadManager) finishTask(task *models.DownloadTask, fileID string, r
 		if isTorrentTask(task.Type) {
 			m.cleanupTaskTemp(task)
 		}
+		if updated {
+			m.publishTaskByID(task.ID, false)
+		}
 		m.deleteSecret(task.ID)
 		return
 	}
@@ -366,7 +402,7 @@ func (m *DownloadManager) finishTask(task *models.DownloadTask, fileID string, r
 		return
 	}
 	if download.IsCredentialsRequired(runErr) {
-		_, updateErr := m.factory.DownloadTask().UpdateIfRunToken(ctx, task.ID, task.RunToken, map[string]interface{}{
+		updated, updateErr := m.factory.DownloadTask().UpdateIfRunToken(ctx, task.ID, task.RunToken, map[string]interface{}{
 			"state":            enum.DownloadTaskStatePaused.Value(),
 			"speed":            0,
 			"run_token":        "",
@@ -379,6 +415,9 @@ func (m *DownloadManager) finishTask(task *models.DownloadTask, fileID string, r
 		if updateErr != nil {
 			logger.LOG.Error("暂停凭据失效的HTTP/HLS任务失败", "taskID", task.ID, "error", updateErr)
 		}
+		if updated {
+			m.publishTaskByID(task.ID, false)
+		}
 		m.deleteSecret(task.ID)
 		return
 	}
@@ -389,7 +428,7 @@ func (m *DownloadManager) finishTask(task *models.DownloadTask, fileID string, r
 		if retryCount <= len(backoff) {
 			delay = backoff[retryCount-1]
 		}
-		_, _ = m.factory.DownloadTask().UpdateIfRunToken(ctx, task.ID, task.RunToken, map[string]interface{}{
+		updated, _ := m.factory.DownloadTask().UpdateIfRunToken(ctx, task.ID, task.RunToken, map[string]interface{}{
 			"state":            enum.DownloadTaskStateInit.Value(),
 			"retry_count":      retryCount,
 			"next_retry_at":    time.Now().Add(delay),
@@ -399,9 +438,12 @@ func (m *DownloadManager) finishTask(task *models.DownloadTask, fileID string, r
 			"speed":            0,
 			"error_msg":        fmt.Sprintf("第%d次重试等待中: %s", retryCount, download.RedactErrorForLog(runErr)),
 		})
+		if updated {
+			m.publishTaskByID(task.ID, false)
+		}
 		return
 	}
-	_, err := m.factory.DownloadTask().UpdateIfRunToken(ctx, task.ID, task.RunToken, map[string]interface{}{
+	updated, err := m.factory.DownloadTask().UpdateIfRunToken(ctx, task.ID, task.RunToken, map[string]interface{}{
 		"state":            enum.DownloadTaskStateFailed.Value(),
 		"speed":            0,
 		"run_token":        "",
@@ -412,6 +454,9 @@ func (m *DownloadManager) finishTask(task *models.DownloadTask, fileID string, r
 	})
 	if err != nil {
 		logger.LOG.Error("提交下载失败状态失败", "taskID", task.ID, "error", err)
+	}
+	if updated {
+		m.publishTaskByID(task.ID, false)
 	}
 	m.releaseReservation(task.ID)
 	m.cleanupTaskTemp(task)

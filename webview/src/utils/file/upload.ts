@@ -1,11 +1,12 @@
 import SparkMD5 from 'spark-md5'
-import { getUploadProgress, uploadPrecheck, uploadFile } from '@/api/file'
+import { getUploadProgress, uploadPrecheck, uploadFile, type UploadProgressResponse } from '@/api/file'
 import { UPLOAD_CONFIG } from '@/config/api'
 import type { ApiResponse } from '@/types'
 import logger from '@/plugins/logger'
 import { uploadTaskManager } from './uploadTaskManager'
 import { generateVideoThumbnail, isVideoFile } from './videoThumbnail'
 import i18n from '@/i18n'
+import { taskEventClient, type TaskEvent } from '@/utils/taskEvents'
 
 export interface UploadConfig {
   chunkSize: number
@@ -35,41 +36,70 @@ const waitForUploadFinalization = async (
   fileName: string,
   onProgress?: (progress: number, fileName: string) => void
 ) => {
-  let consecutiveFailures = 0
-  while (true) {
-    let response: Awaited<ReturnType<typeof getUploadProgress>>
-    try {
-      response = await getUploadProgress(precheckId)
-      consecutiveFailures = 0
-    } catch (error) {
-      consecutiveFailures++
-      if (consecutiveFailures >= 5) throw error
-      logger.warn('查询文件处理进度失败，稍后重试', { precheckId, consecutiveFailures })
-      await new Promise(resolve => setTimeout(resolve, 3000))
-      continue
+  let unsubscribeTask: () => void = () => {}
+  let unsubscribeSync: () => void = () => {}
+  let reconcilePromise: Promise<UploadProgressResponse | null> | null = null
+
+  const result = new Promise<void>((resolve, reject) => {
+    let settled = false
+    const applyProgress = (progress: Partial<UploadProgressResponse> | null | undefined) => {
+      if (settled || !progress) return
+      if (progress.status === 'completed') {
+        settled = true
+        if (taskId) uploadTaskManager.completeTask(taskId)
+        onProgress?.(100, fileName)
+        resolve()
+        return
+      }
+      if (progress.status === 'failed' || progress.status === 'aborted') {
+        settled = true
+        reject(new Error(progress.error_message || '服务器处理文件失败'))
+        return
+      }
+      const processingProgress = Math.max(90, Math.min(99, Math.floor(progress.progress || 90)))
+      if (taskId) {
+        uploadTaskManager.markProcessing(
+          taskId,
+          processingProgress,
+          FINALIZE_STAGE_TEXT[progress.stage || 'queued'] || '服务器正在处理文件...'
+        )
+      }
+      onProgress?.(processingProgress, fileName)
     }
-    const progress = response.data
-    if (!progress) {
-      throw new Error('服务器未返回文件处理进度')
+
+    const reconcile = () => {
+      if (settled) return Promise.resolve(null)
+      if (reconcilePromise) return reconcilePromise
+      reconcilePromise = getUploadProgress(precheckId)
+        .then(response => {
+          const progress = response.code === 200 ? response.data || null : null
+          applyProgress(progress)
+          return progress
+        })
+        .catch(error => {
+          logger.warn('查询文件处理进度失败，等待实时连接恢复后重试', { precheckId, error })
+          return null
+        })
+        .finally(() => {
+          reconcilePromise = null
+        })
+      return reconcilePromise
     }
-    if (progress.status === 'completed') {
-      if (taskId) uploadTaskManager.completeTask(taskId)
-      onProgress?.(100, fileName)
-      return progress
-    }
-    if (progress.status === 'failed' || progress.status === 'aborted') {
-      throw new Error(progress.error_message || '服务器处理文件失败')
-    }
-    const processingProgress = Math.max(90, Math.min(99, Math.floor(progress.progress || 90)))
-    if (taskId) {
-      uploadTaskManager.markProcessing(
-        taskId,
-        processingProgress,
-        FINALIZE_STAGE_TEXT[progress.stage || 'queued'] || '服务器正在处理文件...'
-      )
-    }
-    onProgress?.(processingProgress, fileName)
-    await new Promise(resolve => setTimeout(resolve, 1000))
+
+    unsubscribeTask = taskEventClient.subscribe('upload.task', precheckId, (event: TaskEvent) => {
+      applyProgress(event.payload as Partial<UploadProgressResponse> | undefined)
+    })
+    unsubscribeSync = taskEventClient.subscribe('sync', undefined, () => {
+      void reconcile()
+    })
+    void reconcile()
+  })
+
+  try {
+    await result
+  } finally {
+    unsubscribeTask()
+    unsubscribeSync()
   }
 }
 

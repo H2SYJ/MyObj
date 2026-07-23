@@ -49,6 +49,7 @@ type HTTPDownloadOptions struct {
 	OutputFileName   string                     // 插件可选输出文件名
 	ReservedSize     int64                      // 已预留的用户空间
 	ReserveSpace     func(int64) (int64, error) // 根据远端大小预留用户空间
+	ProgressCallback func(downloadedSize, speed int64, progress int)
 }
 
 // HTTPDownloadResult HTTP下载结果
@@ -80,12 +81,13 @@ type downloadProgress struct {
 	RunToken           string
 	ReservedSize       int64
 	ReserveSpace       func(int64) (int64, error)
+	ProgressCallback   func(downloadedSize, speed int64, progress int)
 	mu                 sync.RWMutex
 }
 
 // newDownloadProgress 创建进度管理器
-func newDownloadProgress(taskID string, totalSize int64, repoFactory *impl.RepositoryFactory, runToken string) *downloadProgress {
-	return &downloadProgress{
+func newDownloadProgress(taskID string, totalSize int64, repoFactory *impl.RepositoryFactory, runToken string, callbacks ...func(int64, int64, int)) *downloadProgress {
+	progress := &downloadProgress{
 		TaskID:             taskID,
 		TotalSize:          totalSize,
 		LastDownloadedSize: 0,
@@ -94,6 +96,10 @@ func newDownloadProgress(taskID string, totalSize int64, repoFactory *impl.Repos
 		RepoFactory:        repoFactory,
 		RunToken:           runToken,
 	}
+	if len(callbacks) > 0 {
+		progress.ProgressCallback = callbacks[0]
+	}
+	return progress
 }
 
 // updateProgress 更新下载进度（计算实时速度）
@@ -147,13 +153,15 @@ func (dp *downloadProgress) updateProgress(downloaded int64) {
 				progressValue = 100
 			}
 		}
-		_, err := dp.RepoFactory.DownloadTask().UpdateIfRunToken(context.Background(), dp.TaskID, dp.RunToken, map[string]interface{}{
+		updated, err := dp.RepoFactory.DownloadTask().UpdateIfRunToken(context.Background(), dp.TaskID, dp.RunToken, map[string]interface{}{
 			"downloaded_size": dp.DownloadedSize,
 			"speed":           dp.Speed,
 			"progress":        progressValue,
 		})
 		if err != nil {
 			logger.LOG.Error("更新下载任务进度失败", "taskID", dp.TaskID, "error", err)
+		} else if updated && dp.ProgressCallback != nil {
+			dp.ProgressCallback(dp.DownloadedSize, dp.Speed, progressValue)
 		}
 	}
 }
@@ -299,7 +307,7 @@ func DownloadHTTPWithContext(
 
 	// 4. 下载文件
 	filePath := filepath.Join(sessionDir, fileInfo.FileName)
-	progress := newDownloadProgress(taskID, fileInfo.FileSize, repoFactory, opts.RunToken)
+	progress := newDownloadProgress(taskID, fileInfo.FileSize, repoFactory, opts.RunToken, opts.ProgressCallback)
 	progress.ReservedSize = opts.ReservedSize
 	progress.ReserveSpace = opts.ReserveSpace
 

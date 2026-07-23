@@ -33,6 +33,11 @@ export function useUploadTasks() {
 
   const hasMore = computed(() => uploadTasks.value.length < total.value)
 
+  const refreshLocalUploadTasks = () => {
+    allUploadTasks.value = uploadTaskManager.getAllTasks()
+    updatePaginatedTasks()
+  }
+
   const loadMore = () => {
     if (uploadLoading.value || !hasMore.value) return
     currentPage.value += 1
@@ -45,16 +50,12 @@ export function useUploadTasks() {
       uploadLoading.value = true
     }
     try {
-      const localTasks = uploadTaskManager.getAllTasks()
-      allUploadTasks.value = localTasks
-      updatePaginatedTasks()
+      refreshLocalUploadTasks()
 
       const syncResult = await loadAndSyncBackendTasks()
 
       if (syncResult.success) {
-        const allTasks = uploadTaskManager.getAllTasks()
-        allUploadTasks.value = allTasks
-        updatePaginatedTasks()
+        refreshLocalUploadTasks()
       } else if (syncResult.error) {
         proxy?.$log.warn('任务同步失败:', syncResult.error)
       }
@@ -415,6 +416,7 @@ export function useUploadTasks() {
     total,
     hasMore,
     loadUploadTasks,
+    refreshLocalUploadTasks,
     getExpiredTaskCount,
     pauseUpload,
     resumeUpload,

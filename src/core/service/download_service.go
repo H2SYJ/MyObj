@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"myobj/src/config"
 	"myobj/src/core/domain/request"
@@ -29,6 +30,27 @@ type DownloadService struct {
 	tempDir       string // 临时目录
 	manager       *DownloadManager
 	networkPolicy *download.NetworkPolicy
+	taskEvents    *TaskEventHub
+}
+
+func (d *DownloadService) SetTaskEventHub(events *TaskEventHub) {
+	d.taskEvents = events
+	d.manager.SetTaskEventHub(events)
+}
+
+func (d *DownloadService) publishTask(task *models.DownloadTask, action string, coalesce bool) {
+	if d.taskEvents != nil && task != nil {
+		d.taskEvents.Publish(downloadTaskEvent(task, action), coalesce)
+	}
+}
+
+func (d *DownloadService) publishTaskByID(taskID, action string, coalesce bool) {
+	if d.taskEvents == nil || taskID == "" {
+		return
+	}
+	if task, err := d.factory.DownloadTask().GetByID(context.Background(), taskID); err == nil {
+		d.publishTask(task, action, coalesce)
+	}
 }
 
 func NewDownloadService(factory *impl.RepositoryFactory, policies ...*download.NetworkPolicy) *DownloadService {
@@ -106,6 +128,7 @@ func (d *DownloadService) EnqueueSubscriptionDownload(ctx context.Context, input
 	if err != nil {
 		return "", err
 	}
+	d.publishTask(task, "created", false)
 	d.manager.Notify(task.ID, "")
 	return task.ID, nil
 }
@@ -127,6 +150,7 @@ func (d *DownloadService) CreateSubscriptionItemAndDownload(ctx context.Context,
 	if err != nil {
 		return "", err
 	}
+	d.publishTask(task, "created", false)
 	d.manager.Notify(task.ID, "")
 	return task.ID, nil
 }
@@ -370,6 +394,7 @@ func (d *DownloadService) CreateOfflineDownload(req *request.CreateOfflineDownlo
 		logger.LOG.Error("创建下载任务失败", "error", err, "userID", userID, "url", download.RedactURLForLog(req.URL))
 		return nil, fmt.Errorf("创建任务失败: %w", err)
 	}
+	d.publishTask(task, "created", false)
 
 	// 5. 通知下载管理器排队执行，密码仅保存在内存中。
 	d.manager.Notify(taskID, req.FilePassword)
@@ -495,6 +520,21 @@ func (d *DownloadService) GetTaskList(req *request.DownloadTaskListRequest, user
 	return models.NewJsonResponse(200, "查询成功", result), nil
 }
 
+// GetLocalDownloadTask 查询当前用户的单个网盘文件下载任务。
+func (d *DownloadService) GetLocalDownloadTask(taskID, userID string) (*models.JsonResponse, error) {
+	task, err := d.factory.DownloadTask().GetByID(context.Background(), taskID)
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return models.NewJsonResponse(404, "下载任务不存在", nil), nil
+		}
+		return nil, err
+	}
+	if task.UserID != userID || task.Type != enum.DownloadTaskTypeLocalFile.Value() {
+		return models.NewJsonResponse(404, "下载任务不存在", nil), nil
+	}
+	return models.NewJsonResponse(200, "查询成功", d.convertTaskToResponse(task)), nil
+}
+
 // PauseTask 暂停下载任务
 func (d *DownloadService) PauseTask(req *request.TaskOperationRequest, userID string) (*models.JsonResponse, error) {
 	ctx := context.Background()
@@ -518,6 +558,7 @@ func (d *DownloadService) PauseTask(req *request.TaskOperationRequest, userID st
 		logger.LOG.Error("暂停下载任务失败", "error", err, "taskID", req.TaskID)
 		return nil, fmt.Errorf("暂停任务失败: %w", err)
 	}
+	d.publishTaskByID(req.TaskID, "updated", false)
 
 	logger.LOG.Info("下载任务已暂停", "taskID", req.TaskID, "userID", userID)
 	return models.NewJsonResponse(200, "任务已暂停", nil), nil
@@ -550,6 +591,7 @@ func (d *DownloadService) ResumeTask(req *request.TaskOperationRequest, userID s
 		logger.LOG.Error("恢复下载任务失败", "error", err, "taskID", req.TaskID)
 		return nil, fmt.Errorf("恢复任务失败: %w", err)
 	}
+	d.publishTaskByID(req.TaskID, "updated", false)
 
 	logger.LOG.Info("下载任务已恢复", "taskID", req.TaskID, "userID", userID)
 	return models.NewJsonResponse(200, "任务已恢复", nil), nil
@@ -581,6 +623,7 @@ func (d *DownloadService) RetryTask(req *request.TaskOperationRequest, userID st
 		logger.LOG.Error("重试下载任务失败", "error", err, "taskID", req.TaskID)
 		return nil, fmt.Errorf("重试任务失败: %w", err)
 	}
+	d.publishTaskByID(req.TaskID, "updated", false)
 
 	logger.LOG.Info("下载任务已重新排队", "taskID", req.TaskID, "userID", userID)
 	return models.NewJsonResponse(200, "任务已重新排队", nil), nil
@@ -668,6 +711,7 @@ func (d *DownloadService) cancelTask(taskID string, userID string) error {
 		logger.LOG.Error("取消下载任务失败", "error", err, "taskID", taskID)
 		return fmt.Errorf("取消任务失败: %w", err)
 	}
+	d.publishTaskByID(taskID, "updated", false)
 	return nil
 }
 
@@ -732,6 +776,7 @@ func (d *DownloadService) deleteTask(taskID string, userID string) error {
 		logger.LOG.Error("删除下载任务失败", "error", err, "taskID", taskID)
 		return fmt.Errorf("删除任务失败: %w", err)
 	}
+	d.publishTask(task, "deleted", false)
 	return nil
 }
 
@@ -901,6 +946,7 @@ func (d *DownloadService) CreateLocalFileDownload(req *request.CreateLocalFileDo
 		logger.LOG.Error("创建下载任务失败", "error", err, "userID", userID, "fileID", req.FileID)
 		return nil, fmt.Errorf("创建任务失败: %w", err)
 	}
+	d.publishTask(task, "created", false)
 
 	// 保存真实的 file_id，用于异步任务
 	realFileID := userFile.FileID
@@ -910,7 +956,9 @@ func (d *DownloadService) CreateLocalFileDownload(req *request.CreateLocalFileDo
 		// 更新任务状态为准备中
 		task.State = enum.DownloadTaskStateDownloading.Value()
 		task.UpdateTime = custom_type.Now()
-		d.factory.DownloadTask().Update(context.Background(), task)
+		if err := d.factory.DownloadTask().Update(context.Background(), task); err == nil {
+			d.publishTask(task, "updated", false)
+		}
 
 		opts := &download.LocalFileDownloadOptions{
 			FilePassword: req.FilePassword,
@@ -930,7 +978,9 @@ func (d *DownloadService) CreateLocalFileDownload(req *request.CreateLocalFileDo
 			task.State = enum.DownloadTaskStateFailed.Value()
 			task.ErrorMsg = err.Error()
 			task.UpdateTime = custom_type.Now()
-			d.factory.DownloadTask().Update(context.Background(), task)
+			if updateErr := d.factory.DownloadTask().Update(context.Background(), task); updateErr == nil {
+				d.publishTask(task, "updated", false)
+			}
 			logger.LOG.Error("准备下载文件失败", "taskID", taskID, "error", err)
 			return
 		}
@@ -942,7 +992,9 @@ func (d *DownloadService) CreateLocalFileDownload(req *request.CreateLocalFileDo
 		task.Path = result.TempFilePath // 存储临时文件路径
 		task.UpdateTime = custom_type.Now()
 		task.FinishTime = custom_type.Now()
-		d.factory.DownloadTask().Update(context.Background(), task)
+		if err := d.factory.DownloadTask().Update(context.Background(), task); err == nil {
+			d.publishTask(task, "updated", false)
+		}
 
 		logger.LOG.Info("网盘文件下载准备完成", "taskID", taskID, "realFileID", realFileID, "ufID", req.FileID, "tempPath", result.TempFilePath)
 	}()
@@ -1096,6 +1148,7 @@ func (d *DownloadService) StartTorrentDownload(req *request.StartTorrentDownload
 			return nil, fmt.Errorf("创建任务失败: %w", err)
 		}
 
+		d.publishTask(task, "created", false)
 		taskIDs = append(taskIDs, taskID)
 		d.manager.Notify(taskID, req.FilePassword)
 	}

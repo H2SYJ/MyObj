@@ -12,6 +12,7 @@ import (
 	"myobj/src/pkg/download"
 	"myobj/src/pkg/logger"
 	"myobj/src/pkg/models"
+	"net/http"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -62,6 +63,7 @@ func (h *DownloadHandler) Router(c *gin.RouterGroup) {
 		downloadGroup.POST("/batch/delete", middleware.PowerVerify("file:offLine"), h.BatchDeleteTasks)
 		// 创建网盘文件下载任务
 		downloadGroup.POST("/local/create", middleware.PowerVerify("file:download"), h.CreateLocalFileDownload)
+		downloadGroup.GET("/local/task/:taskID", middleware.PowerVerify("file:download"), h.GetLocalDownloadTask)
 		// 下载网盘文件
 		downloadGroup.GET("/local/file/:taskID", middleware.PowerVerify("file:download"), h.DownloadLocalFile)
 		// 解析种子/磁力链
@@ -75,6 +77,15 @@ func (h *DownloadHandler) Router(c *gin.RouterGroup) {
 	c.Group("/download").GET("/preview", verify.VerifyOptional(), h.PreviewFile)
 
 	logger.LOG.Info("[路由] 下载路由注册完成✔️")
+}
+
+func (h *DownloadHandler) GetLocalDownloadTask(c *gin.Context) {
+	result, err := h.service.GetLocalDownloadTask(c.Param("taskID"), c.GetString("userID"))
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, models.NewJsonResponse(500, "查询下载任务失败", err.Error()))
+		return
+	}
+	c.JSON(http.StatusOK, result)
 }
 
 // CreateOfflineDownload 创建离线下载任务

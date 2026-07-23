@@ -52,6 +52,35 @@ type PackageEntry struct {
 	ArchivePath string
 }
 
+func (f *FileService) publishPackageTask(task *PackageTask, action string, coalesce bool) {
+	if f.taskEvents == nil || task == nil {
+		return
+	}
+	now := time.Now().UTC()
+	task.mu.Lock()
+	event := TaskEvent{
+		Version:    1,
+		Kind:       TaskEventPackage,
+		Action:     action,
+		ResourceID: task.PackageID,
+		Terminal:   task.Status == "ready" || task.Status == "failed",
+		UserID:     task.UserID,
+		OccurredAt: now,
+		Payload: map[string]any{
+			"package_id":   task.PackageID,
+			"package_name": task.PackageName,
+			"status":       task.Status,
+			"progress":     task.Progress,
+			"created_size": task.CreatedSize,
+			"total_size":   task.TotalSize,
+			"error_msg":    task.ErrorMsg,
+			"update_time":  now,
+		},
+	}
+	task.mu.Unlock()
+	f.taskEvents.Publish(event, coalesce)
+}
+
 // CreatePackage 创建打包下载任务
 func (f *FileService) CreatePackage(req *request.PackageCreateRequest, userID string) (*models.JsonResponse, error) {
 	ctx := context.Background()
@@ -108,6 +137,7 @@ func (f *FileService) CreatePackage(req *request.PackageCreateRequest, userID st
 		CreatedAt:    time.Now(),
 	}
 	packageTasks.Store(packageID, task)
+	f.publishPackageTask(task, "created", false)
 
 	// 异步创建压缩包
 	go f.createZipPackage(ctx, task)
@@ -286,6 +316,7 @@ func (f *FileService) createZipPackage(ctx context.Context, task *PackageTask) {
 			task.Status = "failed"
 			task.ErrorMsg = fmt.Sprintf("打包失败: %v", r)
 			task.mu.Unlock()
+			f.publishPackageTask(task, "updated", false)
 			logger.LOG.Error("打包任务异常", "packageID", task.PackageID, "error", r)
 		}
 	}()
@@ -297,6 +328,7 @@ func (f *FileService) createZipPackage(ctx context.Context, task *PackageTask) {
 		task.Status = "failed"
 		task.ErrorMsg = fmt.Sprintf("创建临时目录失败: %v", err)
 		task.mu.Unlock()
+		f.publishPackageTask(task, "updated", false)
 		return
 	}
 	// 注意：不要在这里立即删除临时目录，因为文件需要保留供下载使用
@@ -311,6 +343,7 @@ func (f *FileService) createZipPackage(ctx context.Context, task *PackageTask) {
 		task.Status = "failed"
 		task.ErrorMsg = fmt.Sprintf("创建ZIP文件失败: %v", err)
 		task.mu.Unlock()
+		f.publishPackageTask(task, "updated", false)
 		return
 	}
 	zipWriter := zip.NewWriter(zipFile)
@@ -322,6 +355,7 @@ func (f *FileService) createZipPackage(ctx context.Context, task *PackageTask) {
 		task.Status = "failed"
 		task.ErrorMsg = err.Error()
 		task.mu.Unlock()
+		f.publishPackageTask(task, "updated", false)
 	}
 	for _, directory := range task.EmptyDirs {
 		if _, err := zipWriter.Create(directory); err != nil {
@@ -376,6 +410,7 @@ func (f *FileService) createZipPackage(ctx context.Context, task *PackageTask) {
 			task.Progress = (i + 1) * 100 / totalFiles
 		}
 		task.mu.Unlock()
+		f.publishPackageTask(task, "updated", true)
 		if downloadResult.TempFilePath != fileInfo.Path && strings.Contains(downloadResult.TempFilePath, "temp") {
 			preparedDir := filepath.Dir(downloadResult.TempFilePath)
 			if preparedDir != tempDir && strings.Contains(preparedDir, "temp") {
@@ -398,6 +433,7 @@ func (f *FileService) createZipPackage(ctx context.Context, task *PackageTask) {
 	task.Progress = 100
 	task.FilePath = zipPath
 	task.mu.Unlock()
+	f.publishPackageTask(task, "updated", false)
 
 	logger.LOG.Info("打包完成", "packageID", task.PackageID, "filePath", zipPath)
 
@@ -524,6 +560,9 @@ func (f *FileService) createDownloadTasksForPackage(ctx context.Context, task *P
 		if err := f.factory.DownloadTask().Create(ctx, downloadTask); err != nil {
 			logger.LOG.Error("创建打包下载任务记录失败", "fileID", fileID, "error", err)
 			continue
+		}
+		if f.taskEvents != nil {
+			f.taskEvents.Publish(downloadTaskEvent(downloadTask, "created"), false)
 		}
 
 		logger.LOG.Info("创建打包下载任务记录成功", "taskID", taskID, "fileName", userFile.FileName, "packageID", task.PackageID)

@@ -646,11 +646,12 @@
     type TorrentFileInfo
   } from '@/api/download'
   import { getDirectories } from '@/api/file'
-  import { formatSize, formatDate, formatSpeed, truncateUrl, getTaskStatusType } from '@/utils'
+  import { formatSize, formatDate, formatSpeed, truncateUrl, getTaskStatusType, getDownloadStatusText } from '@/utils'
   import { useResponsive, useI18n, useMobileLayerHistory } from '@/composables'
   import { useLatestRequest } from '@/composables/core/useLatestRequest'
   import { MobileInfiniteList } from '@/components/mobile'
   import WorkspacePage from '@/components/WorkspacePage/index.vue'
+  import { taskEventClient, type TaskEvent } from '@/utils/taskEvents'
 
   const { proxy } = getCurrentInstance() as ComponentInternalInstance
   const { t } = useI18n()
@@ -671,8 +672,12 @@
   let syncingTaskSelection = false
   const showDownloadDialog = ref(false) // 统一的下载对话框
   useMobileLayerHistory(showDownloadDialog, 'offline-create', isMobile)
-  let refreshTimer: number | null = null // 支持 setTimeout 和 setInterval
-  let refreshStopped = false
+  let eventRefreshTimer: number | null = null
+  let eventRefreshRunning = false
+  let eventRefreshPending = false
+  let eventRefreshStopped = false
+  let unsubscribeDownloadEvents: (() => void) | null = null
+  let unsubscribeSyncEvents: (() => void) | null = null
   const taskRequest = useLatestRequest()
   const loadingTree = ref(false)
   const folderTreeData = ref<any[]>([])
@@ -938,12 +943,9 @@
   }
 
   // 加载任务列表
-  const loadTaskList = async (append = false) => {
+  const loadTaskList = async (append = false, showLoading = true) => {
     const requestTicket = taskRequest.begin()
-    // 智能刷新时不显示 loading，避免频繁闪烁
-    // 只在手动刷新或首次加载时显示 loading
-    const isManualRefresh = !refreshTimer
-    if (isManualRefresh || append) {
+    if (showLoading || append) {
       loading.value = true
     }
 
@@ -987,14 +989,13 @@
       }
     } catch (error: any) {
       if (!requestTicket.isCurrent()) return
-      // 智能刷新时静默处理错误，避免频繁弹窗
-      if (isManualRefresh) {
+      if (showLoading) {
         proxy?.$modal.msgError(error.message || t('offline.loadTaskListFailed'))
       } else {
         proxy?.$log.warn('刷新任务列表失败:', error)
       }
     } finally {
-      if ((isManualRefresh || append) && requestTicket.isCurrent()) {
+      if ((showLoading || append) && requestTicket.isCurrent()) {
         loading.value = false
       }
     }
@@ -1008,10 +1009,46 @@
 
   // 刷新任务列表
   const refreshTaskList = () => {
-    loadTaskList().then(() => {
-      // 刷新后重新启动智能刷新
-      startSmartRefresh()
-    })
+    void loadTaskList(false, true)
+  }
+
+  const scheduleTaskListRefresh = () => {
+    if (eventRefreshStopped) return
+    eventRefreshPending = true
+    if (eventRefreshTimer !== null || eventRefreshRunning) return
+    eventRefreshTimer = window.setTimeout(async () => {
+      eventRefreshTimer = null
+      if (!eventRefreshPending || eventRefreshRunning) return
+      eventRefreshPending = false
+      eventRefreshRunning = true
+      try {
+        await loadTaskList(false, false)
+      } finally {
+        eventRefreshRunning = false
+        if (eventRefreshPending) scheduleTaskListRefresh()
+      }
+    }, 200)
+  }
+
+  const applyDownloadEvent = (event: TaskEvent) => {
+    const payload = event.payload as Partial<OfflineDownloadTask> | undefined
+    if (payload?.type !== undefined && ![0, 4, 5, 9].includes(payload.type)) return
+    if (event.action === 'created' || event.action === 'deleted') {
+      scheduleTaskListRefresh()
+      return
+    }
+    const index = taskList.value.findIndex(task => task.id === event.resource_id)
+    if (index < 0 || !payload) {
+      scheduleTaskListRefresh()
+      return
+    }
+    const current = taskList.value[index]
+    const updated = {
+      ...current,
+      ...payload,
+      state_text: payload.state === undefined ? current.state_text : getDownloadStatusText(payload.state)
+    }
+    taskList.value.splice(index, 1, updated)
   }
 
   const handleTaskPageSizeChange = () => {
@@ -1499,58 +1536,20 @@
     })
   }
 
-  // 智能刷新：根据任务状态使用不同的刷新频率
-  const startSmartRefresh = () => {
-    refreshStopped = false
-    if (refreshTimer) {
-      clearTimeout(refreshTimer)
-      clearInterval(refreshTimer)
-    }
-
-    const refresh = async () => {
-      if (refreshStopped) return
-      if (loading.value) {
-        refreshTimer = window.setTimeout(refresh, 1000)
-        return
-      }
-      await loadTaskList()
-      if (refreshStopped) return
-
-      // 检查是否有正在下载的任务
-      const hasActiveTasks = taskList.value.some((task: any) => task.state === 1) // state=1 表示下载中
-
-      if (hasActiveTasks) {
-        // 有正在下载的任务，1秒后再次刷新（快速更新）
-        refreshTimer = window.setTimeout(refresh, 1000)
-      } else {
-        // 没有正在下载的任务，3秒后再次刷新（节省资源）
-        refreshTimer = window.setTimeout(refresh, 3000)
-      }
-    }
-
-    // 初始延迟1秒后开始刷新
-    refreshTimer = window.setTimeout(refresh, 1000)
-  }
-
   // 页面加载时获取任务列表
   onMounted(() => {
-    loadTaskList()
-
-    // 启动智能刷新
-    startSmartRefresh()
+    eventRefreshStopped = false
+    void loadTaskList()
+    unsubscribeDownloadEvents = taskEventClient.subscribe('download.task', undefined, applyDownloadEvent)
+    unsubscribeSyncEvents = taskEventClient.subscribe('sync', undefined, scheduleTaskListRefresh)
   })
 
-  // 页面销毁时清除定时器
   onBeforeUnmount(() => {
-    refreshStopped = true
-    if (refreshTimer) {
-      // 支持 setTimeout 和 setInterval
-      if (typeof refreshTimer === 'number') {
-        clearTimeout(refreshTimer)
-        clearInterval(refreshTimer)
-      }
-      refreshTimer = null
-    }
+    eventRefreshStopped = true
+    eventRefreshPending = false
+    unsubscribeDownloadEvents?.()
+    unsubscribeSyncEvents?.()
+    if (eventRefreshTimer !== null) window.clearTimeout(eventRefreshTimer)
   })
 </script>
 

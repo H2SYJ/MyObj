@@ -54,7 +54,10 @@ function isTerminalStatus(status: UploadTask['status']): boolean {
   return status === 'completed' || status === 'failed' || status === 'cancelled'
 }
 
-export function syncBackendTasksToFrontend(backendTasks: BackendUploadTask[]): {
+export function syncBackendTasksToFrontend(
+  backendTasks: BackendUploadTask[],
+  completeSnapshot = true
+): {
   created: number
   updated: number
   skipped: number
@@ -152,9 +155,13 @@ export function syncBackendTasksToFrontend(backendTasks: BackendUploadTask[]): {
       updated++
     }
 
-    const removed = uploadTaskManager.removeMissingExternalTasks(backendTaskIds)
+    const removed = completeSnapshot ? uploadTaskManager.removeMissingExternalTasks(backendTaskIds) : 0
     return { created, updated, skipped, removed }
   })
+}
+
+export function syncBackendTaskToFrontend(backendTask: BackendUploadTask) {
+  return syncBackendTasksToFrontend([backendTask], false)
 }
 
 async function loadAllBackendUploadTasks(): Promise<BackendUploadTask[]> {

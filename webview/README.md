@@ -130,6 +130,17 @@ server {
     }
     
     # API代理到Go后端
+    location = /api/events {
+        proxy_pass http://localhost:8080;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_buffering off;
+        proxy_cache off;
+        proxy_read_timeout 75s;
+        add_header X-Accel-Buffering no always;
+    }
+
     location /api {
         proxy_pass http://localhost:8080;
         proxy_set_header Host $host;

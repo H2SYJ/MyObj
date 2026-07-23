@@ -551,6 +551,7 @@ type TorrentSingleFileDownloadOptions struct {
 	SessionID          string        // 共享批次临时目录标识
 	DownloadLimiter    *rate.Limiter // 跨HTTP与BT任务共享的下载限流器
 	UploadLimiter      *rate.Limiter // 所有BT会话共享的上传限流器
+	ProgressCallback   func(downloadedSize, speed int64, progress int)
 }
 
 // DownloadTorrentSingleFile 下载种子中的单个文件
@@ -722,13 +723,15 @@ func DownloadTorrentSingleFile(
 				speed = int64(float64(completed-lastCompleted) / elapsed)
 			}
 
-			_, updateErr := repoFactory.DownloadTask().UpdateIfRunToken(ctx, taskID, opts.RunToken, map[string]interface{}{
+			updated, updateErr := repoFactory.DownloadTask().UpdateIfRunToken(ctx, taskID, opts.RunToken, map[string]interface{}{
 				"downloaded_size": completed,
 				"progress":        progress,
 				"speed":           speed,
 			})
 			if updateErr != nil {
 				logger.LOG.Error("更新下载任务进度失败", "taskID", taskID, "error", updateErr)
+			} else if updated && opts.ProgressCallback != nil {
+				opts.ProgressCallback(completed, speed, progress)
 			}
 
 			lastCompleted = completed

@@ -12,6 +12,7 @@ type ServerFactoryInterface interface {
 }
 
 type ServerFactory struct {
+	taskEvents          *TaskEventHub
 	userService         *UserService
 	fileService         *FileService
 	shareService        *SharesService
@@ -23,8 +24,12 @@ type ServerFactory struct {
 }
 
 func NewServiceFactory(factory *impl.RepositoryFactory, cacheLocal cache.Cache) *ServerFactory {
+	taskEvents := NewTaskEventHub()
 	networkPolicy := initializeDownloadNetworkPolicy(factory)
 	downloadService := NewDownloadService(factory, networkPolicy)
+	downloadService.SetTaskEventHub(taskEvents)
+	fileService := NewFileService(factory, cacheLocal)
+	fileService.SetTaskEventHub(taskEvents)
 	runtime, err := pluginpkg.NewRuntime(context.Background())
 	if err != nil {
 		panic(err)
@@ -33,8 +38,9 @@ func NewServiceFactory(factory *impl.RepositoryFactory, cacheLocal cache.Cache) 
 	subscriptionService := NewSubscriptionService(factory, pluginService, downloadService)
 	subscriptionService.Start()
 	return &ServerFactory{
+		taskEvents:          taskEvents,
 		userService:         NewUserService(factory, cacheLocal),
-		fileService:         NewFileService(factory, cacheLocal),
+		fileService:         fileService,
 		shareService:        NewSharesService(factory, cacheLocal),
 		downloadService:     downloadService,
 		recycledService:     NewRecycledService(factory, cacheLocal),
@@ -43,6 +49,10 @@ func NewServiceFactory(factory *impl.RepositoryFactory, cacheLocal cache.Cache) 
 		subscriptionService: subscriptionService,
 	}
 }
+
+func (f *ServerFactory) TaskEvents() *TaskEventHub { return f.taskEvents }
+
+func (f *ServerFactory) GetRepository() *impl.RepositoryFactory { return f.fileService.GetRepository() }
 
 func (f *ServerFactory) PluginService() *PluginService { return f.pluginService }
 

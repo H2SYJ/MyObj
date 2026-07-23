@@ -1,10 +1,11 @@
 import { deleteItems, setFilePublic } from '@/api/file'
-import { createPackage, downloadPackage, getPackageProgress } from '@/api/package'
+import { createPackage, downloadPackage, getPackageProgress, type PackageProgressResponse } from '@/api/package'
 import { useFileDownload } from '@/composables/business/useFileDownload'
 import { useI18n } from '@/composables/core/useI18n'
 import cache from '@/plugins/cache'
 import { useUserStore } from '@/stores'
 import type { FileItem, FileListResponse } from '@/types'
+import { taskEventClient, type TaskEvent } from '@/utils/taskEvents'
 
 export function useFileOperations(
   displayData: Ref<FileListResponse>,
@@ -89,18 +90,70 @@ export function useFileOperations(
     URL.revokeObjectURL(blobUrl)
   }
 
-  const pollPackageProgress = async (packageId: string, packageName: string) => {
-    for (let attempt = 0; attempt < 150; attempt++) {
-      const res = await getPackageProgress(packageId)
-      if (res.code !== 200 || !res.data) throw new Error(res.message || t('files.getPackageProgressFailed'))
-      if (res.data.status === 'failed') throw new Error(res.data.error_msg || t('files.packageFailed'))
-      if (res.data.status === 'ready') {
-        await downloadPackageFile(packageId, packageName)
-        return
+  const waitForPackageReady = async (packageId: string): Promise<PackageProgressResponse> => {
+    let timeoutTimer: number | null = null
+    let unsubscribeTask: () => void = () => {}
+    let unsubscribeSync: () => void = () => {}
+    let reconcilePromise: Promise<PackageProgressResponse | null> | null = null
+
+    const result = new Promise<PackageProgressResponse>((resolve, reject) => {
+      let settled = false
+      const settleFromTask = (task: Partial<PackageProgressResponse> | null | undefined) => {
+        if (settled || !task) return
+        if (task.status === 'ready') {
+          settled = true
+          resolve(task as PackageProgressResponse)
+        } else if (task.status === 'failed') {
+          settled = true
+          reject(new Error(task.error_msg || t('files.packageFailed')))
+        }
       }
-      await new Promise(resolve => setTimeout(resolve, 2000))
+
+      const reconcile = () => {
+        if (settled) return Promise.resolve(null)
+        if (reconcilePromise) return reconcilePromise
+        reconcilePromise = getPackageProgress(packageId)
+          .then(response => {
+            const task = response.code === 200 ? response.data || null : null
+            settleFromTask(task)
+            return task
+          })
+          .catch(error => {
+            proxy?.$log.warn('查询打包进度失败:', error)
+            return null
+          })
+          .finally(() => {
+            reconcilePromise = null
+          })
+        return reconcilePromise
+      }
+
+      unsubscribeTask = taskEventClient.subscribe('package.task', packageId, (event: TaskEvent) => {
+        settleFromTask(event.payload as Partial<PackageProgressResponse> | undefined)
+      })
+      unsubscribeSync = taskEventClient.subscribe('sync', undefined, () => {
+        void reconcile()
+      })
+
+      void reconcile()
+      timeoutTimer = window.setTimeout(async () => {
+        const finalTask = await reconcile()
+        if (settled) return
+        settleFromTask(finalTask)
+        if (!settled) {
+          settled = true
+          reject(new Error(t('files.packageTimeout')))
+        }
+      }, 5 * 60_000)
+    })
+
+    try {
+      return await result
+    } finally {
+      if (timeoutTimer !== null) window.clearTimeout(timeoutTimer)
+      unsubscribeTask()
+      unsubscribeSync()
     }
-    throw new Error(t('files.packageTimeout'))
   }
 
   const requestPackagePassword = async (): Promise<string | undefined> => {
@@ -140,7 +193,10 @@ export function useFileOperations(
       if (res.code !== 200 || !res.data) throw new Error(res.message || t('files.createPackageFailed'))
       if (res.data.status === 'ready')
         await downloadPackageFile(res.data.package_id, res.data.package_name || packageName)
-      else await pollPackageProgress(res.data.package_id, res.data.package_name || packageName)
+      else {
+        await waitForPackageReady(res.data.package_id)
+        await downloadPackageFile(res.data.package_id, res.data.package_name || packageName)
+      }
       proxy?.$modal.msgSuccess(t('files.downloadStart'))
     } catch (error: any) {
       proxy?.$modal.msgError(error.message || t('files.packageDownloadFailed'))

@@ -179,6 +179,13 @@ export const createLocalFileDownload = (data: CreateLocalFileDownloadRequest) =>
 }
 
 /**
+ * 查询单个网盘文件下载任务
+ */
+export const getLocalFileDownloadTask = (taskId: string) => {
+  return get<ApiResponse<OfflineDownloadTask>>(`${API_ENDPOINTS.DOWNLOAD.LOCAL_TASK}/${encodeURIComponent(taskId)}`)
+}
+
+/**
  * 获取网盘文件下载链接
  * 使用 Cookie 认证，不需要 token 参数
  */

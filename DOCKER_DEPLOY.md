@@ -342,6 +342,20 @@ server {
     listen 80;
     server_name your-domain.com;
 
+    # SSE 实时任务事件：必须禁用缓冲和缓存，并保留足够长的读取超时
+    location = /api/events {
+        proxy_pass http://localhost:8080;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_buffering off;
+        proxy_cache off;
+        proxy_read_timeout 75s;
+        add_header X-Accel-Buffering no always;
+    }
+
     location / {
         proxy_pass http://localhost:8080;
         proxy_set_header Host $host;

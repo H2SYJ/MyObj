@@ -48,6 +48,31 @@ func TestRetryTaskValidatesOwnerTypeAndState(t *testing.T) {
 	}
 }
 
+func TestGetLocalDownloadTaskScopesOwnerAndType(t *testing.T) {
+	service := newRetryTestService(t)
+	tasks := []*models.DownloadTask{
+		{ID: "local", UserID: "user", Type: enum.DownloadTaskTypeLocalFile.Value(), State: enum.DownloadTaskStateFinished.Value()},
+		{ID: "foreign", UserID: "other", Type: enum.DownloadTaskTypeLocalFile.Value(), State: enum.DownloadTaskStateFinished.Value()},
+		{ID: "offline", UserID: "user", Type: enum.DownloadTaskTypeHttp.Value(), State: enum.DownloadTaskStateFinished.Value()},
+	}
+	for _, task := range tasks {
+		if err := service.factory.DownloadTask().Create(context.Background(), task); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	result, err := service.GetLocalDownloadTask("local", "user")
+	if err != nil || result.Code != 200 {
+		t.Fatalf("当前用户应能查询自己的网盘下载任务: result=%#v err=%v", result, err)
+	}
+	for _, taskID := range []string{"foreign", "offline", "missing"} {
+		result, err = service.GetLocalDownloadTask(taskID, "user")
+		if err != nil || result.Code != 404 {
+			t.Fatalf("任务%s不应对当前用户暴露: result=%#v err=%v", taskID, result, err)
+		}
+	}
+}
+
 func TestRetryTaskRequiresAndUpdatesExpiredHeaders(t *testing.T) {
 	previousConfig := config.CONFIG
 	config.CONFIG = &config.MyObjConfig{Auth: config.Auth{Secret: "retry-header-test-secret"}}

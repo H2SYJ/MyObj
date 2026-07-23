@@ -159,6 +159,29 @@ func TestStaleRunTokenCannotOverwritePausedState(t *testing.T) {
 	}
 }
 
+func TestStaleRunTokenDoesNotPublishFinishedEvent(t *testing.T) {
+	factory := newManagerTestFactory(t)
+	task := &models.DownloadTask{ID: "task-event", UserID: "u", Type: 0, State: 2, RunToken: ""}
+	if err := factory.DownloadTask().Create(context.Background(), task); err != nil {
+		t.Fatal(err)
+	}
+	hub := NewTaskEventHub()
+	events, cancel := hub.Subscribe(task.UserID)
+	defer cancel()
+	manager := NewDownloadManager(factory, t.TempDir())
+	manager.SetTaskEventHub(hub)
+
+	manager.finishTask(&models.DownloadTask{
+		ID: task.ID, UserID: task.UserID, Type: task.Type, State: 1, RunToken: "old", FileSize: 10,
+	}, "file-id", nil)
+
+	select {
+	case event := <-events:
+		t.Fatalf("旧执行令牌不得发布完成事件: %#v", event)
+	case <-time.After(50 * time.Millisecond):
+	}
+}
+
 func TestEncryptedResumeRequiresPassword(t *testing.T) {
 	factory := newManagerTestFactory(t)
 	task := &models.DownloadTask{ID: "task", UserID: "u", Type: 0, State: 2, EnableEncryption: true}

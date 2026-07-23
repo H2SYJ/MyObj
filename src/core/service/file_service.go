@@ -37,6 +37,17 @@ type FileService struct {
 	factory         *impl.RepositoryFactory
 	cacheLocal      cache.Cache
 	finalizeManager *UploadFinalizeManager
+	taskEvents      *TaskEventHub
+}
+
+func (f *FileService) SetTaskEventHub(events *TaskEventHub) {
+	f.taskEvents = events
+}
+
+func (f *FileService) publishUploadTask(task *models.UploadTask, action string, coalesce bool) {
+	if f.taskEvents != nil && task != nil {
+		f.taskEvents.Publish(uploadTaskEvent(task, action), coalesce)
+	}
 }
 
 func NewFileService(factory *impl.RepositoryFactory, cacheLocal cache.Cache) *FileService {
@@ -321,12 +332,16 @@ func (f *FileService) Precheck(req *request.UploadPrecheckRequest, c cache.Cache
 		if err := f.factory.UploadTask().Update(ctx, uploadTask); err != nil {
 			logger.LOG.Warn("更新上传任务失败", "error", err, "precheckID", uid)
 			// 不阻塞主流程，继续执行
+		} else {
+			f.publishUploadTask(uploadTask, "updated", false)
 		}
 	} else {
 		// 创建新任务
 		if err := f.factory.UploadTask().Create(ctx, uploadTask); err != nil {
 			logger.LOG.Warn("创建上传任务失败", "error", err, "precheckID", uid)
 			// 不阻塞主流程，继续执行
+		} else {
+			f.publishUploadTask(uploadTask, "created", false)
 		}
 	}
 
@@ -1141,6 +1156,8 @@ func (f *FileService) handleChunkUpload(ctx context.Context, req *request.FileUp
 		if taskErr = f.factory.UploadTask().Update(ctx, task); taskErr != nil {
 			metadataErr = taskErr
 			logger.LOG.Warn("保存上传任务处理信息失败", "error", taskErr, "precheckID", req.PrecheckID)
+		} else {
+			f.publishUploadTask(task, "updated", true)
 		}
 	} else {
 		metadataErr = taskErr
@@ -1169,6 +1186,9 @@ func (f *FileService) handleChunkUpload(ctx context.Context, req *request.FileUp
 			return nil, fmt.Errorf("提交后台处理任务失败: %w", claimErr)
 		}
 		if claimed {
+			if task, getErr := f.factory.UploadTask().GetByID(ctx, req.PrecheckID); getErr == nil {
+				f.publishUploadTask(task, "updated", false)
+			}
 			f.finalizeManager.Enqueue(req.PrecheckID, req.FilePassword)
 		}
 		return models.NewJsonResponse(200, "分片上传完成，文件正在后台处理", map[string]interface{}{
@@ -1603,7 +1623,11 @@ func (f *FileService) updateUploadTask(ctx context.Context, precheckID, userID s
 				UpdateTime:     custom_type.Now(),
 				ExpireTime:     custom_type.JsonTime(time.Now().Add(7 * 24 * time.Hour)),
 			}
-			return f.factory.UploadTask().Create(ctx, task)
+			if createErr := f.factory.UploadTask().Create(ctx, task); createErr != nil {
+				return createErr
+			}
+			f.publishUploadTask(task, "created", false)
+			return nil
 		}
 		return err
 	}
@@ -1623,6 +1647,7 @@ func (f *FileService) updateUploadTask(ctx context.Context, precheckID, userID s
 		logger.LOG.Error("更新上传任务失败", "error", err, "precheckID", precheckID, "status", status, "uploadedChunks", uploadedChunks, "totalChunks", totalChunks)
 		return err
 	}
+	f.publishUploadTask(task, "updated", true)
 	logger.LOG.Info("更新上传任务成功", "precheckID", precheckID, "status", status, "uploadedChunks", uploadedChunks, "totalChunks", totalChunks)
 	return nil
 }
@@ -1696,6 +1721,7 @@ func (f *FileService) DeleteUploadTask(taskID string, userID string) (*models.Js
 		logger.LOG.Error("删除上传任务失败", "error", err, "taskID", taskID, "userID", userID)
 		return nil, err
 	}
+	f.publishUploadTask(task, "deleted", false)
 
 	logger.LOG.Info("删除上传任务成功", "taskID", taskID, "userID", userID, "fileName", task.FileName)
 	return models.NewJsonResponse(200, "删除成功", nil), nil
@@ -1725,6 +1751,9 @@ func (f *FileService) CleanExpiredUploads(userID string) (*models.JsonResponse, 
 			logger.LOG.Error("清理用户过期上传任务失败", "error", err, "userID", userID)
 			return nil, err
 		}
+		for _, task := range tasks {
+			f.publishUploadTask(task, "deleted", false)
+		}
 		logger.LOG.Info("清理用户过期上传任务完成", "count", count, "userID", userID)
 	} else {
 		// 系统自动清理所有过期任务
@@ -1741,6 +1770,9 @@ func (f *FileService) CleanExpiredUploads(userID string) (*models.JsonResponse, 
 		if err != nil {
 			logger.LOG.Error("清理过期上传任务失败", "error", err)
 			return nil, err
+		}
+		for _, task := range tasks {
+			f.publishUploadTask(task, "deleted", false)
 		}
 		logger.LOG.Info("清理过期上传任务完成", "count", count)
 	}
@@ -1823,6 +1855,7 @@ func (f *FileService) RenewExpiredTask(taskID string, userID string, days int) (
 		logger.LOG.Error("延期上传任务失败", "error", err, "taskID", taskID, "userID", userID)
 		return nil, err
 	}
+	f.publishUploadTask(task, "updated", false)
 
 	logger.LOG.Info("延期上传任务成功", "taskID", taskID, "userID", userID, "fileName", task.FileName, "days", days)
 	return models.NewJsonResponse(200, "延期成功", map[string]interface{}{

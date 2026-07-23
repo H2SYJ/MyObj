@@ -101,6 +101,8 @@ func (m *UploadFinalizeManager) recoverProcessingTasks() {
 			task.UpdateTime = custom_type.Now()
 			if err := m.service.factory.UploadTask().Update(context.Background(), task); err != nil {
 				logger.LOG.Error("标记加密恢复任务失败", "taskID", task.ID, "error", err)
+			} else {
+				m.service.publishUploadTask(task, "updated", false)
 			}
 			continue
 		}
@@ -109,7 +111,9 @@ func (m *UploadFinalizeManager) recoverProcessingTasks() {
 			task.ProcessingStage = ""
 			task.ErrorMessage = err.Error()
 			task.UpdateTime = custom_type.Now()
-			_ = m.service.factory.UploadTask().Update(context.Background(), task)
+			if updateErr := m.service.factory.UploadTask().Update(context.Background(), task); updateErr == nil {
+				m.service.publishUploadTask(task, "updated", false)
+			}
 			continue
 		}
 		m.Enqueue(task.ID, "")
@@ -154,6 +158,7 @@ func (f *FileService) finalizeUploadTask(ctx context.Context, job uploadFinalize
 	if err := f.factory.UploadTask().Update(ctx, task); err != nil {
 		return err
 	}
+	f.publishUploadTask(task, "updated", false)
 
 	tempThumbnailPath := upload.TempVideoThumbnailPath(task.TempDir)
 	if _, err := os.Stat(tempThumbnailPath); err != nil {
@@ -167,6 +172,7 @@ func (f *FileService) finalizeUploadTask(ctx context.Context, job uploadFinalize
 	if err := f.factory.UploadTask().Update(ctx, task); err != nil {
 		return err
 	}
+	f.publishUploadTask(task, "updated", false)
 
 	data := &upload.FileUploadData{
 		TempFilePath:        filepath.Join(task.TempDir, "0.chunk.data"),
@@ -180,7 +186,7 @@ func (f *FileService) finalizeUploadTask(ctx context.Context, job uploadFinalize
 		IsEnc:               task.IsEnc,
 		IsChunk:             true,
 		ChunkCount:          task.TotalChunks,
-		DirectoryID:        task.DirectoryID,
+		DirectoryID:         task.DirectoryID,
 		UserID:              task.UserID,
 		DiskID:              task.DiskID,
 		FilePassword:        job.filePassword,
@@ -190,6 +196,8 @@ func (f *FileService) finalizeUploadTask(ctx context.Context, job uploadFinalize
 			task.UpdateTime = custom_type.Now()
 			if updateErr := f.factory.UploadTask().Update(context.Background(), task); updateErr != nil {
 				logger.LOG.Warn("更新后台处理阶段失败", "taskID", task.ID, "stage", stage, "error", updateErr)
+			} else {
+				f.publishUploadTask(task, "updated", true)
 			}
 		},
 	}
@@ -207,6 +215,7 @@ func (f *FileService) finalizeUploadTask(ctx context.Context, job uploadFinalize
 	if err := f.factory.UploadTask().Update(ctx, task); err != nil {
 		return err
 	}
+	f.publishUploadTask(task, "updated", false)
 	_ = f.cacheLocal.Delete(fmt.Sprintf("fileUpload:%s", task.ID))
 	_ = f.cacheLocal.Delete(fmt.Sprintf("fileUploadReq:%s", task.ID))
 	logger.LOG.Info("后台处理上传文件完成", "taskID", task.ID, "fileID", fileID)
@@ -221,6 +230,7 @@ func (f *FileService) failFinalizeTask(ctx context.Context, task *models.UploadT
 	if err := f.factory.UploadTask().Update(ctx, task); err != nil {
 		return fmt.Errorf("%v；更新任务失败: %w", cause, err)
 	}
+	f.publishUploadTask(task, "updated", false)
 	return cause
 }
 
@@ -249,6 +259,9 @@ func (f *FileService) RetryUploadFinalize(req *request.RetryUploadFinalizeReques
 	}
 	if !claimed {
 		return models.NewJsonResponse(409, "任务状态已发生变化", nil), nil
+	}
+	if latest, getErr := f.factory.UploadTask().GetByID(ctx, task.ID); getErr == nil {
+		f.publishUploadTask(latest, "updated", false)
 	}
 	if !f.finalizeManager.Enqueue(task.ID, req.FilePassword) {
 		f.finalizeManager.enqueueAfterCurrent(task.ID, req.FilePassword)

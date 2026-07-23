@@ -352,6 +352,7 @@ export default {
     speed: '速度',
     timeRemaining: '剩余时间',
     completed: '已完成',
+    cancelled: '已取消',
     error: '错误',
     fileName: '文件名',
     fileSize: '文件大小',
