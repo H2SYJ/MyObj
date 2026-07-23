@@ -303,6 +303,7 @@
     z-index: 10;
     width: 100%;
     max-width: 400px;
+    margin: 0 auto;
     display: flex;
     flex-direction: column;
     align-items: center;

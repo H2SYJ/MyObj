@@ -108,8 +108,13 @@ html.dark {
   --el-text-color-secondary: #94a3b8;
   --el-border-color: rgba(255, 255, 255, 0.1);
   --el-border-color-light: rgba(255, 255, 255, 0.05);
+  --el-border-color-lighter: rgba(255, 255, 255, 0.04);
+  --el-border-color-extra-light: rgba(255, 255, 255, 0.025);
+  --el-border-color-dark: rgba(255, 255, 255, 0.14);
+  --el-border-color-darker: rgba(255, 255, 255, 0.18);
   --el-fill-color: rgba(255, 255, 255, 0.05);
   --el-fill-color-light: rgba(255, 255, 255, 0.03);
   --el-fill-color-lighter: rgba(255, 255, 255, 0.02);
   --el-fill-color-extra-light: rgba(255, 255, 255, 0.01);
+  --el-fill-color-blank: var(--el-bg-color);
 }
