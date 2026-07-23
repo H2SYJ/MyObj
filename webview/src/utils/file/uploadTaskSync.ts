@@ -97,7 +97,7 @@ export function syncBackendTasksToFrontend(backendTasks: BackendUploadTask[]): {
         const taskId = uploadTaskManager.createTask(backendTask.file_name, backendTask.file_size, backendStatus)
         uploadTaskManager.updateTask(taskId, {
           precheckId: backendTask.id,
-          pathId: backendTask.path_id,
+          directoryId: backendTask.directory_id,
           created_at: backendTask.create_time,
           progress: backendProgress,
           uploaded_size: uploadedSize,
@@ -114,7 +114,7 @@ export function syncBackendTasksToFrontend(backendTasks: BackendUploadTask[]): {
       }
 
       const updates: Partial<UploadTask> = {
-        pathId: backendTask.path_id,
+        directoryId: backendTask.directory_id,
         error: backendTask.error_message,
         currentStep: processingStageText(backendTask.processing_stage),
         isEncrypted: backendTask.is_enc

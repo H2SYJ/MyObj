@@ -355,7 +355,7 @@
         >
           <el-form-item :label="t('offline.saveLocation')">
             <el-tree-select
-              v-model="downloadForm.virtual_path"
+              v-model="downloadForm.save_path"
               :data="folderTreeData"
               :render-after-expand="false"
               :placeholder="t('offline.selectSaveDirectory')"
@@ -504,7 +504,7 @@
         >
           <el-form-item :label="t('offline.saveLocation')">
             <el-tree-select
-              v-model="downloadForm.virtual_path"
+              v-model="downloadForm.save_path"
               :data="folderTreeData"
               :render-after-expand="false"
               :placeholder="t('offline.selectSaveDirectory')"
@@ -637,7 +637,7 @@
     type ParseTorrentResponse,
     type TorrentFileInfo
   } from '@/api/download'
-  import { getVirtualPathTree } from '@/api/file'
+  import { getDirectories } from '@/api/file'
   import { formatSize, formatDate, formatSpeed, truncateUrl, getTaskStatusType } from '@/utils'
   import { useResponsive, useI18n } from '@/composables'
 
@@ -700,7 +700,7 @@
   // 统一的下载表单
   const downloadForm = reactive({
     inputText: '', // 文本输入（URL 或磁力链接）
-    virtual_path: '',
+    save_path: '',
     enable_encryption: false,
     file_password: '',
     download_type: 'auto' as 'auto' | 'http' | 'hls',
@@ -1004,50 +1004,37 @@
   const buildFolderTree = async () => {
     loadingTree.value = true
     try {
-      const res = await getVirtualPathTree()
+      const res = await getDirectories()
 
       if (res.code !== 200 || !res.data) {
         proxy?.$modal.msgError(t('offline.getFolderTreeFailed'))
         return
       }
 
-      // 后端返回的是 VirtualPath 数组
-      const virtualPaths = res.data as Array<{
-        id: number
-        path: string
-        parent_level: string
-        is_dir: boolean
-      }>
+      const directories = res.data
 
       // 构建树形结构
-      const pathMap = new Map<string, any>()
+      const pathMap = new Map<number, any>()
       const rootNodes: any[] = []
 
       // 第一步：创建所有节点
-      virtualPaths.forEach(vp => {
-        const nodeId = String(vp.id)
-        // 获取路径最后一段作为显示名称
-        const pathParts = vp.path.split('/').filter(p => p !== '')
-        const displayName = pathParts.length > 0 ? pathParts[pathParts.length - 1] : vp.path || t('offline.rootDir')
-
-        pathMap.set(nodeId, {
-          value: nodeId,
-          label: displayName,
+      directories.forEach(directory => {
+        pathMap.set(directory.id, {
+          value: directory.absolute_path,
+          label: directory.name || t('offline.rootDir'),
           children: [],
-          _raw: vp
+          _raw: directory
         })
       })
 
       // 第二步：构建父子关系
-      virtualPaths.forEach(vp => {
-        const nodeId = String(vp.id)
-        const node = pathMap.get(nodeId)
+      directories.forEach(directory => {
+        const node = pathMap.get(directory.id)
 
         if (!node) return
 
-        // 如果有父级路径，添加到父节点的 children
-        if (vp.parent_level && vp.parent_level !== '' && vp.parent_level !== '0') {
-          const parentNode = pathMap.get(vp.parent_level)
+        if (directory.parent_id > 0) {
+          const parentNode = pathMap.get(directory.parent_id)
           if (parentNode) {
             parentNode.children.push(node)
           } else {
@@ -1095,7 +1082,7 @@
         try {
           const res = await createOfflineDownload({
             url: downloadForm.inputText.trim(),
-            virtual_path: downloadForm.virtual_path || undefined,
+            save_path: downloadForm.save_path || undefined,
             enable_encryption: downloadForm.enable_encryption,
             file_password: downloadForm.enable_encryption ? downloadForm.file_password : undefined,
             download_type: downloadForm.download_type,
@@ -1356,7 +1343,7 @@
     // 重置所有状态
     inputType.value = 'text'
     downloadForm.inputText = ''
-    downloadForm.virtual_path = ''
+    downloadForm.save_path = ''
     downloadForm.enable_encryption = false
     downloadForm.file_password = ''
     downloadForm.download_type = 'auto'
@@ -1466,7 +1453,7 @@
           const res = await startTorrentDownload({
             content,
             file_indexes: selectedFileIndexes.value,
-            virtual_path: downloadForm.virtual_path || undefined,
+            save_path: downloadForm.save_path || undefined,
             enable_encryption: downloadForm.enable_encryption,
             file_password: downloadForm.enable_encryption ? downloadForm.file_password : undefined
           })

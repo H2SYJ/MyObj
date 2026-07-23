@@ -118,26 +118,26 @@ func (r *fileInfoRepository) CountByName(ctx context.Context, keyword string) (i
 	return count, err
 }
 
-// ListByVirtualPath 查询指定虚拟路径下的文件
-func (r *fileInfoRepository) ListByVirtualPath(ctx context.Context, userID, virtualPath string, offset, limit int) ([]*models.FileInfo, error) {
+// ListByDirectoryID 查询指定目录下的文件
+func (r *fileInfoRepository) ListByDirectoryID(ctx context.Context, userID string, directoryID int, offset, limit int) ([]*models.FileInfo, error) {
 	var files []*models.FileInfo
-	// 通过user_files关联查询，virtualPath字段存储的是虚拟路径ID（字符串格式）
+	// 通过user_files关联查询整数目录ID。
 	err := r.db.WithContext(ctx).
-		Select("id, user_files.file_name as name, random_name, size, mime, virtual_path, thumbnail_img, path, file_hash, file_enc_hash, chunk_signature, first_chunk_hash, second_chunk_hash, third_chunk_hash, has_full_hash, is_enc, is_chunk, chunk_count, enc_path, file_info.created_at, file_info.updated_at").
+		Select("id, user_files.file_name as name, random_name, size, mime, user_files.directory_id, thumbnail_img, path, file_hash, file_enc_hash, chunk_signature, first_chunk_hash, second_chunk_hash, third_chunk_hash, has_full_hash, is_enc, is_chunk, chunk_count, enc_path, file_info.created_at, file_info.updated_at").
 		Joins("JOIN user_files ON file_info.id = user_files.file_id").
-		Where("user_files.user_id = ? AND user_files.virtual_path = ? AND user_files.deleted_at is null", userID, virtualPath).
+		Where("user_files.user_id = ? AND user_files.directory_id = ? AND user_files.deleted_at is null", userID, directoryID).
 		Order("file_info.created_at DESC").
 		Offset(offset).Limit(limit).
 		Find(&files).Error
 	return files, err
 }
 
-// CountByVirtualPath 统计指定虚拟路径下的文件数量
-func (r *fileInfoRepository) CountByVirtualPath(ctx context.Context, userID, virtualPath string) (int64, error) {
+// CountByDirectoryID 统计指定目录下的文件数量
+func (r *fileInfoRepository) CountByDirectoryID(ctx context.Context, userID string, directoryID int) (int64, error) {
 	var count int64
 	err := r.db.WithContext(ctx).Model(&models.FileInfo{}).
 		Joins("JOIN user_files ON file_info.id = user_files.file_id").
-		Where("user_files.user_id = ? AND user_files.virtual_path = ? AND user_files.deleted_at IS NULL", userID, virtualPath).
+		Where("user_files.user_id = ? AND user_files.directory_id = ? AND user_files.deleted_at IS NULL", userID, directoryID).
 		Count(&count).Error
 	return count, err
 }

@@ -18,7 +18,6 @@ import (
 	"path"
 	"path/filepath"
 	"sort"
-	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -80,8 +79,8 @@ func (f *FileService) CreatePackage(req *request.PackageCreateRequest, userID st
 	packageName := req.PackageName
 	if packageName == "" {
 		if len(req.DirIDs) == 1 && len(req.FileIDs) == 0 {
-			if dir, dirErr := f.factory.VirtualPath().GetByID(ctx, req.DirIDs[0]); dirErr == nil {
-				packageName = safeArchiveSegment(cleanFolderName(dir.Path)) + ".zip"
+			if dir, dirErr := f.factory.Directory().GetByID(ctx, req.DirIDs[0]); dirErr == nil {
+				packageName = safeArchiveSegment(dir.Name) + ".zip"
 			}
 		}
 		if packageName == "" {
@@ -169,16 +168,16 @@ func (f *FileService) resolvePackageEntries(
 	}
 
 	for _, rootID := range rootDirIDs {
-		root, err := f.factory.VirtualPath().GetByID(ctx, rootID)
-		if err != nil || root.UserID != userID || !root.IsDir {
+		root, err := f.factory.Directory().GetByID(ctx, rootID)
+		if err != nil || root.UserID != userID {
 			return nil, nil, 0, false, fmt.Errorf("目录不存在或无权限: %d", rootID)
 		}
-		rootName := cleanFolderName(root.Path)
+		rootName := root.Name
 		if err := validateArchiveSegment(rootName); err != nil {
 			return nil, nil, 0, false, err
 		}
 		type dirEntry struct {
-			Dir         *models.VirtualPath
+			Dir         *models.VirtualDirectory
 			ArchivePath string
 		}
 		queue := []dirEntry{{Dir: root, ArchivePath: rootName}}
@@ -188,7 +187,7 @@ func (f *FileService) resolvePackageEntries(
 				seenPaths[current.ArchivePath+"/"] = struct{}{}
 				directories = append(directories, current.ArchivePath+"/")
 			}
-			files, err := f.factory.UserFiles().ListByVirtualPath(ctx, userID, strconv.Itoa(current.Dir.ID), 0, -1)
+			files, err := f.factory.UserFiles().ListByDirectoryID(ctx, userID, current.Dir.ID, 0, -1)
 			if err != nil {
 				return nil, nil, 0, false, err
 			}
@@ -200,12 +199,12 @@ func (f *FileService) resolvePackageEntries(
 					return nil, nil, 0, false, err
 				}
 			}
-			children, err := f.factory.VirtualPath().ListSubFoldersByParentID(ctx, userID, current.Dir.ID, 0, -1)
+			children, err := f.factory.Directory().ListChildren(ctx, userID, current.Dir.ID, 0, -1)
 			if err != nil {
 				return nil, nil, 0, false, err
 			}
 			for _, child := range children {
-				name := cleanFolderName(child.Path)
+				name := child.Name
 				if err := validateArchiveSegment(name); err != nil {
 					return nil, nil, 0, false, err
 				}
@@ -512,7 +511,7 @@ func (f *FileService) createDownloadTasksForPackage(ctx context.Context, task *P
 			FileName:         userFile.FileName,
 			FileSize:         int64(fileInfo.Size),
 			FileID:           userFile.FileID,
-			VirtualPath:      "", // 打包下载不需要虚拟路径
+			SavePath:         "", // 打包下载不需要保存目录
 			EnableEncryption: false,
 			State:            enum.DownloadTaskStateFinished.Value(), // 直接设置为已完成
 			Progress:         100,

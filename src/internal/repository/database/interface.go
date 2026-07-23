@@ -40,6 +40,10 @@ func InitDataBase() {
 		logger.LOG.Error("[数据库] 不支持的数据库类型", "type", dbType)
 		panic(fmt.Sprintf("不支持的数据库类型: %s", dbType))
 	}
+	if err := migrateVirtualDirectorySchema(databasePool); err != nil {
+		logger.LOG.Error("迁移虚拟目录结构失败", "error", err)
+		panic(fmt.Sprintf("迁移虚拟目录结构失败: %v", err))
+	}
 	migratedDisks, err := migrateLegacyDiskSizes(databasePool)
 	if err != nil {
 		logger.LOG.Error("迁移磁盘容量单位失败", "error", err)

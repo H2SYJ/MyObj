@@ -29,7 +29,7 @@ export function useFileSearch(sortBy: Ref<FileSortBy>, sortOrder: Ref<FileSortOr
   // 将搜索结果包装为 FileListResponse 格式（兼容现有代码）
   const searchResults = computed<FileListResponse>(() => ({
     breadcrumbs: [],
-    current_path: '',
+    current_directory_id: 0,
     folders: [],
     files: search.searchResults.value,
     total: search.total.value,

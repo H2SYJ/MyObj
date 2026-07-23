@@ -26,7 +26,7 @@ DELETE FROM `api_key`;
 DELETE FROM `user_files`;
 DELETE FROM `file_info`;
 DELETE FROM `file_chunk`;
-DELETE FROM `virtual_path`;
+DELETE FROM `virtual_directory`;
 
 -- ================================
 -- 3. 删除上传下载任务数据
@@ -52,7 +52,7 @@ DELETE FROM `sys_config`;
 -- ================================
 -- MySQL 的自增主键重置
 ALTER TABLE `api_key` AUTO_INCREMENT = 1;
-ALTER TABLE `virtual_path` AUTO_INCREMENT = 1;
+ALTER TABLE `virtual_directory` AUTO_INCREMENT = 1;
 ALTER TABLE `shares` AUTO_INCREMENT = 1;
 ALTER TABLE `sys_config` AUTO_INCREMENT = 1;
 

@@ -520,17 +520,20 @@ curl -X POST http://localhost:8080/api/auth/login \
 **文件上传:**
 
 ```bash
-# 简单文件上传
-curl -X POST http://localhost:8080/api/file/upload \
+# 先预检；directory_id 是整数目录ID
+curl -X POST http://localhost:8080/api/file/upload/precheck \
   -H "Authorization: Bearer <your-token>" \
-  -F "file=@/path/to/file.pdf" \
-  -F "virtual_path=/"
+  -H "Content-Type: application/json" \
+  -d '{"file_name":"file.pdf","file_size":1234,"chunk_signature":"...","files_md5":["..."],"directory_id":1}'
 
-# 加密文件上传
+# 再使用预检返回的 precheck_id 上传分片
 curl -X POST http://localhost:8080/api/file/upload \
   -H "Authorization: Bearer <your-token>" \
   -F "file=@/path/to/secret.doc" \
-  -F "virtual_path=/" \
+  -F "precheck_id=<precheck-id>" \
+  -F "chunk_index=0" \
+  -F "total_chunks=1" \
+  -F "chunk_md5=<chunk-md5>" \
   -F "is_enc=true" \
   -F "file_password=mypassword"
 ```

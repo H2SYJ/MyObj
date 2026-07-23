@@ -21,7 +21,7 @@
             :key="item.id"
             :class="{ 'is-current': index === breadcrumbs.length - 1 }"
           >
-            <span class="breadcrumb-link" @click="handleNavigate(item.path, index)">
+            <span class="breadcrumb-link" @click="handleNavigate(item.id, index)">
               <el-icon v-if="index === 0" class="breadcrumb-icon"><House /></el-icon>
               <el-icon v-else class="breadcrumb-icon"><Folder /></el-icon>
               <span class="breadcrumb-text">{{ formatBreadcrumbName(item.name) }}</span>
@@ -42,15 +42,15 @@
   interface Props {
     breadcrumbs: Breadcrumb[]
     formatBreadcrumbName: (name: string) => string
-    currentPath?: string
+    currentPath?: number
   }
 
   const props = withDefaults(defineProps<Props>(), {
-    currentPath: ''
+    currentPath: 0
   })
 
   const emit = defineEmits<{
-    navigate: [path: string]
+    navigate: [directoryId: number]
     'go-back': []
   }>()
 
@@ -60,16 +60,16 @@
   })
 
   // 方法
-  const handleNavigate = (path: string, index: number) => {
+  const handleNavigate = (directoryId: number, index: number) => {
     // 如果是当前项，不执行导航
     if (index === props.breadcrumbs.length - 1) return
-    emit('navigate', path)
+    emit('navigate', directoryId)
   }
 
   const handleGoBack = () => {
     if (props.breadcrumbs.length > 1) {
-      const previousPath = props.breadcrumbs[props.breadcrumbs.length - 2].path
-      emit('navigate', previousPath)
+      const previousDirectoryId = props.breadcrumbs[props.breadcrumbs.length - 2].id
+      emit('navigate', previousDirectoryId)
     }
     emit('go-back')
   }

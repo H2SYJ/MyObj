@@ -1,7 +1,7 @@
 import { createFolder } from '@/api/folder'
 import { useI18n } from '@/composables'
 
-export function useFolderOperations(currentPath: Ref<string>, loadFileList: () => Promise<void>) {
+export function useFolderOperations(currentDirectoryId: Ref<number>, loadFileList: () => Promise<void>) {
   const { proxy } = getCurrentInstance() as ComponentInternalInstance
   const { t } = useI18n()
 
@@ -41,8 +41,8 @@ export function useFolderOperations(currentPath: Ref<string>, loadFileList: () =
         creating.value = true
         try {
           const res = await createFolder({
-            parent_level: currentPath.value,
-            dir_path: folderForm.dir_path
+            parent_id: currentDirectoryId.value,
+            name: folderForm.dir_path
           })
 
           if (res.code === 200) {

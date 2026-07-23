@@ -14,10 +14,10 @@ import (
 	"myobj/src/pkg/logger"
 	"myobj/src/pkg/models"
 	"myobj/src/pkg/upload"
+	"myobj/src/pkg/virtualpath"
 	"os"
 	"path/filepath"
 	"sort"
-	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -187,6 +187,10 @@ func (f *FileService) Precheck(req *request.UploadPrecheckRequest, c cache.Cache
 		logger.LOG.Error("获取用户信息失败", "error", err, "userID", req.UserID)
 		return nil, err
 	}
+	directory, err := f.factory.Directory().GetByID(ctx, req.DirectoryID)
+	if err != nil || directory.UserID != req.UserID {
+		return models.NewJsonResponse(400, "目录不存在或无权访问", nil), nil
+	}
 	// 检查用户可用空间 如果不是无限空间，且可用空间不足
 	if user.Space > 0 && user.FreeSpace < req.FileSize {
 		return models.NewJsonResponse(400, "用户可用空间不足", nil), nil
@@ -202,7 +206,7 @@ func (f *FileService) Precheck(req *request.UploadPrecheckRequest, c cache.Cache
 				UserID:      user.ID,
 				FileID:      signature.ID,
 				FileName:    req.FileName,
-				VirtualPath: req.PathID,
+				DirectoryID: req.DirectoryID,
 				IsPublic:    false,
 				CreatedAt:   custom_type.Now(),
 				UfID:        uuid.NewString(),
@@ -236,7 +240,7 @@ func (f *FileService) Precheck(req *request.UploadPrecheckRequest, c cache.Cache
 				UserID:      user.ID,
 				FileID:      signature.ID,
 				FileName:    req.FileName,
-				VirtualPath: req.PathID,
+				DirectoryID: req.DirectoryID,
 				IsPublic:    false,
 				CreatedAt:   custom_type.Now(),
 				UfID:        uuid.NewString(),
@@ -299,7 +303,7 @@ func (f *FileService) Precheck(req *request.UploadPrecheckRequest, c cache.Cache
 		TotalChunks:    totalChunks,
 		UploadedChunks: len(chunks), // 已上传的分片数
 		ChunkSignature: req.ChunkSignature,
-		PathID:         req.PathID,
+		DirectoryID:    req.DirectoryID,
 		Status:         "pending",
 		CreateTime:     custom_type.Now(),
 		UpdateTime:     custom_type.Now(),
@@ -503,49 +507,39 @@ func (f *FileService) GetFileList(req *request.FileListRequest, userID string) (
 	sortBy, sortOrder := normalizeFileSort(req.SortBy, req.SortOrder)
 
 	// 处理虚拟路径ID，空或为0时使用根目录
-	var currentPathID int
-	var currentPath *models.VirtualPath
+	var currentDirectoryID int
+	var currentDirectory *models.VirtualDirectory
 	var err error
 
-	if req.VirtualPath == "" || req.VirtualPath == "0" {
+	if req.DirectoryID == 0 {
 		// 查询用户根目录
-		currentPath, err = f.factory.VirtualPath().GetRootPath(ctx, userID)
+		currentDirectory, err = f.factory.Directory().GetRoot(ctx, userID)
 		if err != nil {
 			logger.LOG.Error("获取根目录失败", "error", err, "userID", userID)
 			return nil, fmt.Errorf("获取根目录失败: %w", err)
 		}
-		currentPathID = currentPath.ID
+		currentDirectoryID = currentDirectory.ID
 	} else {
-		// 解析虚拟路径ID
-		pathID := 0
-		_, err := fmt.Sscanf(req.VirtualPath, "%d", &pathID)
+		currentDirectoryID = req.DirectoryID
+		currentDirectory, err = f.factory.Directory().GetByID(ctx, currentDirectoryID)
 		if err != nil {
-			logger.LOG.Error("解析虚拟路径ID失败", "error", err, "virtualPath", req.VirtualPath)
-			return nil, fmt.Errorf("无效的路径ID: %w", err)
-		}
-		currentPathID = pathID
-		// 查询当前路径信息
-		currentPath, err = f.factory.VirtualPath().GetByID(ctx, currentPathID)
-		if err != nil {
-			logger.LOG.Error("查询路径信息失败", "error", err, "pathID", currentPathID)
+			logger.LOG.Error("查询目录信息失败", "error", err, "directory_id", currentDirectoryID)
 			return nil, fmt.Errorf("路径不存在: %w", err)
 		}
-		if currentPath.UserID != userID {
+		if currentDirectory.UserID != userID {
 			return nil, errors.New("无权访问该路径")
 		}
 	}
 
 	// 查询总数（子目录 + 文件）
-	folderCount, err := f.factory.VirtualPath().CountSubFoldersByParentID(ctx, userID, currentPathID)
+	folderCount, err := f.factory.Directory().CountSubFoldersByParentID(ctx, userID, currentDirectoryID)
 	if err != nil {
-		logger.LOG.Error("统计子目录数量失败", "error", err, "userID", userID, "pathID", currentPathID)
+		logger.LOG.Error("统计子目录数量失败", "error", err, "userID", userID, "directory_id", currentDirectoryID)
 		return nil, err
 	}
-	// 文件表中virtual_path字段存的是路径ID（字符串格式）
-	virtualPathIDStr := fmt.Sprintf("%d", currentPathID)
-	fileCount, err := f.factory.FileInfo().CountByVirtualPath(ctx, userID, virtualPathIDStr)
+	fileCount, err := f.factory.FileInfo().CountByDirectoryID(ctx, userID, currentDirectoryID)
 	if err != nil {
-		logger.LOG.Error("统计文件数量失败", "error", err, "userID", userID, "virtualPath", virtualPathIDStr)
+		logger.LOG.Error("统计文件数量失败", "error", err, "userID", userID, "directory_id", currentDirectoryID)
 		return nil, err
 	}
 	totalCount := folderCount + fileCount
@@ -554,7 +548,7 @@ func (f *FileService) GetFileList(req *request.FileListRequest, userID string) (
 	offset := (req.Page - 1) * req.PageSize
 
 	// 优先返回文件夹
-	var folders []*models.VirtualPath
+	var folders []*models.VirtualDirectory
 	var userFiles []*models.UserFiles
 
 	if offset < int(folderCount) {
@@ -568,56 +562,58 @@ func (f *FileService) GetFileList(req *request.FileListRequest, userID string) (
 		if sortBy == "size" {
 			folderSortBy, folderSortOrder = "name", "asc"
 		}
-		folders, err = f.factory.VirtualPath().ListSubFoldersByParentIDSorted(ctx, userID, currentPathID, folderSortBy, folderSortOrder, offset, folderLimit)
+		folders, err = f.factory.Directory().ListChildrenSorted(ctx, userID, currentDirectoryID, folderSortBy, folderSortOrder, offset, folderLimit)
 		if err != nil {
-			logger.LOG.Error("查询子目录列表失败", "error", err, "userID", userID, "pathID", currentPathID)
+			logger.LOG.Error("查询子目录列表失败", "error", err, "userID", userID, "directory_id", currentDirectoryID)
 			return nil, err
 		}
 
 		// 如果还有剩余空间，查询文件（直接从user_files表查询，避免file_id重复问题）
 		remaining := req.PageSize - len(folders)
 		if remaining > 0 {
-			userFiles, err = f.factory.UserFiles().ListByVirtualPathSorted(ctx, userID, virtualPathIDStr, sortBy, sortOrder, 0, remaining)
+			userFiles, err = f.factory.UserFiles().ListByDirectoryIDSorted(ctx, userID, currentDirectoryID, sortBy, sortOrder, 0, remaining)
 			if err != nil {
-				logger.LOG.Error("查询文件列表失败", "error", err, "userID", userID, "virtualPath", virtualPathIDStr)
+				logger.LOG.Error("查询文件列表失败", "error", err, "userID", userID, "directory_id", currentDirectoryID)
 				return nil, err
 			}
 		}
 	} else {
 		// 当前页只包含文件（直接从user_files表查询，避免file_id重复问题）
 		fileOffset := offset - int(folderCount)
-		userFiles, err = f.factory.UserFiles().ListByVirtualPathSorted(ctx, userID, virtualPathIDStr, sortBy, sortOrder, fileOffset, req.PageSize)
+		userFiles, err = f.factory.UserFiles().ListByDirectoryIDSorted(ctx, userID, currentDirectoryID, sortBy, sortOrder, fileOffset, req.PageSize)
 		if err != nil {
-			logger.LOG.Error("查询文件列表失败", "error", err, "userID", userID, "virtualPath", virtualPathIDStr)
+			logger.LOG.Error("查询文件列表失败", "error", err, "userID", userID, "directory_id", currentDirectoryID)
 			return nil, err
 		}
 	}
 
 	// 获取面包屑导航（只展示当前、上级、上上级）
-	breadcrumbs, err := f.buildBreadcrumbs(ctx, currentPath)
+	breadcrumbs, err := f.buildBreadcrumbs(ctx, currentDirectory)
 	if err != nil {
-		logger.LOG.Error("构建面包屑导航失败", "error", err, "pathID", currentPath.ID)
+		logger.LOG.Error("构建面包屑导航失败", "error", err, "directory_id", currentDirectory.ID)
 		return nil, err
 	}
 
 	// 构造响应
 	resp := &response.FileListResponse{
-		Breadcrumbs: breadcrumbs,
-		CurrentPath: fmt.Sprintf("%d", currentPathID),
-		Folders:     make([]*response.FolderItem, 0, len(folders)),
-		Files:       make([]*response.FileItem, 0, len(userFiles)),
-		Total:       totalCount,
-		Page:        req.Page,
-		PageSize:    req.PageSize,
+		Breadcrumbs:        breadcrumbs,
+		CurrentDirectoryID: currentDirectoryID,
+		Folders:            make([]*response.FolderItem, 0, len(folders)),
+		Files:              make([]*response.FileItem, 0, len(userFiles)),
+		Total:              totalCount,
+		Page:               req.Page,
+		PageSize:           req.PageSize,
 	}
 
 	// 转换文件夹数据
 	for _, folder := range folders {
+		absolutePath, pathErr := virtualpath.ResolveAbsolutePath(ctx, userID, folder.ID, f.factory)
+		if pathErr != nil {
+			return nil, pathErr
+		}
 		resp.Folders = append(resp.Folders, &response.FolderItem{
-			ID:          folder.ID,
-			Name:        folder.Path,
-			Path:        fmt.Sprintf("%d", folder.ID),
-			CreatedTime: folder.CreatedTime,
+			ID: folder.ID, Name: folder.Name, ParentID: folder.ParentID,
+			AbsolutePath: absolutePath, CreatedAt: folder.CreatedAt,
 		})
 	}
 
@@ -658,42 +654,46 @@ func normalizeFileSort(sortBy, sortOrder string) (string, string) {
 }
 
 // buildBreadcrumbs 构建面包屑导航（只展示当前、上级、上上级）
-func (f *FileService) buildBreadcrumbs(ctx context.Context, currentPath *models.VirtualPath) ([]response.Breadcrumb, error) {
+func (f *FileService) buildBreadcrumbs(ctx context.Context, currentPath *models.VirtualDirectory) ([]response.Breadcrumb, error) {
 	breadcrumbs := []response.Breadcrumb{}
 
 	// 添加当前目录
+	currentAbsolutePath, err := virtualpath.ResolveAbsolutePath(ctx, currentPath.UserID, currentPath.ID, f.factory)
+	if err != nil {
+		return nil, err
+	}
 	breadcrumbs = append(breadcrumbs, response.Breadcrumb{
-		ID:   currentPath.ID,
-		Name: currentPath.Path,
-		Path: fmt.Sprintf("%d", currentPath.ID),
+		ID: currentPath.ID, Name: currentPath.Name, AbsolutePath: currentAbsolutePath,
 	})
 
 	// 获取上级目录（如果存在）
-	if currentPath.ParentLevel != "" {
-		parentID := 0
-		_, err := fmt.Sscanf(currentPath.ParentLevel, "%d", &parentID)
-		if err == nil && parentID > 0 {
-			parent, err := f.factory.VirtualPath().GetByID(ctx, parentID)
+	if currentPath.ParentID > 0 {
+		parentID := currentPath.ParentID
+		if parentID > 0 {
+			parent, err := f.factory.Directory().GetByID(ctx, parentID)
 			if err == nil {
+				parentAbsolutePath, pathErr := virtualpath.ResolveAbsolutePath(ctx, currentPath.UserID, parent.ID, f.factory)
+				if pathErr != nil {
+					return nil, pathErr
+				}
 				// 在开头插入上级目录
 				breadcrumbs = append([]response.Breadcrumb{{
-					ID:   parent.ID,
-					Name: parent.Path,
-					Path: fmt.Sprintf("%d", parent.ID),
+					ID: parent.ID, Name: parent.Name, AbsolutePath: parentAbsolutePath,
 				}}, breadcrumbs...)
 
 				// 获取上上级目录（如果存在）
-				if parent.ParentLevel != "" {
-					grandParentID := 0
-					_, err := fmt.Sscanf(parent.ParentLevel, "%d", &grandParentID)
-					if err == nil && grandParentID > 0 {
-						grandParent, err := f.factory.VirtualPath().GetByID(ctx, grandParentID)
+				if parent.ParentID > 0 {
+					grandParentID := parent.ParentID
+					if grandParentID > 0 {
+						grandParent, err := f.factory.Directory().GetByID(ctx, grandParentID)
 						if err == nil {
+							grandParentAbsolutePath, pathErr := virtualpath.ResolveAbsolutePath(ctx, currentPath.UserID, grandParent.ID, f.factory)
+							if pathErr != nil {
+								return nil, pathErr
+							}
 							// 在开头插入上上级目录
 							breadcrumbs = append([]response.Breadcrumb{{
-								ID:   grandParent.ID,
-								Name: grandParent.Path,
-								Path: fmt.Sprintf("%d", grandParent.ID),
+								ID: grandParent.ID, Name: grandParent.Name, AbsolutePath: grandParentAbsolutePath,
 							}}, breadcrumbs...)
 						}
 					}
@@ -708,58 +708,57 @@ func (f *FileService) buildBreadcrumbs(ctx context.Context, currentPath *models.
 // MakeDir 创建目录
 func (f *FileService) MakeDir(req *request.MakeDirRequest, userID string) (*models.JsonResponse, error) {
 	ctx := context.Background()
-	path, err := f.factory.VirtualPath().GetByPath(ctx, userID, req.DirPath)
-	if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
-		logger.LOG.Error("获取目录失败", "error", err)
-		return nil, err
+	parent, err := f.factory.Directory().GetByID(ctx, req.ParentID)
+	if err != nil || parent.UserID != userID {
+		return models.NewJsonResponse(400, "父目录不存在或无权访问", nil), nil
 	}
-	if path != nil {
-		logger.LOG.Error("目录已存在", "path", req.DirPath)
-		return models.NewJsonResponse(400, "目录已存在", nil), nil
-	}
-	//转换为int
-	parentLevel, err := strconv.Atoi(req.ParentLevel)
+	name, err := virtualpath.NormalizeDirectoryName(req.Name)
 	if err != nil {
-		logger.LOG.Error("参数错误", "error", err)
+		return models.NewJsonResponse(400, err.Error(), nil), nil
+	}
+	if _, err := f.factory.Directory().GetChild(ctx, userID, parent.ID, name); err == nil {
+		return models.NewJsonResponse(400, "目录已存在", nil), nil
+	} else if !errors.Is(err, gorm.ErrRecordNotFound) {
 		return nil, err
 	}
-	virtualPath := &models.VirtualPath{
-		UserID:      userID,
-		Path:        req.DirPath,
-		CreatedTime: custom_type.Now(),
-		UpdateTime:  custom_type.Now(),
-	}
-	if parentLevel > 0 {
-		vp, err := f.factory.VirtualPath().GetByID(ctx, parentLevel)
-		if err != nil {
-			logger.LOG.Error("获取上级目录失败", "error", err)
-			return nil, err
-		}
-		virtualPath.ParentLevel = fmt.Sprintf("%d", vp.ID)
-	}
-	err = f.factory.VirtualPath().Create(ctx, virtualPath)
+	now := custom_type.Now()
+	directory := &models.VirtualDirectory{UserID: userID, Name: name, ParentID: parent.ID, CreatedAt: now, UpdatedAt: now}
+	err = f.factory.Directory().Create(ctx, directory)
 	if err != nil {
 		logger.LOG.Error("创建目录失败", "error", err)
 		return nil, err
 	}
-	return models.NewJsonResponse(200, "创建目录成功", nil), nil
+	absolutePath, err := virtualpath.ResolveAbsolutePath(ctx, userID, directory.ID, f.factory)
+	if err != nil {
+		return nil, err
+	}
+	return models.NewJsonResponse(200, "创建目录成功", response.DirectoryItem{ID: directory.ID, Name: directory.Name, ParentID: directory.ParentID, AbsolutePath: absolutePath, CreatedAt: directory.CreatedAt, UpdatedAt: directory.UpdatedAt}), nil
 }
 
 // MoveFile 移动文件
 func (f *FileService) MoveFile(req *request.MoveFileRequest, userID string) (*models.JsonResponse, error) {
 	return f.MoveItems(&request.MoveItemsRequest{
-		FileIDs: []string{req.FileID}, TargetPath: req.TargetPath,
+		FileIDs: []string{req.FileID}, TargetDirectoryID: req.TargetDirectoryID,
 	}, userID)
 }
 
-// GetVirtualPath 获取虚拟路径
-func (f *FileService) GetVirtualPath(userID string) (*models.JsonResponse, error) {
-	user, err := f.factory.VirtualPath().GetPathByUser(context.Background(), userID)
+// GetDirectories 获取用户虚拟目录树。
+func (f *FileService) GetDirectories(userID string) (*models.JsonResponse, error) {
+	ctx := context.Background()
+	directories, err := f.factory.Directory().ListByUserID(ctx, userID, 0, -1)
 	if err != nil {
-		logger.LOG.Error("获取虚拟路径失败", "error", err)
+		logger.LOG.Error("获取虚拟目录失败", "error", err)
 		return nil, err
 	}
-	return models.NewJsonResponse(200, "获取虚拟路径成功", user), nil
+	result := make([]response.DirectoryItem, 0, len(directories))
+	for _, directory := range directories {
+		absolutePath, pathErr := virtualpath.ResolveAbsolutePath(ctx, userID, directory.ID, f.factory)
+		if pathErr != nil {
+			return nil, pathErr
+		}
+		result = append(result, response.DirectoryItem{ID: directory.ID, Name: directory.Name, ParentID: directory.ParentID, AbsolutePath: absolutePath, CreatedAt: directory.CreatedAt, UpdatedAt: directory.UpdatedAt})
+	}
+	return models.NewJsonResponse(200, "获取虚拟目录成功", result), nil
 }
 
 // RenameFile 重命名文件
@@ -782,7 +781,6 @@ func (f *FileService) RenameFile(req *request.RenameFileRequest, userID string) 
 	}
 
 	// 3. 检查同一目录下是否已存在同名文件
-	// 注意：UserFiles.VirtualPath 存储的是路径ID（字符串格式）
 	existingFiles, err := f.factory.UserFiles().ListByUserID(ctx, userID, 0, 10000)
 	if err != nil {
 		logger.LOG.Error("查询文件列表失败", "error", err)
@@ -791,7 +789,7 @@ func (f *FileService) RenameFile(req *request.RenameFileRequest, userID string) 
 
 	// 检查同一虚拟路径下是否有同名文件
 	for _, file := range existingFiles {
-		if file.VirtualPath == userFile.VirtualPath &&
+		if file.DirectoryID == userFile.DirectoryID &&
 			file.FileName == req.NewFileName &&
 			file.UfID != req.FileID {
 			return models.NewJsonResponse(400, "该目录下已存在同名文件", nil), nil
@@ -821,7 +819,7 @@ func (f *FileService) RenameDir(req *request.RenameDirRequest, userID string) (*
 	ctx := context.Background()
 
 	// 1. 获取目录信息
-	virtualPath, err := f.factory.VirtualPath().GetByID(ctx, req.DirID)
+	directory, err := f.factory.Directory().GetByID(ctx, req.DirID)
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return models.NewJsonResponse(404, "目录不存在", nil), nil
@@ -831,53 +829,32 @@ func (f *FileService) RenameDir(req *request.RenameDirRequest, userID string) (*
 	}
 
 	// 2. 验证目录是否属于当前用户
-	if virtualPath.UserID != userID {
+	if directory.UserID != userID {
 		return models.NewJsonResponse(403, "无权访问该目录", nil), nil
 	}
 
-	// 2.1 检查是否是根目录（根目录的 ParentLevel 为空或 NULL）
-	rootPath, err := f.factory.VirtualPath().GetRootPath(ctx, userID)
+	// 2.1 检查是否是根目录
+	rootDirectory, err := f.factory.Directory().GetRoot(ctx, userID)
 	if err != nil {
 		logger.LOG.Error("获取根目录失败", "error", err)
 		return nil, err
 	}
 
-	isRootDir := rootPath.ID == req.DirID
+	isRootDir := rootDirectory.ID == req.DirID
 	if isRootDir {
 		// 根目录通常不应该被重命名，这里返回错误
 		return models.NewJsonResponse(400, "根目录不能重命名", nil), nil
 	}
 
 	// 3. 验证新目录名不能为空
-	newDirName := strings.TrimSpace(req.NewDirName)
-	if newDirName == "" {
-		return models.NewJsonResponse(400, "新目录名不能为空", nil), nil
+	newDirName, err := virtualpath.NormalizeDirectoryName(req.NewDirName)
+	if err != nil {
+		return models.NewJsonResponse(400, err.Error(), nil), nil
 	}
-
-	// 4. 构建新路径（VirtualPath.Path 存储的是目录名，如 "/folder1"）
-	newPath := "/" + newDirName
-
-	// 5. 检查同级目录下是否已存在同名目录
-	// 获取父目录ID（用于查询同级目录）
-	var parentID int
-	if virtualPath.ParentLevel != "" {
-		// 有父目录，解析父目录ID
-		var err error
-		parentID, err = strconv.Atoi(virtualPath.ParentLevel)
-		if err != nil {
-			logger.LOG.Error("解析父目录ID失败", "error", err, "parentLevel", virtualPath.ParentLevel)
-			return nil, fmt.Errorf("无效的父目录ID: %w", err)
-		}
-	} else {
-		// ParentLevel 为空，应该是根目录的子目录
-		// 根据代码逻辑，根目录的子目录的 ParentLevel 应该是根目录的ID
-		// 但如果 ParentLevel 为空，说明可能是数据不一致，使用根目录ID作为父目录ID
-		parentID = rootPath.ID
-		logger.LOG.Warn("目录的 ParentLevel 为空，使用根目录ID作为父目录", "dirID", req.DirID)
-	}
+	parentID := directory.ParentID
 
 	// 查询同一父目录下的所有子目录
-	subFolders, err := f.factory.VirtualPath().ListSubFoldersByParentID(ctx, userID, parentID, 0, 1000)
+	subFolders, err := f.factory.Directory().ListChildren(ctx, userID, parentID, 0, 1000)
 	if err != nil {
 		logger.LOG.Error("查询子目录列表失败", "error", err)
 		return nil, err
@@ -885,31 +862,26 @@ func (f *FileService) RenameDir(req *request.RenameDirRequest, userID string) (*
 
 	// 检查是否有同名目录（排除当前目录）
 	for _, folder := range subFolders {
-		if folder.Path == newPath && folder.ID != req.DirID {
+		if folder.Name == newDirName && folder.ID != req.DirID {
 			return models.NewJsonResponse(400, "该目录下已存在同名目录", nil), nil
 		}
 	}
 
-	// 6. 更新目录路径
-	oldPath := virtualPath.Path
-	virtualPath.Path = newPath
-	virtualPath.UpdateTime = custom_type.Now()
+	// 6. 更新目录名称；完整路径由父子关系动态解析。
+	oldName := directory.Name
+	directory.Name = newDirName
+	directory.UpdatedAt = custom_type.Now()
 
-	err = f.factory.VirtualPath().Update(ctx, virtualPath)
+	err = f.factory.Directory().Update(ctx, directory)
 	if err != nil {
 		logger.LOG.Error("重命名目录失败", "error", err, "dirID", req.DirID, "newDirName", req.NewDirName)
 		return nil, fmt.Errorf("重命名目录失败: %w", err)
 	}
 
-	// 7. 注意：由于 VirtualPath.Path 只存储目录名（如 "/folder1"），
-	// 而 UserFiles.VirtualPath 存储的是路径ID（字符串格式），
-	// 所以重命名目录时，子目录和文件的路径不需要更新
-	// 只需要更新当前目录的 Path 即可
-
-	logger.LOG.Info("目录重命名成功", "dirID", req.DirID, "oldPath", oldPath, "newPath", newPath)
+	logger.LOG.Info("目录重命名成功", "directory_id", req.DirID, "old_name", oldName, "new_name", newDirName)
 	return models.NewJsonResponse(200, "目录重命名成功", map[string]interface{}{
-		"dir_id":   req.DirID,
-		"dir_path": newPath,
+		"directory_id": req.DirID,
+		"name":         newDirName,
 	}), nil
 }
 
@@ -958,179 +930,6 @@ func (f *FileService) SetFilePublic(req *request.SetFilePublicRequest, userID st
 		"file_id": req.FileID,
 		"public":  req.Public,
 	}), nil
-}
-
-// DeleteDir 删除目录（递归删除目录下的所有文件和子目录）
-func (f *FileService) deleteDirLegacy(req *request.DeleteDirRequest, userID string) (*models.JsonResponse, error) {
-	ctx := context.Background()
-
-	// 1. 获取目录信息
-	virtualPath, err := f.factory.VirtualPath().GetByID(ctx, req.DirID)
-	if err != nil {
-		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return models.NewJsonResponse(404, "目录不存在", nil), nil
-		}
-		logger.LOG.Error("获取目录失败", "error", err, "dirID", req.DirID)
-		return nil, err
-	}
-
-	// 2. 验证目录是否属于当前用户
-	if virtualPath.UserID != userID {
-		return models.NewJsonResponse(403, "无权访问该目录", nil), nil
-	}
-
-	// 3. 检查是否是根目录（根目录不能删除）
-	rootPath, err := f.factory.VirtualPath().GetRootPath(ctx, userID)
-	if err != nil {
-		logger.LOG.Error("获取根目录失败", "error", err)
-		return nil, err
-	}
-
-	isRootDir := rootPath.ID == req.DirID
-	if isRootDir {
-		return models.NewJsonResponse(400, "根目录不能删除", nil), nil
-	}
-
-	// 4. 递归获取目录下的所有文件和子目录
-	dirPathID := strconv.Itoa(req.DirID)
-
-	// 4.1 获取目录下的所有文件（直接查询该目录下的文件，避免获取所有文件）
-	// 注意：由于 UserFilesRepository 没有 ListByVirtualPath 方法，我们使用 ListByUserID 然后过滤
-	// 对于大多数用户，文件数量不会太多，这个实现是可以接受的
-	allFiles, err := f.factory.UserFiles().ListByUserID(ctx, userID, 0, 100000)
-	if err != nil {
-		logger.LOG.Error("获取文件列表失败", "error", err)
-		return nil, err
-	}
-
-	// 过滤出该目录下的文件（VirtualPath 存储的是路径ID的字符串形式）
-	var filesToDelete []string
-	for _, file := range allFiles {
-		// 检查文件是否在该目录下（VirtualPath 存储的是目录ID的字符串形式）
-		if file.VirtualPath == dirPathID {
-			filesToDelete = append(filesToDelete, file.UfID)
-		}
-	}
-
-	// 4.2 递归获取所有子目录
-	// 注意：需要处理根目录的子目录（ParentLevel 可能为空）的情况
-	var dirsToDelete []int
-	err = f.collectSubDirs(ctx, userID, req.DirID, &dirsToDelete, rootPath.ID)
-	if err != nil {
-		logger.LOG.Error("收集子目录失败", "error", err)
-		return nil, err
-	}
-
-	// 5. 删除所有文件（移动到回收站）
-	fileSuccessCount := 0
-	fileFailedCount := 0
-	if len(filesToDelete) > 0 {
-		deleteFileReq := &request.DeleteFileRequest{
-			FileIDs: filesToDelete,
-		}
-		result, err := f.DeleteFiles(deleteFileReq, userID)
-		if err != nil {
-			logger.LOG.Error("删除目录下文件失败", "error", err)
-			return nil, err
-		}
-		// 解析删除结果
-		if result.Data != nil {
-			if data, ok := result.Data.(map[string]interface{}); ok {
-				if success, ok := data["success"].(float64); ok {
-					fileSuccessCount = int(success)
-				}
-				if failed, ok := data["failed"].(float64); ok {
-					fileFailedCount = int(failed)
-				}
-			}
-		}
-	}
-
-	// 6. 递归删除所有子目录（从最深层开始）
-	// 注意：如果子目录删除失败，我们仍然会尝试删除父目录
-	// 这是合理的，因为用户已经确认要删除整个目录，且返回了详细的失败信息
-	dirSuccessCount := 0
-	dirFailedCount := 0
-	// 反转数组，从最深层开始删除（确保先删除子目录，再删除父目录）
-	for i := len(dirsToDelete) - 1; i >= 0; i-- {
-		dirID := dirsToDelete[i]
-		err := f.factory.VirtualPath().Delete(ctx, dirID)
-		if err != nil {
-			logger.LOG.Error("删除子目录失败", "error", err, "dirID", dirID)
-			dirFailedCount++
-			// 继续删除其他目录，不中断流程
-		} else {
-			dirSuccessCount++
-		}
-	}
-
-	// 7. 删除目录本身
-	// 即使部分子目录删除失败，仍然删除父目录（用户已确认删除）
-	err = f.factory.VirtualPath().Delete(ctx, req.DirID)
-	if err != nil {
-		logger.LOG.Error("删除目录失败", "error", err, "dirID", req.DirID)
-		return nil, fmt.Errorf("删除目录失败: %w", err)
-	}
-
-	logger.LOG.Info("目录删除成功", "dirID", req.DirID,
-		"filesDeleted", fileSuccessCount, "filesFailed", fileFailedCount,
-		"dirsDeleted", dirSuccessCount, "dirsFailed", dirFailedCount)
-
-	message := fmt.Sprintf("目录删除成功，已删除 %d 个文件", fileSuccessCount)
-	if fileFailedCount > 0 {
-		message = fmt.Sprintf("%s，%d 个文件删除失败", message, fileFailedCount)
-	}
-	if dirSuccessCount > 0 {
-		message = fmt.Sprintf("%s，已删除 %d 个子目录", message, dirSuccessCount)
-	}
-	if dirFailedCount > 0 {
-		message = fmt.Sprintf("%s，%d 个子目录删除失败", message, dirFailedCount)
-	}
-
-	return models.NewJsonResponse(200, message, map[string]interface{}{
-		"dir_id":        req.DirID,
-		"files_deleted": fileSuccessCount,
-		"files_failed":  fileFailedCount,
-		"dirs_deleted":  dirSuccessCount,
-		"dirs_failed":   dirFailedCount,
-	}), nil
-}
-
-// collectSubDirs 递归收集目录下的所有子目录
-func (f *FileService) collectSubDirs(ctx context.Context, userID string, parentDirID int, result *[]int, rootDirID int) error {
-	// 获取直接子目录
-	// 注意：ListSubFoldersByParentID 使用整数 parentID 查询 TEXT 类型的 parent_level 字段
-	// GORM 会自动进行类型转换，这在其他代码（如 RenameDir）中已经验证可行
-	subDirs, err := f.factory.VirtualPath().ListSubFoldersByParentID(ctx, userID, parentDirID, 0, 10000)
-	if err != nil {
-		return err
-	}
-
-	// 验证 parent_level 是否匹配（作为额外的安全检查）
-	parentLevelStr := strconv.Itoa(parentDirID)
-	for _, subDir := range subDirs {
-		// 验证确实是子目录
-		// 情况1：ParentLevel 等于父目录ID的字符串形式（正常情况）
-		// 情况2：ParentLevel 为空且父目录是根目录（根目录的直接子目录）
-		isValidChild := false
-		if subDir.ParentLevel == parentLevelStr {
-			// 正常情况：ParentLevel 匹配
-			isValidChild = true
-		} else if subDir.ParentLevel == "" && parentDirID == rootDirID {
-			// 特殊情况：根目录的直接子目录，ParentLevel 可能为空
-			isValidChild = true
-		}
-
-		if isValidChild && subDir.IsDir {
-			*result = append(*result, subDir.ID)
-			// 递归收集子目录的子目录
-			if err := f.collectSubDirs(ctx, userID, subDir.ID, result, rootDirID); err != nil {
-				return err
-			}
-		}
-	}
-
-	return nil
 }
 
 // DeleteFiles 删除文件（移动到回收站）
@@ -1424,7 +1223,7 @@ func (f *FileService) handleChunkUpload(ctx context.Context, req *request.FileUp
 		IsEnc:             req.IsEnc,
 		IsChunk:           true,
 		ChunkCount:        totalChunks,
-		VirtualPath:       precheckReq.PathID,
+		DirectoryID:       precheckReq.DirectoryID,
 		UserID:            userID,
 		DiskID:            precheckResp.DiskID,
 		FilePassword:      req.FilePassword, // 添加加密密码
@@ -1508,7 +1307,7 @@ func (f *FileService) handleSingleUpload(ctx context.Context, req *request.FileU
 		ChunkSignature:    precheckReq.ChunkSignature,
 		IsEnc:             req.IsEnc,
 		IsChunk:           false,
-		VirtualPath:       precheckReq.PathID,
+		DirectoryID:       precheckReq.DirectoryID,
 		UserID:            userID,
 		DiskID:            precheckResp.DiskID,
 		FilePassword:      req.FilePassword, // 添加加密密码
@@ -1796,7 +1595,7 @@ func (f *FileService) updateUploadTask(ctx context.Context, precheckID, userID s
 				TotalChunks:    totalChunks,
 				UploadedChunks: uploadedChunks,
 				ChunkSignature: precheckReq.ChunkSignature,
-				PathID:         precheckReq.PathID,
+				DirectoryID:    precheckReq.DirectoryID,
 				TempDir:        tempDir,
 				Status:         status,
 				ErrorMessage:   errorMsg,
@@ -1854,7 +1653,7 @@ func (f *FileService) ListUncompletedUploads(userID string) (*models.JsonRespons
 			"is_enc":           task.IsEnc,
 			"result_file_id":   task.ResultFileID,
 			"error_message":    task.ErrorMessage,
-			"path_id":          task.PathID,
+			"directory_id":     task.DirectoryID,
 			"create_time":      task.CreateTime,
 			"update_time":      task.UpdateTime,
 			"expire_time":      task.ExpireTime,
@@ -1977,7 +1776,7 @@ func (f *FileService) ListExpiredUploads(userID string) (*models.JsonResponse, e
 			"is_enc":           task.IsEnc,
 			"result_file_id":   task.ResultFileID,
 			"error_message":    task.ErrorMessage,
-			"path_id":          task.PathID,
+			"directory_id":     task.DirectoryID,
 			"create_time":      task.CreateTime,
 			"update_time":      task.UpdateTime,
 			"expire_time":      task.ExpireTime,
@@ -2071,7 +1870,7 @@ func (f *FileService) GetUploadTaskList(req *request.UploadTaskListRequest, user
 			TotalChunks:     task.TotalChunks,
 			UploadedChunks:  task.UploadedChunks,
 			ChunkSignature:  task.ChunkSignature,
-			PathID:          task.PathID,
+			DirectoryID:     task.DirectoryID,
 			Status:          task.Status,
 			ProcessingStage: task.ProcessingStage,
 			IsEnc:           task.IsEnc,

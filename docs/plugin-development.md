@@ -1,6 +1,6 @@
 # MyObj 可安装订阅插件开发手册
 
-本文面向插件作者，说明如何在独立项目中开发、测试、打包和发布 MyObj 订阅插件。本文以 ABI v1 和仓库内 TinyGo SDK 的当前实现为准。
+本文面向插件作者，说明如何在独立项目中开发、测试、打包和发布 MyObj 订阅插件。本文以 ABI v2 和仓库内 TinyGo SDK 的当前实现为准。
 
 插件的职责是发现“可下载的数据”，而不是自己执行离线下载。插件在定时运行时访问数据源、解析条目并返回下载描述；MyObj 负责去重、权限校验、创建离线下载任务、断点续传、保存文件和处理缩略图。
 
@@ -9,7 +9,7 @@
 ```mermaid
 flowchart LR
     A["每日调度或手动运行"] --> B["启动 WASM 插件"]
-    B --> C["stdin 写入 ABI v1 JSON"]
+    B --> C["stdin 写入 ABI v2 JSON"]
     C --> D["插件通过宿主 API 拉取数据和查询文件元数据"]
     D --> E["stdout 返回 DownloadableItem 列表"]
     E --> F["权限、URL、目录和请求头校验"]
@@ -182,7 +182,7 @@ func (h handler) Fetch(request myobjplugin.InvocationRequest) ([]myobjplugin.Dow
             Title:        "示例文件",
             URL:          "https://downloads.example.com/files/example.zip",
             DownloadType: "http",
-            SavePath:     "/示例插件",
+            RelativeSavePath: "示例插件",
         },
     }, nil
 }
@@ -199,7 +199,7 @@ func main() {
   "id": "com.example.downloads",
   "name": "示例下载订阅",
   "version": "1.0.0",
-  "api_version": "1",
+  "api_version": "2",
   "author": "Example Team",
   "description": "返回示例 HTTP 下载条目",
   "config_fields": [
@@ -236,7 +236,7 @@ manifest 必须是 UTF-8 无 BOM 的单个 JSON 对象。未知字段、尾随�
 | `id` | 是 | 稳定插件 ID，3–128 个字符；首字符为小写字母，其余只能是小写字母、数字、`.`、`_`、`-`。安装升级时不可改变。 |
 | `name` | 是 | 展示名称，不能为空。 |
 | `version` | 是 | 版本格式为 `主版本.次版本.修订版本`，可带 `-预发布标识`，例如 `1.2.0-beta.1`；当前不接受 `+build` 元数据。升级版本必须高于已安装版本。 |
-| `api_version` | 是 | 当前固定为字符串 `"1"`。 |
+| `api_version` | 是 | 当前固定为字符串 `"2"`。 |
 | `author` | 否 | 作者或组织名称。 |
 | `description` | 否 | 管理员和用户看到的功能说明。 |
 | `min_myobj_version` | 否 | 声明建议的最低 MyObj 版本。当前安装器保留此信息，但不会替插件完成全部兼容性判断，仍应在目标版本上测试。 |
@@ -278,7 +278,7 @@ manifest 必须是 UTF-8 无 BOM 的单个 JSON 对象。未知字段、尾随�
   "id": "com.example.media",
   "name": "媒体订阅",
   "version": "1.3.0",
-  "api_version": "1",
+  "api_version": "2",
   "author": "Example Team",
   "description": "从远端 API 发现媒体文件",
   "min_myobj_version": "1.1.0",
@@ -332,7 +332,7 @@ manifest 必须是 UTF-8 无 BOM 的单个 JSON 对象。未知字段、尾随�
 
 整个订阅配置都会由服务端加密保存；`secret` 主要控制 API 和界面的回显及更新行为。插件错误、stdout、stderr 和远端请求中仍可能泄漏插件主动打印的秘密，因此不要记录配置值。
 
-## 6. ABI v1 与 Handler
+## 6. ABI v2 与 Handler
 
 SDK 的 `Run` 从 stdin 读取一个 UTF-8 JSON 请求，调用 `Handler`，再向 stdout 写入一个 JSON 响应。插件应只向 stdout 输出 ABI 响应；调试信息写 stderr。
 
@@ -446,7 +446,7 @@ MyObj 会按 `published_at` 从新到旧稳定排序，无时间的条目排在�
 | `published_at` | 否 | RFC 3339 时间。用于首次抓取时优先选择最新条目。 |
 | `download_type` | 是 | 只能是 `http` 或 `hls`，使用小写。 |
 | `file_name` | 否 | 输出文件名，不得含路径分隔符或 NUL，UTF-8 字节数不超过 255。HTTP 留空时由响应或 URL 推断；HLS 最终总是规范化为 `.mp4`。 |
-| `save_path` | 否 | 订阅保存目录下的根相对目录，必须以 `/` 开头；留空或 `/` 时直接使用订阅保存目录。 |
+| `relative_save_path` | 否 | 订阅保存目录下不带前导 `/` 的相对目录；留空时直接使用订阅保存目录。 |
 | `thumbnail_url` | 否 | 公网 HTTP/HTTPS 图片地址；不共享主文件请求头。 |
 | `request_headers` | 否 | 当前下载条目的自定义 HTTP 请求头字符串对象，需要 `downloads.custom_headers`。 |
 | `header_hosts` | 否 | 可注入上述请求头的额外精确主机名数组；下载 URL 自身主机自动加入。 |
@@ -463,7 +463,7 @@ item := myobjplugin.DownloadableItem{
     PublishedAt:  &published,
     DownloadType: "hls",
     FileName:     "示例视频.mp4",
-    SavePath:     "/示例频道/2026",
+    RelativeSavePath: "示例频道/2026",
     ThumbnailURL: "https://images.example.com/av123.webp",
     RequestHeaders: map[string]string{
         "Authorization": "Bearer " + token,
@@ -611,30 +611,30 @@ JSON 对象中以下写法也会被拒绝，因为名称大小写不敏感重复
 
 ## 10. 保存目录
 
-创建订阅时必须配置“保存目录”。`save_path` 是保存目录下的根相对目录，不是用户空间完整路径，更不是服务端物理路径。宿主会先规范化保存目录和 `save_path`，再将二者拼接并校验最终目录。
+创建订阅时必须配置绝对 `save_path`。插件条目的 `relative_save_path` 是该保存目录下的相对目录，不是用户空间完整路径，更不是服务端物理路径。宿主会分别规范化二者，再拼接并校验最终目录。
 
 规则：
 
-- 非空时必须以 `/` 开头；`/` 表示订阅保存目录。
+- 非空时不能以 `/` 开头；空值表示订阅保存目录。
 - 允许中文。
-- 不允许相对路径、`//` 开头、盘符、UNC、URI、反斜杠、`.`、`..` 和控制字符。
+- 不允许绝对路径、盘符、UNC、URI、反斜杠、`.`、`..` 和控制字符。
 - 最多 20 层。
 - 每段最多 100 个 Unicode 字符。
 - 总长最多 1000 个 Unicode 字符。
-- 连续或结尾的 `/` 会被规范化，例如 `/订阅//视频/` 变为 `/订阅/视频`。
+- 连续或结尾的 `/` 会被规范化，例如 `订阅//视频/` 变为 `订阅/视频`。
 
 示例：
 
 ```text
-/                         有效，直接使用订阅保存目录
-/电影/2026                有效，保存到“保存目录/电影/2026”
-/电影//国产/              有效，规范化后保存到“保存目录/电影/国产”
-电影/2026                 无效，必须以/开头
+空值                      有效，直接使用订阅保存目录
+电影/2026                 有效，保存到“保存目录/电影/2026”
+电影//国产/               有效，规范化后保存到“保存目录/电影/国产”
+/电影/2026                无效，相对目录不能以/开头
 C:\Downloads              无效，物理路径和反斜杠
 /电影/../私密              无效，包含 ..
 ```
 
-例如订阅保存目录为 `/离线下载/订阅`，插件返回 `/电影/2026` 时，最终目录为 `/离线下载/订阅/电影/2026`。插件不需要提前创建目录。MyObj 只在主文件下载成功并准备入库时逐级、并发幂等地创建目录；失败下载不会留下空目录。条目未提供 `save_path` 时直接使用订阅保存目录。已创建下载任务和已完成文件不会因后来修改保存目录而移动；再次发现的未提交、可重试条目会按当前保存目录刷新路径。
+例如订阅保存目录为 `/离线下载/订阅`，插件返回 `电影/2026` 时，最终目录为 `/离线下载/订阅/电影/2026`。插件不需要提前创建目录。MyObj 只在主文件下载成功并准备入库时逐级、并发幂等地创建目录；失败下载不会留下空目录。条目未提供 `relative_save_path` 时直接使用订阅保存目录。已创建下载任务和已完成文件不会因后来修改保存目录而移动；再次发现的未提交、可重试条目会按当前保存目录刷新路径。
 
 ## 11. 缩略图
 
@@ -738,7 +738,7 @@ if result.NextCursor != "" {
 | --- | --- |
 | `uf_id` | 当前用户范围内的文件 ID。 |
 | `file_name` | 文件名。 |
-| `virtual_path` | 文件所在的用户虚拟目录完整绝对路径；返回值一定处于当前订阅保存目录内。 |
+| `absolute_path` | 文件所在的用户虚拟目录完整绝对路径；返回值一定处于当前订阅保存目录内。 |
 | `file_size` | 字节数。 |
 | `mime_type` | MIME 类型。 |
 | `created_at` | 用户文件记录创建时间。 |
@@ -970,7 +970,7 @@ files_query(request_ptr: u32, request_len: u32, output_ptr: u32, output_cap: u32
 
 `http_request` 的 body 字段是 `body_base64`，可选的响应限制字段是 `max_response_bytes`；响应同样使用 `body_base64`。`file_get` 请求为 `{"uf_id":"..."}`；`files_query` 使用第 12 节过滤字段。
 
-自行实现绑定仍必须满足 stdout 单一 JSON、执行时间、内存和权限限制。ABI v1 不承诺 Go SDK 内部细节，第三方绑定应针对真实 MyObj 版本运行兼容测试。
+自行实现绑定仍必须满足 stdout 单一 JSON、执行时间、内存和权限限制。ABI v2 不承诺 Go SDK 内部细节，第三方绑定应针对真实 MyObj 版本运行兼容测试。
 
 ## 20. 安全最佳实践
 
@@ -981,14 +981,14 @@ files_query(request_ptr: u32, request_len: u32, output_ptr: u32, output_cap: u32
 - 为条目设计稳定 ID，并把短期凭据与身份分离。
 - 使用 `request_headers` 传认证信息，避免把秘密放在 URL 查询参数。
 - `header_hosts` 只列出确实需要认证的精确域名。
-- 不根据远端响应拼接物理路径；`save_path` 始终是受限于订阅保存目录的根相对路径。
+- 不根据远端响应拼接物理路径；`relative_save_path` 始终是不带前导 `/` 的受限相对路径。
 - 把插件视为会被随时取消：不要依赖 finally 阶段提交远端事务。
 - 对可选权限做降级；对必需权限返回明确错误。
 - 发布前保存 `.myobj-plugin`、包 SHA-256、WASM SHA-256和对应源码标签，便于审计与复现。
 
 ## 21. 发布前检查清单
 
-- [ ] `id` 稳定，`version` 高于已发布版本，`api_version` 为 `"1"`。
+- [ ] `id` 稳定，`version` 高于已发布版本，`api_version` 为 `"2"`。
 - [ ] manifest 为 UTF-8 无 BOM，未知字段和尾随内容已清除。
 - [ ] 只声明实际需要的权限，并在 README 解释每项用途。
 - [ ] 所有必填和类型规则都由 `ValidateConfig` 再次校验。

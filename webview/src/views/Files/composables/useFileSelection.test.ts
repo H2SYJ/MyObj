@@ -6,9 +6,10 @@ import { useFileSelection } from './useFileSelection'
 
 const folder = (id: number): FolderItem => ({
   id,
-  name: `/目录 ${id}`,
-  path: String(id),
-  created_time: '2026-01-01T00:00:00Z'
+  name: `目录 ${id}`,
+  parent_id: 1,
+  absolute_path: `/目录 ${id}`,
+  created_at: '2026-01-01T00:00:00Z'
 })
 
 const file = (id: string): FileItem => ({

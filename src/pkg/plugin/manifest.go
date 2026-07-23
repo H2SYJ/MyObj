@@ -8,7 +8,7 @@ import (
 	"sort"
 )
 
-const APIVersion = "1"
+const APIVersion = "2"
 
 const (
 	PermissionPublicHTTP    = "network.public_http"

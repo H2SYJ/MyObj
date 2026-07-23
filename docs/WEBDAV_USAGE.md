@@ -182,7 +182,7 @@ lsof -i :8081                # Linux/macOS
 
 ### 3. 文件不可见
 
-- 确认文件在 `virtual_path` 和 `user_files` 表中存在
+- 确认目录在 `virtual_directory` 表中存在，且文件的 `user_files.directory_id` 引用正确
 - 检查文件权限
 - **刷新客户端**（重新打开文件夹）
 - 查看后台日志确认是否成功读取列表

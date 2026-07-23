@@ -30,7 +30,7 @@ func TestSubscriptionListSerializesEmptySecretFieldsAsArray(t *testing.T) {
 		ConfigEncrypted:    "invalid",
 		GrantedPermissions: "[]",
 		ScheduleTime:       "08:00",
-		DefaultPath:        "/离线下载/订阅",
+		SavePath:           "/离线下载/订阅",
 		InitialLimit:       10,
 		MaxItemsPerRun:     100,
 		SourceGeneration:   1,

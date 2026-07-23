@@ -11,7 +11,7 @@ import (
 
 func TestBuildAndReadPackage(t *testing.T) {
 	dir := t.TempDir()
-	manifest := `{"id":"org.example.test","name":"测试插件","version":"1.0.0","api_version":"1","permissions":["network.public_http"]}`
+	manifest := `{"id":"org.example.test","name":"测试插件","version":"1.0.0","api_version":"2","permissions":["network.public_http"]}`
 	if err := os.WriteFile(filepath.Join(dir, "manifest.json"), []byte(manifest), 0644); err != nil {
 		t.Fatal(err)
 	}
@@ -40,9 +40,16 @@ func TestBuildAndReadPackage(t *testing.T) {
 }
 
 func TestParseManifestRejectsTrailingJSON(t *testing.T) {
-	manifest := `{"id":"org.example.test","name":"测试插件","version":"1.0.0","api_version":"1"}`
+	manifest := `{"id":"org.example.test","name":"测试插件","version":"1.0.0","api_version":"2"}`
 	if _, err := ParseManifest([]byte(manifest + `{}`)); err == nil {
 		t.Fatal("manifest.json包含第二个JSON值时应被拒绝")
+	}
+}
+
+func TestParseManifestRejectsAPIV1(t *testing.T) {
+	manifest := `{"id":"org.example.test","name":"测试插件","version":"1.0.0","api_version":"1"}`
+	if _, err := ParseManifest([]byte(manifest)); err == nil || !strings.Contains(err.Error(), "不支持的插件API版本: 1") {
+		t.Fatalf("API v1应被明确拒绝，实际为%v", err)
 	}
 }
 

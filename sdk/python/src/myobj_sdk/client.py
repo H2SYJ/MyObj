@@ -262,7 +262,7 @@ class MyObjClient:
     def list_files(
         self,
         *,
-        virtual_path: str = "",
+        directory_id: int = 0,
         file_type: str = "",
         sort_by: str = "",
         page: int = 1,
@@ -275,7 +275,7 @@ class MyObjClient:
             "GET",
             "/file/list",
             params=self._params(
-                virtualPath=virtual_path,
+                directory_id=directory_id,
                 type=file_type,
                 sortBy=sort_by,
                 page=page,
@@ -357,38 +357,38 @@ class MyObjClient:
             ),
         )
 
-    def get_virtual_paths(self) -> dict[str, Any]:
+    def get_directories(self) -> dict[str, Any]:
         """获取当前用户的虚拟目录树。"""
 
-        return self._request_json("GET", "/file/virtualPath")
+        return self._request_json("GET", "/file/directories")
 
-    def create_directory(self, parent_level: str, dir_path: str) -> dict[str, Any]:
+    def create_directory(self, parent_id: int, name: str) -> dict[str, Any]:
         """创建目录。"""
 
         return self._request_json(
             "POST",
             "/file/makeDir",
-            json={"parent_level": parent_level, "dir_path": dir_path},
+            json={"parent_id": parent_id, "name": name},
         )
 
     def ensure_directory(
         self,
-        parent_level: str,
-        dir_path: str,
+        parent_id: int,
+        name: str,
         *,
         page_size: int = 100,
-    ) -> str:
-        """查找目录，不存在时创建，并返回目录的路径 ID。"""
+    ) -> int:
+        """查找目录，不存在时创建，并返回目录 ID。"""
 
-        if not dir_path.strip():
-            raise ValueError("dir_path 不能为空")
+        if not name.strip():
+            raise ValueError("name 不能为空")
         self._check_page(1, page_size)
 
-        def find_directory() -> Optional[str]:
+        def find_directory() -> Optional[int]:
             page = 1
             while True:
                 result = self.list_files(
-                    virtual_path=str(parent_level),
+                    directory_id=parent_id,
                     page=page,
                     page_size=page_size,
                 )
@@ -402,10 +402,10 @@ class MyObjClient:
                         if not isinstance(folder, Mapping):
                             continue
                         if (
-                            folder.get("name") == dir_path
-                            and folder.get("path") is not None
+                            folder.get("name") == name
+                            and folder.get("id") is not None
                         ):
-                            return str(folder["path"])
+                            return int(folder["id"])
 
                 total = int(data.get("total", 0) or 0)
                 actual_page_size = int(data.get("page_size", page_size) or page_size)
@@ -417,15 +417,13 @@ class MyObjClient:
         if existing_path is not None:
             return existing_path
 
-        self.create_directory(str(parent_level), dir_path)
+        self.create_directory(parent_id, name)
         created_path = find_directory()
         if created_path is None:
-            raise MyObjHTTPError(f"目录 {dir_path} 创建成功，但未能查询到路径 ID")
+            raise MyObjHTTPError(f"目录 {name} 创建成功，但未能查询到目录 ID")
         return created_path
 
-    def move_file(
-        self, file_id: str, source_path: str, target_path: str
-    ) -> dict[str, Any]:
+    def move_file(self, file_id: str, target_directory_id: int) -> dict[str, Any]:
         """移动文件。"""
 
         return self._request_json(
@@ -433,8 +431,7 @@ class MyObjClient:
             "/file/move",
             json={
                 "file_id": file_id,
-                "source_path": source_path,
-                "target_path": target_path,
+                "target_directory_id": target_directory_id,
             },
         )
 
@@ -530,7 +527,7 @@ class MyObjClient:
     def upload_file(
         self,
         file_path: PathLike,
-        path_id: str,
+        directory_id: int,
         *,
         encrypted: bool = False,
         file_password: str = "",
@@ -596,7 +593,7 @@ class MyObjClient:
                     "file_name": source_path.name,
                     "file_size": file_size,
                     "files_md5": chunk_md5s,
-                    "path_id": path_id,
+                    "directory_id": directory_id,
                 },
             )
 

@@ -16,7 +16,7 @@ export interface UploadTask {
   lastUploadedSize?: number
   speedHistory?: number[]
   lastSpeedUpdateTime?: number
-  pathId?: string
+  directoryId?: number
   precheckId?: string
   chunkSignature?: string
   filesMd5?: string[]

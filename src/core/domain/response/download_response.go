@@ -26,8 +26,8 @@ type DownloadTaskResponse struct {
 	State int `json:"state"`
 	// 状态文本
 	StateText string `json:"state_text"`
-	// 虚拟路径
-	VirtualPath string `json:"virtual_path"`
+	// 保存目录的用户虚拟绝对路径
+	SavePath string `json:"save_path"`
 	// 是否支持断点续传
 	SupportRange bool `json:"support_range"`
 	// 是否启用加密存储

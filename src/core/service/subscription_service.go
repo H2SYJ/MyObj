@@ -19,7 +19,6 @@ import (
 	"net/url"
 	"reflect"
 	"sort"
-	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -160,7 +159,7 @@ func (s *SubscriptionService) Create(ctx context.Context, userID string, req *re
 	if req.InitialLimit < 1 || req.InitialLimit > 100 || req.MaxItemsPerRun < 1 || req.MaxItemsPerRun > 500 {
 		return nil, "", fmt.Errorf("首次条数或单次上限超出允许范围")
 	}
-	defaultPath, err := virtualpath.Normalize(req.DefaultPath)
+	savePath, err := virtualpath.NormalizeAbsolutePath(req.SavePath)
 	if err != nil {
 		return nil, "", err
 	}
@@ -183,7 +182,7 @@ func (s *SubscriptionService) Create(ctx context.Context, userID string, req *re
 	}
 	now := time.Now()
 	subscription := &models.Subscription{ID: id, UserID: userID, Name: req.Name, PluginID: req.PluginID, PluginVersion: pluginRecord.Version,
-		ConfigEncrypted: encrypted, GrantedPermissions: string(permissionJSON), ScheduleTime: req.ScheduleTime, DefaultPath: defaultPath,
+		ConfigEncrypted: encrypted, GrantedPermissions: string(permissionJSON), ScheduleTime: req.ScheduleTime, SavePath: savePath,
 		InitialLimit: req.InitialLimit, MaxItemsPerRun: req.MaxItemsPerRun, SourceGeneration: 1, Enabled: enabled, Status: "ready", NextRunAt: &next, CreatedAt: now, UpdatedAt: now}
 	if err := s.factory.DB().WithContext(ctx).Create(subscription).Error; err != nil {
 		return nil, "", err
@@ -214,13 +213,13 @@ func (s *SubscriptionService) Update(ctx context.Context, userID string, req *re
 	if req.Name != nil {
 		updates["name"] = strings.TrimSpace(*req.Name)
 	}
-	if req.DefaultPath != nil {
-		value, err := virtualpath.Normalize(*req.DefaultPath)
+	if req.SavePath != nil {
+		value, err := virtualpath.NormalizeAbsolutePath(*req.SavePath)
 		if err != nil {
 			return err
 		}
-		updates["default_path"] = value
-		savePathChanged = value != subscription.DefaultPath
+		updates["save_path"] = value
+		savePathChanged = value != subscription.SavePath
 	}
 	if req.ScheduleTime != nil {
 		next, err := nextScheduleInLocation(*req.ScheduleTime, time.Now(), s.location)
@@ -627,7 +626,7 @@ func (s *SubscriptionService) processItems(ctx context.Context, subscription *mo
 			errorsFound = append(errorsFound, err.Error())
 			continue
 		}
-		path, err := virtualpath.JoinSubscriptionPath(subscription.DefaultPath, item.SavePath)
+		path, err := virtualpath.JoinSavePath(subscription.SavePath, item.RelativeSavePath)
 		if err != nil {
 			errorsFound = append(errorsFound, err.Error())
 			continue
@@ -720,7 +719,7 @@ func subscriptionDownloadInput(userID string, item *models.SubscriptionItem) Sub
 func (s *SubscriptionService) refreshExistingItem(ctx context.Context, subscription *models.Subscription, manifest *pluginpkg.Manifest, existing *models.SubscriptionItem, item pluginpkg.DownloadableItem, permissions map[string]bool) error {
 	updates := map[string]interface{}{"updated_at": time.Now()}
 	if existing.Status == "deferred" || existing.Status == "submit_failed" {
-		path, err := virtualpath.JoinSubscriptionPath(subscription.DefaultPath, item.SavePath)
+		path, err := virtualpath.JoinSavePath(subscription.SavePath, item.RelativeSavePath)
 		if err != nil {
 			return err
 		}
@@ -772,19 +771,19 @@ func (s *SubscriptionService) refreshExistingItem(ctx context.Context, subscript
 
 func (s *SubscriptionService) queryFiles(ctx context.Context, subscription models.Subscription, plugin models.InstalledPlugin, request pluginpkg.FileQueryRequest) (pluginpkg.FileQueryResponse, error) {
 	started := time.Now()
-	response, err := s.queryFilesInternal(ctx, subscription.UserID, subscription.DefaultPath, request)
+	response, err := s.queryFilesInternal(ctx, subscription.UserID, subscription.SavePath, request)
 	status := "success"
 	errorMsg := ""
 	if err != nil {
 		status = "failed"
 		errorMsg = err.Error()
 	}
-	s.factory.DB().Create(&models.PluginAuditLog{ID: uuid.NewString(), PluginID: plugin.ID, PluginVersion: plugin.Version, SubscriptionID: subscription.ID, UserID: subscription.UserID, Action: "files." + request.Operation, Summary: fmt.Sprintf("path=%s limit=%d", request.Path, request.Limit), ResultCount: len(response.Files), DurationMS: time.Since(started).Milliseconds(), Status: status, ErrorMsg: errorMsg, CreatedAt: time.Now()})
+	s.factory.DB().Create(&models.PluginAuditLog{ID: uuid.NewString(), PluginID: plugin.ID, PluginVersion: plugin.Version, SubscriptionID: subscription.ID, UserID: subscription.UserID, Action: "files." + request.Operation, Summary: fmt.Sprintf("relative_path=%s limit=%d", request.RelativePath, request.Limit), ResultCount: len(response.Files), DurationMS: time.Since(started).Milliseconds(), Status: status, ErrorMsg: errorMsg, CreatedAt: time.Now()})
 	return response, err
 }
 
 func (s *SubscriptionService) queryFilesInternal(ctx context.Context, userID, saveRoot string, request pluginpkg.FileQueryRequest) (pluginpkg.FileQueryResponse, error) {
-	scopeID, err := s.lookupPathID(ctx, userID, saveRoot)
+	scopeDirectoryID, err := s.resolveDirectoryID(ctx, userID, saveRoot)
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			if request.Operation == "get" {
@@ -794,11 +793,11 @@ func (s *SubscriptionService) queryFilesInternal(ctx context.Context, userID, sa
 		}
 		return pluginpkg.FileQueryResponse{}, err
 	}
-	scopeIDs, err := s.descendantPathIDs(ctx, userID, scopeID)
+	scopeDirectoryIDs, err := s.descendantDirectoryIDs(ctx, userID, scopeDirectoryID)
 	if err != nil {
 		return pluginpkg.FileQueryResponse{}, err
 	}
-	scopedQuery := s.fileQueryBase(ctx, userID).Where("user_files.virtual_path IN ?", scopeIDs)
+	scopedQuery := s.fileQueryBase(ctx, userID).Where("user_files.directory_id IN ?", scopeDirectoryIDs)
 	if request.Operation == "get" {
 		var row safeFileRow
 		err := scopedQuery.Where("user_files.uf_id = ?", request.UFID).First(&row).Error
@@ -850,11 +849,11 @@ func (s *SubscriptionService) queryFilesInternal(ctx context.Context, userID, sa
 	if request.UpdatedBefore != nil {
 		query = query.Where("file_info.updated_at <= ?", *request.UpdatedBefore)
 	}
-	queryPath, err := virtualpath.JoinSubscriptionPath(saveRoot, request.Path)
+	queryPath, err := virtualpath.JoinSavePath(saveRoot, request.RelativePath)
 	if err != nil {
 		return pluginpkg.FileQueryResponse{}, err
 	}
-	pathID, err := s.lookupPathID(ctx, userID, queryPath)
+	directoryID, err := s.resolveDirectoryID(ctx, userID, queryPath)
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return pluginpkg.FileQueryResponse{}, nil
@@ -862,13 +861,13 @@ func (s *SubscriptionService) queryFilesInternal(ctx context.Context, userID, sa
 		return pluginpkg.FileQueryResponse{}, err
 	}
 	if request.Recursive {
-		pathIDs, descendantsErr := s.descendantPathIDs(ctx, userID, pathID)
+		directoryIDs, descendantsErr := s.descendantDirectoryIDs(ctx, userID, directoryID)
 		if descendantsErr != nil {
 			return pluginpkg.FileQueryResponse{}, descendantsErr
 		}
-		query = query.Where("user_files.virtual_path IN ?", pathIDs)
+		query = query.Where("user_files.directory_id IN ?", directoryIDs)
 	} else {
-		query = query.Where("user_files.virtual_path = ?", pathID)
+		query = query.Where("user_files.directory_id = ?", directoryID)
 	}
 	if request.Cursor != "" {
 		createdAt, ufID, cursorErr := decodeFileCursor(userID, request.Cursor)
@@ -897,16 +896,16 @@ func (s *SubscriptionService) queryFilesInternal(ctx context.Context, userID, sa
 	return pluginpkg.FileQueryResponse{Files: files, NextCursor: next}, nil
 }
 
-func (s *SubscriptionService) descendantPathIDs(ctx context.Context, userID, rootID string) ([]string, error) {
-	var paths []models.VirtualPath
-	if err := s.factory.DB().WithContext(ctx).Where("user_id = ?", userID).Find(&paths).Error; err != nil {
+func (s *SubscriptionService) descendantDirectoryIDs(ctx context.Context, userID string, rootID int) ([]int, error) {
+	var directories []models.VirtualDirectory
+	if err := s.factory.DB().WithContext(ctx).Where("user_id = ?", userID).Find(&directories).Error; err != nil {
 		return nil, err
 	}
-	children := make(map[string][]string)
-	for _, path := range paths {
-		children[path.ParentLevel] = append(children[path.ParentLevel], strconv.Itoa(path.ID))
+	children := make(map[int][]int)
+	for _, directory := range directories {
+		children[directory.ParentID] = append(children[directory.ParentID], directory.ID)
 	}
-	result := []string{rootID}
+	result := []int{rootID}
 	for index := 0; index < len(result); index++ {
 		result = append(result, children[result[index]]...)
 		if len(result) > 10000 {
@@ -947,7 +946,7 @@ func decodeFileCursor(userID, cursor string) (time.Time, string, error) {
 type safeFileRow struct {
 	UFID         string
 	FileName     string
-	VirtualPath  string
+	DirectoryID  int
 	FileSize     int64
 	MIMEType     string
 	CreatedAt    time.Time
@@ -958,34 +957,14 @@ type safeFileRow struct {
 }
 
 func (s *SubscriptionService) fileQueryBase(ctx context.Context, userID string) *gorm.DB {
-	return s.factory.DB().WithContext(ctx).Table("user_files").Select("user_files.uf_id,user_files.file_name,user_files.virtual_path,file_info.size AS file_size,file_info.mime AS mime_type,user_files.created_at,file_info.updated_at,file_info.is_enc AS is_encrypted,user_files.public AS is_public,file_info.thumbnail_img").Joins("JOIN file_info ON file_info.id = user_files.file_id").Where("user_files.user_id = ? AND user_files.deleted_at IS NULL", userID)
+	return s.factory.DB().WithContext(ctx).Table("user_files").Select("user_files.uf_id,user_files.file_name,user_files.directory_id,file_info.size AS file_size,file_info.mime AS mime_type,user_files.created_at,file_info.updated_at,file_info.is_enc AS is_encrypted,user_files.public AS is_public,file_info.thumbnail_img").Joins("JOIN file_info ON file_info.id = user_files.file_id").Where("user_files.user_id = ? AND user_files.deleted_at IS NULL", userID)
 }
 func (s *SubscriptionService) safeFileInfo(ctx context.Context, userID string, row safeFileRow) (pluginpkg.SafeFileInfo, error) {
-	path, err := virtualpath.ResolveAbsolute(ctx, userID, row.VirtualPath, s.factory)
-	return pluginpkg.SafeFileInfo{UFID: row.UFID, FileName: row.FileName, VirtualPath: path, FileSize: row.FileSize, MIMEType: row.MIMEType, CreatedAt: row.CreatedAt, UpdatedAt: row.UpdatedAt, IsEncrypted: row.IsEncrypted, IsPublic: row.IsPublic, HasThumbnail: row.ThumbnailImg != ""}, err
+	path, err := virtualpath.ResolveAbsolutePath(ctx, userID, row.DirectoryID, s.factory)
+	return pluginpkg.SafeFileInfo{UFID: row.UFID, FileName: row.FileName, AbsolutePath: path, FileSize: row.FileSize, MIMEType: row.MIMEType, CreatedAt: row.CreatedAt, UpdatedAt: row.UpdatedAt, IsEncrypted: row.IsEncrypted, IsPublic: row.IsPublic, HasThumbnail: row.ThumbnailImg != ""}, err
 }
-func (s *SubscriptionService) lookupPathID(ctx context.Context, userID, raw string) (string, error) {
-	normalized, err := virtualpath.Normalize(raw)
-	if err != nil {
-		return "", err
-	}
-	root, err := s.factory.VirtualPath().GetRootPath(ctx, userID)
-	if err != nil {
-		return "", err
-	}
-	id := strconv.Itoa(root.ID)
-	if normalized == "/" {
-		return id, nil
-	}
-	for _, part := range strings.Split(strings.TrimPrefix(normalized, "/"), "/") {
-		path, findErr := virtualpath.FindChildDirectory(ctx, userID, id, part, s.factory)
-		err = findErr
-		if err != nil {
-			return "", err
-		}
-		id = strconv.Itoa(path.ID)
-	}
-	return id, nil
+func (s *SubscriptionService) resolveDirectoryID(ctx context.Context, userID, raw string) (int, error) {
+	return virtualpath.ResolveDirectoryID(ctx, userID, raw, s.factory)
 }
 
 func (s *SubscriptionService) checkUserPermission(ctx context.Context, userID string) error {

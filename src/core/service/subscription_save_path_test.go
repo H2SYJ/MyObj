@@ -34,11 +34,11 @@ func TestRefreshExistingItemRebasesOnlyRetryableUnsubmittedItem(t *testing.T) {
 		t.Fatal(err)
 	}
 	service := &SubscriptionService{factory: impl.NewRepositoryFactory(db)}
-	subscription := &models.Subscription{ID: "subscription", UserID: "user", DefaultPath: "/保存目录"}
+	subscription := &models.Subscription{ID: "subscription", UserID: "user", SavePath: "/保存目录"}
 	manifest := &pluginpkg.Manifest{}
 
 	for index := range items {
-		pluginItem := pluginpkg.DownloadableItem{URL: items[index].URL, DownloadType: items[index].DownloadType, SavePath: "/频道"}
+		pluginItem := pluginpkg.DownloadableItem{URL: items[index].URL, DownloadType: items[index].DownloadType, RelativeSavePath: "频道"}
 		if err := service.refreshExistingItem(context.Background(), subscription, manifest, &items[index], pluginItem, map[string]bool{}); err != nil {
 			t.Fatal(err)
 		}

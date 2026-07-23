@@ -16,8 +16,6 @@ import (
 	"myobj/src/pkg/virtualpath"
 	"os"
 	"path/filepath"
-	"regexp"
-	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -52,8 +50,9 @@ type FileUploadData struct {
 	IsChunk bool `json:"is_chunk"`
 	// 分块数量
 	ChunkCount int `json:"chunk_count"`
-	// 文件虚拟路径
-	VirtualPath string `json:"virtual_path"`
+	// DirectoryID 用于用户主动上传；SavePath 用于下载任务按绝对路径入库。
+	DirectoryID int    `json:"directory_id"`
+	SavePath    string `json:"save_path"`
 	// 上传用户ID
 	UserID string `json:"user_id"`
 	// 预检阶段选中的存储磁盘ID
@@ -336,13 +335,12 @@ func ProcessUploadedFile(data *FileUploadData, repoFactory *impl.RepositoryFacto
 	}
 
 	userFile := &models.UserFiles{
-		UserID:      data.UserID,
-		FileID:      fileID,
-		IsPublic:    false, // 默认私有
-		VirtualPath: "",
-		FileName:    data.FileName,
-		CreatedAt:   custom_type.Now(),
-		UfID:        uuid.NewString(),
+		UserID:    data.UserID,
+		FileID:    fileID,
+		IsPublic:  false, // 默认私有
+		FileName:  data.FileName,
+		CreatedAt: custom_type.Now(),
+		UfID:      uuid.NewString(),
 	}
 
 	// 开启数据库事务，确保所有数据库操作的原子性
@@ -351,28 +349,24 @@ func ProcessUploadedFile(data *FileUploadData, repoFactory *impl.RepositoryFacto
 		// 创建基于事务的仓储工厂
 		txFactory := repoFactory.WithTx(tx)
 		// 目录和文件元数据在同一事务中创建，入库失败时不会遗留空目录。
-		if data.VirtualPath == "" {
-			rootPath, pathErr := txFactory.VirtualPath().GetRootPath(ctx, data.UserID)
+		if data.DirectoryID > 0 {
+			directory, pathErr := txFactory.Directory().GetByID(ctx, data.DirectoryID)
+			if pathErr != nil || directory.UserID != data.UserID {
+				return fmt.Errorf("虚拟目录不存在或无权访问")
+			}
+			userFile.DirectoryID = data.DirectoryID
+		} else if data.SavePath == "" {
+			rootDirectory, pathErr := txFactory.Directory().GetRoot(ctx, data.UserID)
 			if pathErr != nil {
 				return fmt.Errorf("获取根目录失败: %w", pathErr)
 			}
-			userFile.VirtualPath = fmt.Sprintf("%d", rootPath.ID)
-		} else if matched, _ := regexp.MatchString(`^\d+$`, data.VirtualPath); matched {
-			pathID, parseErr := strconv.Atoi(data.VirtualPath)
-			if parseErr != nil {
-				return fmt.Errorf("虚拟路径ID无效")
-			}
-			path, pathErr := txFactory.VirtualPath().GetByID(ctx, pathID)
-			if pathErr != nil || path.UserID != data.UserID {
-				return fmt.Errorf("虚拟路径不存在或无权访问")
-			}
-			userFile.VirtualPath = data.VirtualPath
+			userFile.DirectoryID = rootDirectory.ID
 		} else {
-			virtualPathID, pathErr := virtualpath.Ensure(ctx, data.UserID, data.VirtualPath, txFactory)
+			directoryID, pathErr := virtualpath.EnsureDirectory(ctx, data.UserID, data.SavePath, txFactory)
 			if pathErr != nil {
-				return fmt.Errorf("获取虚拟路径ID失败: %w", pathErr)
+				return fmt.Errorf("获取虚拟目录ID失败: %w", pathErr)
 			}
-			userFile.VirtualPath = virtualPathID
+			userFile.DirectoryID = directoryID
 		}
 
 		// 10.1 写入文件信息
@@ -739,91 +733,4 @@ func cleanupProcessedFiles(mainFilePath, thumbnailPath string, chunks []*models.
 	}
 
 	logger.LOG.Info("已清理处理失败的文件", "mainFilePath", mainFilePath)
-}
-
-// getVirtualPathID 获取虚拟路径的ID（如果路径不存在则创建）
-func getVirtualPathID(ctx context.Context, userID, fullPath string, repoFactory *impl.RepositoryFactory) (string, error) {
-	// 分割路径为各层级
-	parts := strings.Split(strings.Trim(fullPath, "/"), "/")
-	if len(parts) == 0 {
-		return "", fmt.Errorf("无效的虚拟路径: %s", fullPath)
-	}
-
-	// 首先获取用户的根目录（home），作为第一级子目录的父级
-	rootPath, err := repoFactory.VirtualPath().GetRootPath(ctx, userID)
-	if err != nil {
-		return "", fmt.Errorf("获取根目录失败: %w", err)
-	}
-	var parentID = fmt.Sprintf("%d", rootPath.ID) // 使用根目录的ID作为第一级子目录的父级ID
-	var lastPathID string
-
-	// 逐层查找或创建虚拟路径
-	for _, part := range parts {
-		if part == "" {
-			continue
-		}
-
-		currentPath := "/" + part
-
-		// 查询当前层级路径是否存在
-		existingPaths, err := repoFactory.VirtualPath().ListByUserID(ctx, userID, 0, 1000)
-		if err != nil {
-			return "", fmt.Errorf("查询虚拟路径失败: %w", err)
-		}
-
-		// 查找是否已存在当前路径且父级匹配的记录
-		var existingPath *models.VirtualPath
-		for _, vp := range existingPaths {
-			if vp.Path == currentPath && vp.ParentLevel == parentID {
-				existingPath = vp
-				break
-			}
-		}
-
-		if existingPath != nil {
-			// 路径已存在，使用该路径的ID作为下一层的父级ID
-			parentID = fmt.Sprintf("%d", existingPath.ID)
-			lastPathID = parentID
-		} else {
-			// 路径不存在，创建新记录
-			newPath := &models.VirtualPath{
-				UserID:      userID,
-				Path:        currentPath,
-				IsFile:      false,
-				IsDir:       true,
-				ParentLevel: parentID,
-				CreatedTime: custom_type.Now(),
-				UpdateTime:  custom_type.Now(),
-			}
-
-			if err := repoFactory.VirtualPath().Create(ctx, newPath); err != nil {
-				// 可能是并发创建导致的重复，再次查询
-				existingPaths, queryErr := repoFactory.VirtualPath().ListByUserID(ctx, userID, 0, 1000)
-				if queryErr != nil {
-					return "", fmt.Errorf("创建虚拟路径失败: %w, 查询失败: %w", err, queryErr)
-				}
-				for _, vp := range existingPaths {
-					if vp.Path == currentPath && vp.ParentLevel == parentID {
-						existingPath = vp
-						break
-					}
-				}
-				if existingPath != nil {
-					parentID = fmt.Sprintf("%d", existingPath.ID)
-					lastPathID = parentID
-				} else {
-					return "", fmt.Errorf("创建虚拟路径失败且无法查询到已创建的路径")
-				}
-			} else {
-				parentID = fmt.Sprintf("%d", newPath.ID)
-				lastPathID = parentID
-			}
-		}
-	}
-
-	if lastPathID == "" {
-		return "", fmt.Errorf("无法获取虚拟路径ID: %s", fullPath)
-	}
-
-	return lastPathID, nil
 }

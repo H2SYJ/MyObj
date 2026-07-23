@@ -110,8 +110,7 @@ export const downloadFile = (fileId: string) => {
  */
 export interface MoveFileRequest {
   file_id: string
-  source_path: string
-  target_path: string
+  target_directory_id: number
 }
 
 /**
@@ -123,8 +122,8 @@ export const moveFile = (data: MoveFileRequest) => {
 
 export interface MoveItemsRequest {
   file_ids: string[]
-  dir_ids: number[]
-  target_path: string
+  directory_ids: number[]
+  target_directory_id: number
 }
 
 export const moveItems = (data: MoveItemsRequest) => {
@@ -132,10 +131,19 @@ export const moveItems = (data: MoveItemsRequest) => {
 }
 
 /**
- * 获取虚拟路径树
+ * 获取虚拟目录树
  */
-export const getVirtualPathTree = () => {
-  return get<ApiResponse>(API_ENDPOINTS.FILE.LIST.replace('/list', '/virtualPath'))
+export interface DirectoryItem {
+  id: number
+  name: string
+  parent_id: number
+  absolute_path: string
+  created_at: string
+  updated_at: string
+}
+
+export const getDirectories = () => {
+  return get<ApiResponse<DirectoryItem[]>>(API_ENDPOINTS.FILE.DIRECTORIES)
 }
 
 /**
@@ -182,7 +190,7 @@ export interface uploadPrecheckParams {
   file_name: string
   file_size: number
   files_md5: string[]
-  path_id: string
+  directory_id: number
 }
 
 /**
@@ -304,7 +312,7 @@ export interface UploadTaskItem {
   is_enc: boolean
   result_file_id?: string
   error_message?: string
-  path_id: string
+  directory_id: number
   create_time: string
   update_time: string
   expire_time: string

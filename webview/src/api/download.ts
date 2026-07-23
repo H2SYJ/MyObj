@@ -16,7 +16,7 @@ export interface OfflineDownloadTask {
   type_text: string
   state: number
   state_text: string
-  virtual_path: string
+  save_path: string
   support_range: boolean
   enable_encryption: boolean
   requires_password: boolean
@@ -32,7 +32,7 @@ export interface OfflineDownloadTask {
 // 创建离线下载任务请求
 export interface CreateOfflineDownloadRequest {
   url: string
-  virtual_path?: string
+  save_path?: string
   enable_encryption?: boolean
   file_password?: string
   download_type?: 'auto' | 'http' | 'hls'
@@ -208,7 +208,7 @@ export interface ParseTorrentRequest {
 export interface StartTorrentDownloadRequest {
   content: string // 种子文件内容（Base64编码）或磁力链接
   file_indexes: number[] // 要下载的文件索引列表
-  virtual_path?: string // 保存的虚拟路径（可选，默认为/离线下载/）
+  save_path?: string // 用户虚拟绝对保存路径（可选，默认为/离线下载）
   enable_encryption?: boolean // 是否加密存储
   file_password?: string // 文件密码（加密文件必需）
 }

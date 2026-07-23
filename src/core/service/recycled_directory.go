@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"myobj/src/pkg/custom_type"
 	"myobj/src/pkg/models"
-	"strconv"
 
 	"gorm.io/gorm"
 )
@@ -25,13 +24,13 @@ func (r *RecycledService) restoreDirectory(ctx context.Context, recycled *models
 	}
 	targetParentID := recycled.OriginalParentID
 	if targetParentID > 0 {
-		parent, err := r.factory.VirtualPath().GetByID(ctx, targetParentID)
+		parent, err := r.factory.Directory().GetByID(ctx, targetParentID)
 		if err != nil || parent.UserID != recycled.UserID {
 			targetParentID = 0
 		}
 	}
 	if targetParentID == 0 {
-		root, err := r.factory.VirtualPath().GetRootPath(ctx, recycled.UserID)
+		root, err := r.factory.Directory().GetRoot(ctx, recycled.UserID)
 		if err != nil {
 			return nil, fmt.Errorf("获取根目录失败: %w", err)
 		}
@@ -53,9 +52,9 @@ func (r *RecycledService) restoreDirectory(ctx context.Context, recycled *models
 			if node.Depth == 0 {
 				name = availableRestoreFolderName(tx, recycled.UserID, parentID, name)
 			}
-			created := &models.VirtualPath{
-				UserID: recycled.UserID, Path: "/" + name, IsDir: true,
-				ParentLevel: strconv.Itoa(parentID), CreatedTime: custom_type.Now(), UpdateTime: custom_type.Now(),
+			created := &models.VirtualDirectory{
+				UserID: recycled.UserID, Name: name, ParentID: parentID,
+				CreatedAt: custom_type.Now(), UpdatedAt: custom_type.Now(),
 			}
 			if err := tx.Create(created).Error; err != nil {
 				return err
@@ -69,7 +68,7 @@ func (r *RecycledService) restoreDirectory(ctx context.Context, recycled *models
 			}
 			if err := tx.Unscoped().Model(&models.UserFiles{}).
 				Where("user_id = ? AND uf_id = ?", recycled.UserID, member.FileID).
-				Updates(map[string]interface{}{"virtual_path": strconv.Itoa(newDirID), "deleted_at": nil}).Error; err != nil {
+				Updates(map[string]interface{}{"directory_id": newDirID, "deleted_at": nil}).Error; err != nil {
 				return err
 			}
 		}
@@ -95,8 +94,8 @@ func availableRestoreFolderName(tx *gorm.DB, userID string, parentID int, origin
 	name := original
 	for suffix := 0; ; suffix++ {
 		var count int64
-		_ = tx.Model(&models.VirtualPath{}).
-			Where("user_id = ? AND parent_level = ? AND path = ?", userID, strconv.Itoa(parentID), "/"+name).
+		_ = tx.Model(&models.VirtualDirectory{}).
+			Where("user_id = ? AND parent_id = ? AND name = ?", userID, parentID, name).
 			Count(&count).Error
 		if count == 0 {
 			return name

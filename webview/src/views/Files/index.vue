@@ -450,7 +450,7 @@
   }))
 
   const entryName = (entry: FileEntry) =>
-    entry.type === 'file' ? entry.file.file_name : entry.folder.name.replace(/^\/+/, '')
+    entry.type === 'file' ? entry.file.file_name : entry.folder.name
   const selectionCapabilities = computed(() => getFileSelectionCapabilities(selectedEntries.value))
 
   const updateDeviceMode = () => {
@@ -636,7 +636,7 @@
   }
 
   const openEntry = async (entry: FileEntry) => {
-    if (entry.type === 'folder') navigateToPath(entry.folder.path)
+    if (entry.type === 'folder') navigateToPath(entry.folder.id)
     else await handleOpenFile(entry.file)
   }
 
@@ -823,7 +823,7 @@
   )
 
   watch(
-    () => route.query.virtualPath,
+    () => route.query.directoryId,
     () => {
       clearCurrentSelection()
       if (hasSearchKeyword.value) clearSearch()

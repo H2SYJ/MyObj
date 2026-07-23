@@ -49,7 +49,7 @@ const docTemplate = `{
                         "in": "body",
                         "required": true,
                         "schema": {
-                            "$ref": "#/definitions/myobj_src_core_domain_request.CreateLocalFileDownloadRequest"
+                            "$ref": "#/definitions/request.CreateLocalFileDownloadRequest"
                         }
                     }
                 ],
@@ -59,7 +59,7 @@ const docTemplate = `{
                         "schema": {
                             "allOf": [
                                 {
-                                    "$ref": "#/definitions/myobj_src_pkg_models.JsonResponse"
+                                    "$ref": "#/definitions/models.JsonResponse"
                                 },
                                 {
                                     "type": "object",
@@ -76,13 +76,13 @@ const docTemplate = `{
                     "400": {
                         "description": "参数错误",
                         "schema": {
-                            "$ref": "#/definitions/myobj_src_pkg_models.JsonResponse"
+                            "$ref": "#/definitions/models.JsonResponse"
                         }
                     },
                     "500": {
                         "description": "创建失败",
                         "schema": {
-                            "$ref": "#/definitions/myobj_src_pkg_models.JsonResponse"
+                            "$ref": "#/definitions/models.JsonResponse"
                         }
                     }
                 }
@@ -134,13 +134,13 @@ const docTemplate = `{
                     "400": {
                         "description": "任务不存在或未准备完成",
                         "schema": {
-                            "$ref": "#/definitions/myobj_src_pkg_models.JsonResponse"
+                            "$ref": "#/definitions/models.JsonResponse"
                         }
                     },
                     "500": {
                         "description": "下载失败",
                         "schema": {
-                            "$ref": "#/definitions/myobj_src_pkg_models.JsonResponse"
+                            "$ref": "#/definitions/models.JsonResponse"
                         }
                     }
                 }
@@ -198,19 +198,19 @@ const docTemplate = `{
                     "400": {
                         "description": "参数错误或文件不存在",
                         "schema": {
-                            "$ref": "#/definitions/myobj_src_pkg_models.JsonResponse"
+                            "$ref": "#/definitions/models.JsonResponse"
                         }
                     },
                     "403": {
                         "description": "无权限",
                         "schema": {
-                            "$ref": "#/definitions/myobj_src_pkg_models.JsonResponse"
+                            "$ref": "#/definitions/models.JsonResponse"
                         }
                     },
                     "500": {
                         "description": "预览失败",
                         "schema": {
-                            "$ref": "#/definitions/myobj_src_pkg_models.JsonResponse"
+                            "$ref": "#/definitions/models.JsonResponse"
                         }
                     }
                 }
@@ -241,7 +241,7 @@ const docTemplate = `{
                         "in": "body",
                         "required": true,
                         "schema": {
-                            "$ref": "#/definitions/myobj_src_core_domain_request.ParseTorrentRequest"
+                            "$ref": "#/definitions/request.ParseTorrentRequest"
                         }
                     }
                 ],
@@ -251,13 +251,13 @@ const docTemplate = `{
                         "schema": {
                             "allOf": [
                                 {
-                                    "$ref": "#/definitions/myobj_src_pkg_models.JsonResponse"
+                                    "$ref": "#/definitions/models.JsonResponse"
                                 },
                                 {
                                     "type": "object",
                                     "properties": {
                                         "data": {
-                                            "$ref": "#/definitions/myobj_src_core_domain_response.ParseTorrentResponse"
+                                            "$ref": "#/definitions/response.ParseTorrentResponse"
                                         }
                                     }
                                 }
@@ -267,13 +267,13 @@ const docTemplate = `{
                     "400": {
                         "description": "参数错误",
                         "schema": {
-                            "$ref": "#/definitions/myobj_src_pkg_models.JsonResponse"
+                            "$ref": "#/definitions/models.JsonResponse"
                         }
                     },
                     "500": {
                         "description": "解析失败",
                         "schema": {
-                            "$ref": "#/definitions/myobj_src_pkg_models.JsonResponse"
+                            "$ref": "#/definitions/models.JsonResponse"
                         }
                     }
                 }
@@ -304,7 +304,7 @@ const docTemplate = `{
                         "in": "body",
                         "required": true,
                         "schema": {
-                            "$ref": "#/definitions/myobj_src_core_domain_request.StartTorrentDownloadRequest"
+                            "$ref": "#/definitions/request.StartTorrentDownloadRequest"
                         }
                     }
                 ],
@@ -314,13 +314,13 @@ const docTemplate = `{
                         "schema": {
                             "allOf": [
                                 {
-                                    "$ref": "#/definitions/myobj_src_pkg_models.JsonResponse"
+                                    "$ref": "#/definitions/models.JsonResponse"
                                 },
                                 {
                                     "type": "object",
                                     "properties": {
                                         "data": {
-                                            "$ref": "#/definitions/myobj_src_core_domain_response.StartTorrentDownloadResponse"
+                                            "$ref": "#/definitions/response.StartTorrentDownloadResponse"
                                         }
                                     }
                                 }
@@ -330,13 +330,13 @@ const docTemplate = `{
                     "400": {
                         "description": "参数错误",
                         "schema": {
-                            "$ref": "#/definitions/myobj_src_pkg_models.JsonResponse"
+                            "$ref": "#/definitions/models.JsonResponse"
                         }
                     },
                     "500": {
                         "description": "创建失败",
                         "schema": {
-                            "$ref": "#/definitions/myobj_src_pkg_models.JsonResponse"
+                            "$ref": "#/definitions/models.JsonResponse"
                         }
                     }
                 }
@@ -367,7 +367,7 @@ const docTemplate = `{
                         "in": "body",
                         "required": true,
                         "schema": {
-                            "$ref": "#/definitions/myobj_src_core_domain_request.DeleteFileRequest"
+                            "$ref": "#/definitions/request.DeleteFileRequest"
                         }
                     }
                 ],
@@ -377,7 +377,7 @@ const docTemplate = `{
                         "schema": {
                             "allOf": [
                                 {
-                                    "$ref": "#/definitions/myobj_src_pkg_models.JsonResponse"
+                                    "$ref": "#/definitions/models.JsonResponse"
                                 },
                                 {
                                     "type": "object",
@@ -393,7 +393,7 @@ const docTemplate = `{
                     "500": {
                         "description": "删除失败",
                         "schema": {
-                            "$ref": "#/definitions/myobj_src_pkg_models.JsonResponse"
+                            "$ref": "#/definitions/models.JsonResponse"
                         }
                     }
                 }
@@ -424,7 +424,7 @@ const docTemplate = `{
                         "in": "body",
                         "required": true,
                         "schema": {
-                            "$ref": "#/definitions/myobj_src_core_domain_request.DeleteDirRequest"
+                            "$ref": "#/definitions/request.DeleteDirRequest"
                         }
                     }
                 ],
@@ -434,7 +434,7 @@ const docTemplate = `{
                         "schema": {
                             "allOf": [
                                 {
-                                    "$ref": "#/definitions/myobj_src_pkg_models.JsonResponse"
+                                    "$ref": "#/definitions/models.JsonResponse"
                                 },
                                 {
                                     "type": "object",
@@ -450,19 +450,58 @@ const docTemplate = `{
                     "400": {
                         "description": "参数错误或根目录不能删除",
                         "schema": {
-                            "$ref": "#/definitions/myobj_src_pkg_models.JsonResponse"
+                            "$ref": "#/definitions/models.JsonResponse"
                         }
                     },
                     "403": {
                         "description": "无权访问",
                         "schema": {
-                            "$ref": "#/definitions/myobj_src_pkg_models.JsonResponse"
+                            "$ref": "#/definitions/models.JsonResponse"
                         }
                     },
                     "404": {
                         "description": "目录不存在",
                         "schema": {
-                            "$ref": "#/definitions/myobj_src_pkg_models.JsonResponse"
+                            "$ref": "#/definitions/models.JsonResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/file/directories": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "文件管理"
+                ],
+                "summary": "获取虚拟目录",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/models.JsonResponse"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "type": "array",
+                                            "items": {
+                                                "$ref": "#/definitions/response.DirectoryItem"
+                                            }
+                                        }
+                                    }
+                                }
+                            ]
                         }
                     }
                 }
@@ -488,9 +527,9 @@ const docTemplate = `{
                 "summary": "获取文件列表",
                 "parameters": [
                     {
-                        "type": "string",
-                        "description": "虚拟路径",
-                        "name": "virtualPath",
+                        "type": "integer",
+                        "description": "目录ID，0表示用户根目录",
+                        "name": "directory_id",
                         "in": "query"
                     },
                     {
@@ -517,13 +556,13 @@ const docTemplate = `{
                         "schema": {
                             "allOf": [
                                 {
-                                    "$ref": "#/definitions/myobj_src_pkg_models.JsonResponse"
+                                    "$ref": "#/definitions/models.JsonResponse"
                                 },
                                 {
                                     "type": "object",
                                     "properties": {
                                         "data": {
-                                            "type": "object"
+                                            "$ref": "#/definitions/response.FileListResponse"
                                         }
                                     }
                                 }
@@ -533,7 +572,133 @@ const docTemplate = `{
                     "500": {
                         "description": "获取失败",
                         "schema": {
-                            "$ref": "#/definitions/myobj_src_pkg_models.JsonResponse"
+                            "$ref": "#/definitions/models.JsonResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/file/makeDir": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "文件管理"
+                ],
+                "summary": "创建虚拟目录",
+                "parameters": [
+                    {
+                        "description": "目录名称和父目录ID",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/request.MakeDirRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/models.JsonResponse"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "$ref": "#/definitions/response.DirectoryItem"
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    }
+                }
+            }
+        },
+        "/file/move": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "文件管理"
+                ],
+                "summary": "移动单个文件",
+                "parameters": [
+                    {
+                        "description": "文件ID和目标目录ID",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/request.MoveFileRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/models.JsonResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/file/moveBatch": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "文件管理"
+                ],
+                "summary": "批量移动文件和目录",
+                "parameters": [
+                    {
+                        "description": "文件ID、目录ID和目标目录ID",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/request.MoveItemsRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/models.JsonResponse"
                         }
                     }
                 }
@@ -559,7 +724,7 @@ const docTemplate = `{
                         "in": "body",
                         "required": true,
                         "schema": {
-                            "$ref": "#/definitions/myobj_src_core_domain_request.PublicFileListRequest"
+                            "$ref": "#/definitions/request.PublicFileListRequest"
                         }
                     }
                 ],
@@ -569,7 +734,7 @@ const docTemplate = `{
                         "schema": {
                             "allOf": [
                                 {
-                                    "$ref": "#/definitions/myobj_src_pkg_models.JsonResponse"
+                                    "$ref": "#/definitions/models.JsonResponse"
                                 },
                                 {
                                     "type": "object",
@@ -585,7 +750,7 @@ const docTemplate = `{
                     "500": {
                         "description": "失败",
                         "schema": {
-                            "$ref": "#/definitions/myobj_src_pkg_models.JsonResponse"
+                            "$ref": "#/definitions/models.JsonResponse"
                         }
                     }
                 }
@@ -616,7 +781,7 @@ const docTemplate = `{
                         "in": "body",
                         "required": true,
                         "schema": {
-                            "$ref": "#/definitions/myobj_src_core_domain_request.RenameFileRequest"
+                            "$ref": "#/definitions/request.RenameFileRequest"
                         }
                     }
                 ],
@@ -626,7 +791,7 @@ const docTemplate = `{
                         "schema": {
                             "allOf": [
                                 {
-                                    "$ref": "#/definitions/myobj_src_pkg_models.JsonResponse"
+                                    "$ref": "#/definitions/models.JsonResponse"
                                 },
                                 {
                                     "type": "object",
@@ -642,13 +807,13 @@ const docTemplate = `{
                     "400": {
                         "description": "参数错误或重命名失败",
                         "schema": {
-                            "$ref": "#/definitions/myobj_src_pkg_models.JsonResponse"
+                            "$ref": "#/definitions/models.JsonResponse"
                         }
                     },
                     "404": {
                         "description": "文件不存在",
                         "schema": {
-                            "$ref": "#/definitions/myobj_src_pkg_models.JsonResponse"
+                            "$ref": "#/definitions/models.JsonResponse"
                         }
                     }
                 }
@@ -679,7 +844,7 @@ const docTemplate = `{
                         "in": "body",
                         "required": true,
                         "schema": {
-                            "$ref": "#/definitions/myobj_src_core_domain_request.RenameDirRequest"
+                            "$ref": "#/definitions/request.RenameDirRequest"
                         }
                     }
                 ],
@@ -689,7 +854,7 @@ const docTemplate = `{
                         "schema": {
                             "allOf": [
                                 {
-                                    "$ref": "#/definitions/myobj_src_pkg_models.JsonResponse"
+                                    "$ref": "#/definitions/models.JsonResponse"
                                 },
                                 {
                                     "type": "object",
@@ -705,19 +870,19 @@ const docTemplate = `{
                     "400": {
                         "description": "参数错误或重命名失败",
                         "schema": {
-                            "$ref": "#/definitions/myobj_src_pkg_models.JsonResponse"
+                            "$ref": "#/definitions/models.JsonResponse"
                         }
                     },
                     "403": {
                         "description": "无权访问",
                         "schema": {
-                            "$ref": "#/definitions/myobj_src_pkg_models.JsonResponse"
+                            "$ref": "#/definitions/models.JsonResponse"
                         }
                     },
                     "404": {
                         "description": "目录不存在",
                         "schema": {
-                            "$ref": "#/definitions/myobj_src_pkg_models.JsonResponse"
+                            "$ref": "#/definitions/models.JsonResponse"
                         }
                     }
                 }
@@ -770,7 +935,7 @@ const docTemplate = `{
                         "schema": {
                             "allOf": [
                                 {
-                                    "$ref": "#/definitions/myobj_src_pkg_models.JsonResponse"
+                                    "$ref": "#/definitions/models.JsonResponse"
                                 },
                                 {
                                     "type": "object",
@@ -786,7 +951,7 @@ const docTemplate = `{
                     "500": {
                         "description": "搜索失败",
                         "schema": {
-                            "$ref": "#/definitions/myobj_src_pkg_models.JsonResponse"
+                            "$ref": "#/definitions/models.JsonResponse"
                         }
                     }
                 }
@@ -817,7 +982,7 @@ const docTemplate = `{
                         "in": "body",
                         "required": true,
                         "schema": {
-                            "$ref": "#/definitions/myobj_src_core_domain_request.SetFilePublicRequest"
+                            "$ref": "#/definitions/request.SetFilePublicRequest"
                         }
                     }
                 ],
@@ -827,7 +992,7 @@ const docTemplate = `{
                         "schema": {
                             "allOf": [
                                 {
-                                    "$ref": "#/definitions/myobj_src_pkg_models.JsonResponse"
+                                    "$ref": "#/definitions/models.JsonResponse"
                                 },
                                 {
                                     "type": "object",
@@ -843,13 +1008,13 @@ const docTemplate = `{
                     "400": {
                         "description": "参数错误或加密文件不能公开",
                         "schema": {
-                            "$ref": "#/definitions/myobj_src_pkg_models.JsonResponse"
+                            "$ref": "#/definitions/models.JsonResponse"
                         }
                     },
                     "404": {
                         "description": "文件不存在",
                         "schema": {
-                            "$ref": "#/definitions/myobj_src_pkg_models.JsonResponse"
+                            "$ref": "#/definitions/models.JsonResponse"
                         }
                     }
                 }
@@ -895,7 +1060,7 @@ const docTemplate = `{
                         "schema": {
                             "allOf": [
                                 {
-                                    "$ref": "#/definitions/myobj_src_pkg_models.JsonResponse"
+                                    "$ref": "#/definitions/models.JsonResponse"
                                 },
                                 {
                                     "type": "object",
@@ -911,25 +1076,25 @@ const docTemplate = `{
                     "400": {
                         "description": "参数错误或缩略图无效",
                         "schema": {
-                            "$ref": "#/definitions/myobj_src_pkg_models.JsonResponse"
+                            "$ref": "#/definitions/models.JsonResponse"
                         }
                     },
                     "403": {
                         "description": "加密文件不支持缩略图",
                         "schema": {
-                            "$ref": "#/definitions/myobj_src_pkg_models.JsonResponse"
+                            "$ref": "#/definitions/models.JsonResponse"
                         }
                     },
                     "404": {
                         "description": "文件不存在或无权访问",
                         "schema": {
-                            "$ref": "#/definitions/myobj_src_pkg_models.JsonResponse"
+                            "$ref": "#/definitions/models.JsonResponse"
                         }
                     },
                     "500": {
                         "description": "修改失败",
                         "schema": {
-                            "$ref": "#/definitions/myobj_src_pkg_models.JsonResponse"
+                            "$ref": "#/definitions/models.JsonResponse"
                         }
                     }
                 }
@@ -1011,7 +1176,7 @@ const docTemplate = `{
                         "schema": {
                             "allOf": [
                                 {
-                                    "$ref": "#/definitions/myobj_src_pkg_models.JsonResponse"
+                                    "$ref": "#/definitions/models.JsonResponse"
                                 },
                                 {
                                     "type": "object",
@@ -1027,7 +1192,7 @@ const docTemplate = `{
                     "400": {
                         "description": "上传失败",
                         "schema": {
-                            "$ref": "#/definitions/myobj_src_pkg_models.JsonResponse"
+                            "$ref": "#/definitions/models.JsonResponse"
                         }
                     }
                 }
@@ -1065,7 +1230,7 @@ const docTemplate = `{
                         "schema": {
                             "allOf": [
                                 {
-                                    "$ref": "#/definitions/myobj_src_pkg_models.JsonResponse"
+                                    "$ref": "#/definitions/models.JsonResponse"
                                 },
                                 {
                                     "type": "object",
@@ -1081,7 +1246,7 @@ const docTemplate = `{
                     "500": {
                         "description": "清理失败",
                         "schema": {
-                            "$ref": "#/definitions/myobj_src_pkg_models.JsonResponse"
+                            "$ref": "#/definitions/models.JsonResponse"
                         }
                     }
                 }
@@ -1112,7 +1277,7 @@ const docTemplate = `{
                         "in": "body",
                         "required": true,
                         "schema": {
-                            "$ref": "#/definitions/myobj_src_core_domain_request.DeleteUploadTaskRequest"
+                            "$ref": "#/definitions/request.DeleteUploadTaskRequest"
                         }
                     }
                 ],
@@ -1120,19 +1285,19 @@ const docTemplate = `{
                     "200": {
                         "description": "删除成功",
                         "schema": {
-                            "$ref": "#/definitions/myobj_src_pkg_models.JsonResponse"
+                            "$ref": "#/definitions/models.JsonResponse"
                         }
                     },
                     "400": {
                         "description": "参数错误",
                         "schema": {
-                            "$ref": "#/definitions/myobj_src_pkg_models.JsonResponse"
+                            "$ref": "#/definitions/models.JsonResponse"
                         }
                     },
                     "500": {
                         "description": "删除失败",
                         "schema": {
-                            "$ref": "#/definitions/myobj_src_pkg_models.JsonResponse"
+                            "$ref": "#/definitions/models.JsonResponse"
                         }
                     }
                 }
@@ -1162,7 +1327,7 @@ const docTemplate = `{
                         "schema": {
                             "allOf": [
                                 {
-                                    "$ref": "#/definitions/myobj_src_pkg_models.JsonResponse"
+                                    "$ref": "#/definitions/models.JsonResponse"
                                 },
                                 {
                                     "type": "object",
@@ -1181,7 +1346,7 @@ const docTemplate = `{
                     "500": {
                         "description": "查询失败",
                         "schema": {
-                            "$ref": "#/definitions/myobj_src_pkg_models.JsonResponse"
+                            "$ref": "#/definitions/models.JsonResponse"
                         }
                     }
                 }
@@ -1212,7 +1377,7 @@ const docTemplate = `{
                         "in": "body",
                         "required": true,
                         "schema": {
-                            "$ref": "#/definitions/myobj_src_core_domain_request.UploadPrecheckRequest"
+                            "$ref": "#/definitions/request.UploadPrecheckRequest"
                         }
                     }
                 ],
@@ -1222,7 +1387,7 @@ const docTemplate = `{
                         "schema": {
                             "allOf": [
                                 {
-                                    "$ref": "#/definitions/myobj_src_pkg_models.JsonResponse"
+                                    "$ref": "#/definitions/models.JsonResponse"
                                 },
                                 {
                                     "type": "object",
@@ -1238,7 +1403,7 @@ const docTemplate = `{
                     "400": {
                         "description": "预检失败",
                         "schema": {
-                            "$ref": "#/definitions/myobj_src_pkg_models.JsonResponse"
+                            "$ref": "#/definitions/models.JsonResponse"
                         }
                     }
                 }
@@ -1277,13 +1442,13 @@ const docTemplate = `{
                         "schema": {
                             "allOf": [
                                 {
-                                    "$ref": "#/definitions/myobj_src_pkg_models.JsonResponse"
+                                    "$ref": "#/definitions/models.JsonResponse"
                                 },
                                 {
                                     "type": "object",
                                     "properties": {
                                         "data": {
-                                            "$ref": "#/definitions/myobj_src_core_domain_response.UploadProgressResponse"
+                                            "$ref": "#/definitions/response.UploadProgressResponse"
                                         }
                                     }
                                 }
@@ -1293,13 +1458,13 @@ const docTemplate = `{
                     "400": {
                         "description": "参数错误",
                         "schema": {
-                            "$ref": "#/definitions/myobj_src_pkg_models.JsonResponse"
+                            "$ref": "#/definitions/models.JsonResponse"
                         }
                     },
                     "404": {
                         "description": "预检信息不存在",
                         "schema": {
-                            "$ref": "#/definitions/myobj_src_pkg_models.JsonResponse"
+                            "$ref": "#/definitions/models.JsonResponse"
                         }
                     }
                 }
@@ -1330,7 +1495,7 @@ const docTemplate = `{
                         "in": "body",
                         "required": true,
                         "schema": {
-                            "$ref": "#/definitions/myobj_src_core_domain_request.RenewExpiredTaskRequest"
+                            "$ref": "#/definitions/request.RenewExpiredTaskRequest"
                         }
                     }
                 ],
@@ -1340,7 +1505,7 @@ const docTemplate = `{
                         "schema": {
                             "allOf": [
                                 {
-                                    "$ref": "#/definitions/myobj_src_pkg_models.JsonResponse"
+                                    "$ref": "#/definitions/models.JsonResponse"
                                 },
                                 {
                                     "type": "object",
@@ -1356,25 +1521,96 @@ const docTemplate = `{
                     "400": {
                         "description": "参数错误",
                         "schema": {
-                            "$ref": "#/definitions/myobj_src_pkg_models.JsonResponse"
+                            "$ref": "#/definitions/models.JsonResponse"
                         }
                     },
                     "403": {
                         "description": "无权操作",
                         "schema": {
-                            "$ref": "#/definitions/myobj_src_pkg_models.JsonResponse"
+                            "$ref": "#/definitions/models.JsonResponse"
                         }
                     },
                     "404": {
                         "description": "任务不存在",
                         "schema": {
-                            "$ref": "#/definitions/myobj_src_pkg_models.JsonResponse"
+                            "$ref": "#/definitions/models.JsonResponse"
                         }
                     },
                     "500": {
                         "description": "延期失败",
                         "schema": {
-                            "$ref": "#/definitions/myobj_src_pkg_models.JsonResponse"
+                            "$ref": "#/definitions/models.JsonResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/file/upload/taskList": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "分页获取用户上传任务列表，不返回敏感信息（如临时目录路径）",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "文件管理"
+                ],
+                "summary": "获取上传任务列表",
+                "parameters": [
+                    {
+                        "minimum": 1,
+                        "type": "integer",
+                        "description": "页码",
+                        "name": "page",
+                        "in": "query",
+                        "required": true
+                    },
+                    {
+                        "maximum": 100,
+                        "minimum": 1,
+                        "type": "integer",
+                        "description": "每页数量",
+                        "name": "pageSize",
+                        "in": "query",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "成功",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/models.JsonResponse"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "$ref": "#/definitions/response.UploadTaskListResponse"
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    },
+                    "400": {
+                        "description": "参数错误",
+                        "schema": {
+                            "$ref": "#/definitions/models.JsonResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "失败",
+                        "schema": {
+                            "$ref": "#/definitions/models.JsonResponse"
                         }
                     }
                 }
@@ -1404,7 +1640,7 @@ const docTemplate = `{
                         "schema": {
                             "allOf": [
                                 {
-                                    "$ref": "#/definitions/myobj_src_pkg_models.JsonResponse"
+                                    "$ref": "#/definitions/models.JsonResponse"
                                 },
                                 {
                                     "type": "object",
@@ -1423,7 +1659,7 @@ const docTemplate = `{
                     "500": {
                         "description": "查询失败",
                         "schema": {
-                            "$ref": "#/definitions/myobj_src_pkg_models.JsonResponse"
+                            "$ref": "#/definitions/models.JsonResponse"
                         }
                     }
                 }
@@ -1454,7 +1690,7 @@ const docTemplate = `{
                         "in": "body",
                         "required": true,
                         "schema": {
-                            "$ref": "#/definitions/myobj_src_core_domain_request.DeleteRecycledRequest"
+                            "$ref": "#/definitions/request.DeleteRecycledRequest"
                         }
                     }
                 ],
@@ -1462,13 +1698,13 @@ const docTemplate = `{
                     "200": {
                         "description": "删除成功",
                         "schema": {
-                            "$ref": "#/definitions/myobj_src_pkg_models.JsonResponse"
+                            "$ref": "#/definitions/models.JsonResponse"
                         }
                     },
                     "500": {
                         "description": "删除失败",
                         "schema": {
-                            "$ref": "#/definitions/myobj_src_pkg_models.JsonResponse"
+                            "$ref": "#/definitions/models.JsonResponse"
                         }
                     }
                 }
@@ -1493,13 +1729,13 @@ const docTemplate = `{
                     "200": {
                         "description": "清空成功",
                         "schema": {
-                            "$ref": "#/definitions/myobj_src_pkg_models.JsonResponse"
+                            "$ref": "#/definitions/models.JsonResponse"
                         }
                     },
                     "500": {
                         "description": "清空失败",
                         "schema": {
-                            "$ref": "#/definitions/myobj_src_pkg_models.JsonResponse"
+                            "$ref": "#/definitions/models.JsonResponse"
                         }
                     }
                 }
@@ -1548,7 +1784,7 @@ const docTemplate = `{
                         "schema": {
                             "allOf": [
                                 {
-                                    "$ref": "#/definitions/myobj_src_pkg_models.JsonResponse"
+                                    "$ref": "#/definitions/models.JsonResponse"
                                 },
                                 {
                                     "type": "object",
@@ -1564,7 +1800,7 @@ const docTemplate = `{
                     "500": {
                         "description": "获取失败",
                         "schema": {
-                            "$ref": "#/definitions/myobj_src_pkg_models.JsonResponse"
+                            "$ref": "#/definitions/models.JsonResponse"
                         }
                     }
                 }
@@ -1595,7 +1831,7 @@ const docTemplate = `{
                         "in": "body",
                         "required": true,
                         "schema": {
-                            "$ref": "#/definitions/myobj_src_core_domain_request.RestoreFileRequest"
+                            "$ref": "#/definitions/request.RestoreFileRequest"
                         }
                     }
                 ],
@@ -1603,13 +1839,13 @@ const docTemplate = `{
                     "200": {
                         "description": "还原成功",
                         "schema": {
-                            "$ref": "#/definitions/myobj_src_pkg_models.JsonResponse"
+                            "$ref": "#/definitions/models.JsonResponse"
                         }
                     },
                     "500": {
                         "description": "还原失败",
                         "schema": {
-                            "$ref": "#/definitions/myobj_src_pkg_models.JsonResponse"
+                            "$ref": "#/definitions/models.JsonResponse"
                         }
                     }
                 }
@@ -1640,7 +1876,7 @@ const docTemplate = `{
                         "in": "body",
                         "required": true,
                         "schema": {
-                            "$ref": "#/definitions/myobj_src_core_domain_request.DeleteApiKeyRequest"
+                            "$ref": "#/definitions/request.DeleteApiKeyRequest"
                         }
                     }
                 ],
@@ -1648,25 +1884,25 @@ const docTemplate = `{
                     "200": {
                         "description": "删除成功",
                         "schema": {
-                            "$ref": "#/definitions/myobj_src_pkg_models.JsonResponse"
+                            "$ref": "#/definitions/models.JsonResponse"
                         }
                     },
                     "400": {
                         "description": "参数错误或删除失败",
                         "schema": {
-                            "$ref": "#/definitions/myobj_src_pkg_models.JsonResponse"
+                            "$ref": "#/definitions/models.JsonResponse"
                         }
                     },
                     "403": {
                         "description": "无权操作",
                         "schema": {
-                            "$ref": "#/definitions/myobj_src_pkg_models.JsonResponse"
+                            "$ref": "#/definitions/models.JsonResponse"
                         }
                     },
                     "404": {
                         "description": "API Key不存在",
                         "schema": {
-                            "$ref": "#/definitions/myobj_src_pkg_models.JsonResponse"
+                            "$ref": "#/definitions/models.JsonResponse"
                         }
                     }
                 }
@@ -1697,7 +1933,7 @@ const docTemplate = `{
                         "in": "body",
                         "required": true,
                         "schema": {
-                            "$ref": "#/definitions/myobj_src_core_domain_request.GenerateApiKeyRequest"
+                            "$ref": "#/definitions/request.GenerateApiKeyRequest"
                         }
                     }
                 ],
@@ -1707,7 +1943,7 @@ const docTemplate = `{
                         "schema": {
                             "allOf": [
                                 {
-                                    "$ref": "#/definitions/myobj_src_pkg_models.JsonResponse"
+                                    "$ref": "#/definitions/models.JsonResponse"
                                 },
                                 {
                                     "type": "object",
@@ -1723,7 +1959,7 @@ const docTemplate = `{
                     "400": {
                         "description": "参数错误或生成失败",
                         "schema": {
-                            "$ref": "#/definitions/myobj_src_pkg_models.JsonResponse"
+                            "$ref": "#/definitions/models.JsonResponse"
                         }
                     }
                 }
@@ -1750,7 +1986,7 @@ const docTemplate = `{
                         "schema": {
                             "allOf": [
                                 {
-                                    "$ref": "#/definitions/myobj_src_pkg_models.JsonResponse"
+                                    "$ref": "#/definitions/models.JsonResponse"
                                 },
                                 {
                                     "type": "object",
@@ -1769,7 +2005,7 @@ const docTemplate = `{
                     "400": {
                         "description": "获取失败",
                         "schema": {
-                            "$ref": "#/definitions/myobj_src_pkg_models.JsonResponse"
+                            "$ref": "#/definitions/models.JsonResponse"
                         }
                     }
                 }
@@ -1791,7 +2027,7 @@ const docTemplate = `{
                         "schema": {
                             "allOf": [
                                 {
-                                    "$ref": "#/definitions/myobj_src_pkg_models.JsonResponse"
+                                    "$ref": "#/definitions/models.JsonResponse"
                                 },
                                 {
                                     "type": "object",
@@ -1807,7 +2043,7 @@ const docTemplate = `{
                     "400": {
                         "description": "获取失败",
                         "schema": {
-                            "$ref": "#/definitions/myobj_src_pkg_models.JsonResponse"
+                            "$ref": "#/definitions/models.JsonResponse"
                         }
                     }
                 }
@@ -1834,7 +2070,7 @@ const docTemplate = `{
                         "schema": {
                             "allOf": [
                                 {
-                                    "$ref": "#/definitions/myobj_src_pkg_models.JsonResponse"
+                                    "$ref": "#/definitions/models.JsonResponse"
                                 },
                                 {
                                     "type": "object",
@@ -1850,7 +2086,7 @@ const docTemplate = `{
                     "400": {
                         "description": "获取失败",
                         "schema": {
-                            "$ref": "#/definitions/myobj_src_pkg_models.JsonResponse"
+                            "$ref": "#/definitions/models.JsonResponse"
                         }
                     }
                 }
@@ -1876,7 +2112,7 @@ const docTemplate = `{
                         "in": "body",
                         "required": true,
                         "schema": {
-                            "$ref": "#/definitions/myobj_src_core_domain_request.UserLoginRequest"
+                            "$ref": "#/definitions/request.UserLoginRequest"
                         }
                     }
                 ],
@@ -1886,7 +2122,7 @@ const docTemplate = `{
                         "schema": {
                             "allOf": [
                                 {
-                                    "$ref": "#/definitions/myobj_src_pkg_models.JsonResponse"
+                                    "$ref": "#/definitions/models.JsonResponse"
                                 },
                                 {
                                     "type": "object",
@@ -1902,7 +2138,7 @@ const docTemplate = `{
                     "400": {
                         "description": "参数错误或登录失败",
                         "schema": {
-                            "$ref": "#/definitions/myobj_src_pkg_models.JsonResponse"
+                            "$ref": "#/definitions/models.JsonResponse"
                         }
                     }
                 }
@@ -1928,7 +2164,7 @@ const docTemplate = `{
                         "in": "body",
                         "required": true,
                         "schema": {
-                            "$ref": "#/definitions/myobj_src_core_domain_request.UserRegisterRequest"
+                            "$ref": "#/definitions/request.UserRegisterRequest"
                         }
                     }
                 ],
@@ -1936,13 +2172,13 @@ const docTemplate = `{
                     "200": {
                         "description": "注册成功",
                         "schema": {
-                            "$ref": "#/definitions/myobj_src_pkg_models.JsonResponse"
+                            "$ref": "#/definitions/models.JsonResponse"
                         }
                     },
                     "400": {
                         "description": "参数错误或注册失败",
                         "schema": {
-                            "$ref": "#/definitions/myobj_src_pkg_models.JsonResponse"
+                            "$ref": "#/definitions/models.JsonResponse"
                         }
                     }
                 }
@@ -1973,7 +2209,7 @@ const docTemplate = `{
                         "in": "body",
                         "required": true,
                         "schema": {
-                            "$ref": "#/definitions/myobj_src_core_domain_request.UserUpdatePasswordRequest"
+                            "$ref": "#/definitions/request.UserUpdatePasswordRequest"
                         }
                     }
                 ],
@@ -1981,13 +2217,13 @@ const docTemplate = `{
                     "200": {
                         "description": "设置成功",
                         "schema": {
-                            "$ref": "#/definitions/myobj_src_pkg_models.JsonResponse"
+                            "$ref": "#/definitions/models.JsonResponse"
                         }
                     },
                     "400": {
                         "description": "参数错误或设置失败",
                         "schema": {
-                            "$ref": "#/definitions/myobj_src_pkg_models.JsonResponse"
+                            "$ref": "#/definitions/models.JsonResponse"
                         }
                     }
                 }
@@ -2007,13 +2243,13 @@ const docTemplate = `{
                     "200": {
                         "description": "系统信息",
                         "schema": {
-                            "$ref": "#/definitions/myobj_src_pkg_models.JsonResponse"
+                            "$ref": "#/definitions/models.JsonResponse"
                         }
                     },
                     "400": {
                         "description": "获取失败",
                         "schema": {
-                            "$ref": "#/definitions/myobj_src_pkg_models.JsonResponse"
+                            "$ref": "#/definitions/models.JsonResponse"
                         }
                     }
                 }
@@ -2044,7 +2280,7 @@ const docTemplate = `{
                         "in": "body",
                         "required": true,
                         "schema": {
-                            "$ref": "#/definitions/myobj_src_core_domain_request.UserUpdatePasswordRequest"
+                            "$ref": "#/definitions/request.UserUpdatePasswordRequest"
                         }
                     }
                 ],
@@ -2052,13 +2288,13 @@ const docTemplate = `{
                     "200": {
                         "description": "修改成功",
                         "schema": {
-                            "$ref": "#/definitions/myobj_src_pkg_models.JsonResponse"
+                            "$ref": "#/definitions/models.JsonResponse"
                         }
                     },
                     "400": {
                         "description": "参数错误或修改失败",
                         "schema": {
-                            "$ref": "#/definitions/myobj_src_pkg_models.JsonResponse"
+                            "$ref": "#/definitions/models.JsonResponse"
                         }
                     }
                 }
@@ -2089,7 +2325,7 @@ const docTemplate = `{
                         "in": "body",
                         "required": true,
                         "schema": {
-                            "$ref": "#/definitions/myobj_src_core_domain_request.UserUpdatePasswordRequest"
+                            "$ref": "#/definitions/request.UserUpdatePasswordRequest"
                         }
                     }
                 ],
@@ -2097,13 +2333,13 @@ const docTemplate = `{
                     "200": {
                         "description": "修改成功",
                         "schema": {
-                            "$ref": "#/definitions/myobj_src_pkg_models.JsonResponse"
+                            "$ref": "#/definitions/models.JsonResponse"
                         }
                     },
                     "400": {
                         "description": "参数错误或修改失败",
                         "schema": {
-                            "$ref": "#/definitions/myobj_src_pkg_models.JsonResponse"
+                            "$ref": "#/definitions/models.JsonResponse"
                         }
                     }
                 }
@@ -2134,7 +2370,7 @@ const docTemplate = `{
                         "in": "body",
                         "required": true,
                         "schema": {
-                            "$ref": "#/definitions/myobj_src_core_domain_request.UserUpdateRequest"
+                            "$ref": "#/definitions/request.UserUpdateRequest"
                         }
                     }
                 ],
@@ -2142,13 +2378,13 @@ const docTemplate = `{
                     "200": {
                         "description": "更新成功",
                         "schema": {
-                            "$ref": "#/definitions/myobj_src_pkg_models.JsonResponse"
+                            "$ref": "#/definitions/models.JsonResponse"
                         }
                     },
                     "400": {
                         "description": "参数错误或更新失败",
                         "schema": {
-                            "$ref": "#/definitions/myobj_src_pkg_models.JsonResponse"
+                            "$ref": "#/definitions/models.JsonResponse"
                         }
                     }
                 }
@@ -2179,7 +2415,7 @@ const docTemplate = `{
                         "in": "body",
                         "required": true,
                         "schema": {
-                            "$ref": "#/definitions/myobj_src_core_domain_request.VideoPlayPrecheckRequest"
+                            "$ref": "#/definitions/request.VideoPlayPrecheckRequest"
                         }
                     }
                 ],
@@ -2189,13 +2425,13 @@ const docTemplate = `{
                         "schema": {
                             "allOf": [
                                 {
-                                    "$ref": "#/definitions/myobj_src_pkg_models.JsonResponse"
+                                    "$ref": "#/definitions/models.JsonResponse"
                                 },
                                 {
                                     "type": "object",
                                     "properties": {
                                         "data": {
-                                            "$ref": "#/definitions/myobj_src_core_domain_response.VideoPlayTokenResponse"
+                                            "$ref": "#/definitions/response.VideoPlayTokenResponse"
                                         }
                                     }
                                 }
@@ -2205,19 +2441,19 @@ const docTemplate = `{
                     "400": {
                         "description": "请求失败",
                         "schema": {
-                            "$ref": "#/definitions/myobj_src_pkg_models.JsonResponse"
+                            "$ref": "#/definitions/models.JsonResponse"
                         }
                     },
                     "403": {
                         "description": "权限不足",
                         "schema": {
-                            "$ref": "#/definitions/myobj_src_pkg_models.JsonResponse"
+                            "$ref": "#/definitions/models.JsonResponse"
                         }
                     },
                     "404": {
                         "description": "文件不存在",
                         "schema": {
-                            "$ref": "#/definitions/myobj_src_pkg_models.JsonResponse"
+                            "$ref": "#/definitions/models.JsonResponse"
                         }
                     }
                 }
@@ -2256,19 +2492,19 @@ const docTemplate = `{
                     "400": {
                         "description": "请求失败",
                         "schema": {
-                            "$ref": "#/definitions/myobj_src_pkg_models.JsonResponse"
+                            "$ref": "#/definitions/models.JsonResponse"
                         }
                     },
                     "403": {
                         "description": "Token 无效或已过期",
                         "schema": {
-                            "$ref": "#/definitions/myobj_src_pkg_models.JsonResponse"
+                            "$ref": "#/definitions/models.JsonResponse"
                         }
                     },
                     "404": {
                         "description": "文件不存在",
                         "schema": {
-                            "$ref": "#/definitions/myobj_src_pkg_models.JsonResponse"
+                            "$ref": "#/definitions/models.JsonResponse"
                         }
                     }
                 }
@@ -2276,7 +2512,23 @@ const docTemplate = `{
         }
     },
     "definitions": {
-        "myobj_src_core_domain_request.CreateLocalFileDownloadRequest": {
+        "models.JsonResponse": {
+            "type": "object",
+            "properties": {
+                "code": {
+                    "description": "状态码",
+                    "type": "integer"
+                },
+                "data": {
+                    "description": "数据"
+                },
+                "message": {
+                    "description": "状态",
+                    "type": "string"
+                }
+            }
+        },
+        "request.CreateLocalFileDownloadRequest": {
             "type": "object",
             "required": [
                 "file_id"
@@ -2292,7 +2544,7 @@ const docTemplate = `{
                 }
             }
         },
-        "myobj_src_core_domain_request.DeleteApiKeyRequest": {
+        "request.DeleteApiKeyRequest": {
             "type": "object",
             "required": [
                 "api_key_id"
@@ -2304,7 +2556,7 @@ const docTemplate = `{
                 }
             }
         },
-        "myobj_src_core_domain_request.DeleteDirRequest": {
+        "request.DeleteDirRequest": {
             "type": "object",
             "required": [
                 "dir_id"
@@ -2316,7 +2568,7 @@ const docTemplate = `{
                 }
             }
         },
-        "myobj_src_core_domain_request.DeleteFileRequest": {
+        "request.DeleteFileRequest": {
             "type": "object",
             "required": [
                 "file_ids"
@@ -2331,7 +2583,7 @@ const docTemplate = `{
                 }
             }
         },
-        "myobj_src_core_domain_request.DeleteRecycledRequest": {
+        "request.DeleteRecycledRequest": {
             "type": "object",
             "required": [
                 "recycled_id"
@@ -2342,7 +2594,7 @@ const docTemplate = `{
                 }
             }
         },
-        "myobj_src_core_domain_request.DeleteUploadTaskRequest": {
+        "request.DeleteUploadTaskRequest": {
             "type": "object",
             "required": [
                 "task_id"
@@ -2354,7 +2606,7 @@ const docTemplate = `{
                 }
             }
         },
-        "myobj_src_core_domain_request.GenerateApiKeyRequest": {
+        "request.GenerateApiKeyRequest": {
             "type": "object",
             "properties": {
                 "expires_days": {
@@ -2363,7 +2615,63 @@ const docTemplate = `{
                 }
             }
         },
-        "myobj_src_core_domain_request.ParseTorrentRequest": {
+        "request.MakeDirRequest": {
+            "type": "object",
+            "required": [
+                "name",
+                "parent_id"
+            ],
+            "properties": {
+                "name": {
+                    "type": "string"
+                },
+                "parent_id": {
+                    "type": "integer",
+                    "minimum": 1
+                }
+            }
+        },
+        "request.MoveFileRequest": {
+            "type": "object",
+            "required": [
+                "file_id",
+                "target_directory_id"
+            ],
+            "properties": {
+                "file_id": {
+                    "type": "string"
+                },
+                "target_directory_id": {
+                    "type": "integer",
+                    "minimum": 1
+                }
+            }
+        },
+        "request.MoveItemsRequest": {
+            "type": "object",
+            "required": [
+                "target_directory_id"
+            ],
+            "properties": {
+                "directory_ids": {
+                    "type": "array",
+                    "items": {
+                        "type": "integer"
+                    }
+                },
+                "file_ids": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "target_directory_id": {
+                    "type": "integer",
+                    "minimum": 1
+                }
+            }
+        },
+        "request.ParseTorrentRequest": {
             "type": "object",
             "required": [
                 "content"
@@ -2375,7 +2683,7 @@ const docTemplate = `{
                 }
             }
         },
-        "myobj_src_core_domain_request.PublicFileListRequest": {
+        "request.PublicFileListRequest": {
             "type": "object",
             "required": [
                 "page",
@@ -2403,7 +2711,7 @@ const docTemplate = `{
                 }
             }
         },
-        "myobj_src_core_domain_request.RenameDirRequest": {
+        "request.RenameDirRequest": {
             "type": "object",
             "required": [
                 "dir_id",
@@ -2420,7 +2728,7 @@ const docTemplate = `{
                 }
             }
         },
-        "myobj_src_core_domain_request.RenameFileRequest": {
+        "request.RenameFileRequest": {
             "type": "object",
             "required": [
                 "file_id",
@@ -2437,7 +2745,7 @@ const docTemplate = `{
                 }
             }
         },
-        "myobj_src_core_domain_request.RenewExpiredTaskRequest": {
+        "request.RenewExpiredTaskRequest": {
             "type": "object",
             "required": [
                 "task_id"
@@ -2453,7 +2761,7 @@ const docTemplate = `{
                 }
             }
         },
-        "myobj_src_core_domain_request.RestoreFileRequest": {
+        "request.RestoreFileRequest": {
             "type": "object",
             "required": [
                 "recycled_id"
@@ -2464,7 +2772,7 @@ const docTemplate = `{
                 }
             }
         },
-        "myobj_src_core_domain_request.SetFilePublicRequest": {
+        "request.SetFilePublicRequest": {
             "type": "object",
             "required": [
                 "file_id"
@@ -2480,7 +2788,7 @@ const docTemplate = `{
                 }
             }
         },
-        "myobj_src_core_domain_request.StartTorrentDownloadRequest": {
+        "request.StartTorrentDownloadRequest": {
             "type": "object",
             "required": [
                 "content",
@@ -2506,18 +2814,26 @@ const docTemplate = `{
                     "description": "文件密码（加密文件必需）",
                     "type": "string"
                 },
-                "virtual_path": {
+                "save_path": {
                     "description": "保存的虚拟路径（可选，默认为/离线下载/）",
                     "type": "string"
                 }
             }
         },
-        "myobj_src_core_domain_request.UploadPrecheckRequest": {
+        "request.UploadPrecheckRequest": {
             "type": "object",
+            "required": [
+                "directory_id"
+            ],
             "properties": {
                 "chunk_signature": {
                     "description": "文件hash签名",
                     "type": "string"
+                },
+                "directory_id": {
+                    "description": "目录ID",
+                    "type": "integer",
+                    "minimum": 1
                 },
                 "file_name": {
                     "description": "文件名",
@@ -2534,16 +2850,12 @@ const docTemplate = `{
                         "type": "string"
                     }
                 },
-                "path_id": {
-                    "description": "路径ID",
-                    "type": "string"
-                },
                 "user_id": {
                     "type": "string"
                 }
             }
         },
-        "myobj_src_core_domain_request.UserLoginRequest": {
+        "request.UserLoginRequest": {
             "type": "object",
             "required": [
                 "password",
@@ -2561,7 +2873,7 @@ const docTemplate = `{
                 }
             }
         },
-        "myobj_src_core_domain_request.UserRegisterRequest": {
+        "request.UserRegisterRequest": {
             "type": "object",
             "required": [
                 "password",
@@ -2589,7 +2901,7 @@ const docTemplate = `{
                 }
             }
         },
-        "myobj_src_core_domain_request.UserUpdatePasswordRequest": {
+        "request.UserUpdatePasswordRequest": {
             "type": "object",
             "properties": {
                 "challenge": {
@@ -2607,7 +2919,7 @@ const docTemplate = `{
                 }
             }
         },
-        "myobj_src_core_domain_request.UserUpdateRequest": {
+        "request.UserUpdateRequest": {
             "type": "object",
             "properties": {
                 "email": {
@@ -2631,7 +2943,7 @@ const docTemplate = `{
                 }
             }
         },
-        "myobj_src_core_domain_request.VideoPlayPrecheckRequest": {
+        "request.VideoPlayPrecheckRequest": {
             "type": "object",
             "required": [
                 "file_id"
@@ -2647,14 +2959,145 @@ const docTemplate = `{
                 }
             }
         },
-        "myobj_src_core_domain_response.ParseTorrentResponse": {
+        "response.Breadcrumb": {
+            "type": "object",
+            "properties": {
+                "absolute_path": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "integer"
+                },
+                "name": {
+                    "type": "string"
+                }
+            }
+        },
+        "response.DirectoryItem": {
+            "type": "object",
+            "properties": {
+                "absolute_path": {
+                    "type": "string"
+                },
+                "created_at": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "integer"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "parent_id": {
+                    "type": "integer"
+                },
+                "updated_at": {
+                    "type": "string"
+                }
+            }
+        },
+        "response.FileItem": {
+            "type": "object",
+            "properties": {
+                "created_at": {
+                    "type": "string"
+                },
+                "file_id": {
+                    "type": "string"
+                },
+                "file_name": {
+                    "description": "UfID         string               ` + "`" + `json:\"uf_id\"` + "`" + ` // 用户文件ID",
+                    "type": "string"
+                },
+                "file_size": {
+                    "type": "integer"
+                },
+                "has_thumbnail": {
+                    "description": "是否有缩略图",
+                    "type": "boolean"
+                },
+                "is_enc": {
+                    "type": "boolean"
+                },
+                "mime_type": {
+                    "type": "string"
+                },
+                "public": {
+                    "description": "是否公开",
+                    "type": "boolean"
+                }
+            }
+        },
+        "response.FileListResponse": {
+            "type": "object",
+            "properties": {
+                "breadcrumbs": {
+                    "description": "面包屑路径",
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/response.Breadcrumb"
+                    }
+                },
+                "current_directory_id": {
+                    "description": "当前路径",
+                    "type": "integer"
+                },
+                "files": {
+                    "description": "文件列表",
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/response.FileItem"
+                    }
+                },
+                "folders": {
+                    "description": "目录列表",
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/response.FolderItem"
+                    }
+                },
+                "page": {
+                    "description": "当前页",
+                    "type": "integer"
+                },
+                "page_size": {
+                    "description": "每页数量",
+                    "type": "integer"
+                },
+                "total": {
+                    "description": "总数（目录+文件）",
+                    "type": "integer"
+                }
+            }
+        },
+        "response.FolderItem": {
+            "type": "object",
+            "properties": {
+                "absolute_path": {
+                    "type": "string"
+                },
+                "created_at": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "integer"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "parent_id": {
+                    "type": "integer"
+                }
+            }
+        },
+        "response.ParseTorrentResponse": {
             "type": "object",
             "properties": {
                 "files": {
                     "description": "文件列表",
                     "type": "array",
                     "items": {
-                        "$ref": "#/definitions/myobj_src_core_domain_response.TorrentFileInfo"
+                        "$ref": "#/definitions/response.TorrentFileInfo"
                     }
                 },
                 "info_hash": {
@@ -2671,7 +3114,7 @@ const docTemplate = `{
                 }
             }
         },
-        "myobj_src_core_domain_response.StartTorrentDownloadResponse": {
+        "response.StartTorrentDownloadResponse": {
             "type": "object",
             "properties": {
                 "task_count": {
@@ -2691,7 +3134,7 @@ const docTemplate = `{
                 }
             }
         },
-        "myobj_src_core_domain_response.TorrentFileInfo": {
+        "response.TorrentFileInfo": {
             "type": "object",
             "properties": {
                 "index": {
@@ -2712,9 +3155,15 @@ const docTemplate = `{
                 }
             }
         },
-        "myobj_src_core_domain_response.UploadProgressResponse": {
+        "response.UploadProgressResponse": {
             "type": "object",
             "properties": {
+                "error_message": {
+                    "type": "string"
+                },
+                "file_id": {
+                    "type": "string"
+                },
                 "file_name": {
                     "type": "string"
                 },
@@ -2723,6 +3172,9 @@ const docTemplate = `{
                 },
                 "is_complete": {
                     "description": "是否已完成",
+                    "type": "boolean"
+                },
+                "is_enc": {
                     "type": "boolean"
                 },
                 "md5": {
@@ -2739,6 +3191,12 @@ const docTemplate = `{
                     "description": "进度百分比 (0-100)",
                     "type": "number"
                 },
+                "stage": {
+                    "type": "string"
+                },
+                "status": {
+                    "type": "string"
+                },
                 "total": {
                     "description": "总分片数",
                     "type": "integer"
@@ -2749,7 +3207,104 @@ const docTemplate = `{
                 }
             }
         },
-        "myobj_src_core_domain_response.VideoFileInfo": {
+        "response.UploadTaskItem": {
+            "type": "object",
+            "properties": {
+                "chunk_signature": {
+                    "description": "文件hash签名",
+                    "type": "string"
+                },
+                "chunk_size": {
+                    "description": "分片大小（字节）",
+                    "type": "integer"
+                },
+                "create_time": {
+                    "description": "创建时间",
+                    "type": "string"
+                },
+                "directory_id": {
+                    "description": "路径ID",
+                    "type": "integer"
+                },
+                "error_message": {
+                    "description": "错误信息",
+                    "type": "string"
+                },
+                "expire_time": {
+                    "description": "过期时间",
+                    "type": "string"
+                },
+                "file_name": {
+                    "description": "文件名",
+                    "type": "string"
+                },
+                "file_size": {
+                    "description": "文件大小（字节）",
+                    "type": "integer"
+                },
+                "id": {
+                    "description": "任务ID（precheck_id）",
+                    "type": "string"
+                },
+                "is_enc": {
+                    "description": "是否为加密文件",
+                    "type": "boolean"
+                },
+                "processing_stage": {
+                    "description": "后台处理阶段",
+                    "type": "string"
+                },
+                "progress": {
+                    "description": "上传进度（0-100）",
+                    "type": "number"
+                },
+                "result_file_id": {
+                    "description": "处理完成后的文件ID",
+                    "type": "string"
+                },
+                "status": {
+                    "description": "任务状态（pending/uploading/processing/completed/failed/aborted）",
+                    "type": "string"
+                },
+                "total_chunks": {
+                    "description": "总分片数",
+                    "type": "integer"
+                },
+                "update_time": {
+                    "description": "更新时间",
+                    "type": "string"
+                },
+                "uploaded_chunks": {
+                    "description": "已上传分片数",
+                    "type": "integer"
+                }
+            }
+        },
+        "response.UploadTaskListResponse": {
+            "type": "object",
+            "properties": {
+                "page": {
+                    "description": "当前页",
+                    "type": "integer"
+                },
+                "page_size": {
+                    "description": "每页数量",
+                    "type": "integer"
+                },
+                "tasks": {
+                    "description": "任务列表",
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/response.UploadTaskItem"
+                    }
+                },
+                "total": {
+                    "description": "总数",
+                    "type": "integer"
+                }
+            }
+        },
+        "response.VideoFileInfo": {
             "type": "object",
             "properties": {
                 "file_id": {
@@ -2774,35 +3329,19 @@ const docTemplate = `{
                 }
             }
         },
-        "myobj_src_core_domain_response.VideoPlayTokenResponse": {
+        "response.VideoPlayTokenResponse": {
             "type": "object",
             "properties": {
                 "file_info": {
                     "description": "文件信息",
                     "allOf": [
                         {
-                            "$ref": "#/definitions/myobj_src_core_domain_response.VideoFileInfo"
+                            "$ref": "#/definitions/response.VideoFileInfo"
                         }
                     ]
                 },
                 "play_token": {
                     "description": "播放 Token（24小时有效）",
-                    "type": "string"
-                }
-            }
-        },
-        "myobj_src_pkg_models.JsonResponse": {
-            "type": "object",
-            "properties": {
-                "code": {
-                    "description": "状态码",
-                    "type": "integer"
-                },
-                "data": {
-                    "description": "数据"
-                },
-                "message": {
-                    "description": "状态",
                     "type": "string"
                 }
             }

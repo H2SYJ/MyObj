@@ -142,59 +142,42 @@ func (r *RecycledService) RestoreFile(req *request.RestoreFileRequest, userID st
 	}
 
 	// 检查父目录是否存在
-	var targetVirtualPath string = userFile.VirtualPath
+	targetDirectoryID := userFile.DirectoryID
 	parentDirExists := false
 
-	// 如果 VirtualPath 为空或 "0"，说明文件原本就在根目录，不需要检查
-	if userFile.VirtualPath == "" || userFile.VirtualPath == "0" {
-		parentDirExists = true // 根目录总是存在的
+	// 如果原目录不存在，则还原到根目录。
+	if directory, directoryErr := r.factory.Directory().GetByID(ctx, userFile.DirectoryID); directoryErr == nil && directory.UserID == userID {
+		parentDirExists = true
 	} else {
-		// 解析虚拟路径ID
-		pathID := 0
-		_, err := fmt.Sscanf(userFile.VirtualPath, "%d", &pathID)
-		if err == nil && pathID > 0 {
-			// 检查目录是否存在
-			_, err := r.factory.VirtualPath().GetByID(ctx, pathID)
-			if err == nil {
-				parentDirExists = true
-			} else if errors.Is(err, gorm.ErrRecordNotFound) {
-				// 父目录不存在
-				logger.LOG.Warn("文件原父目录已删除，将还原到根目录",
-					"userID", userID,
-					"fileID", recycled.FileID,
-					"originalPath", userFile.VirtualPath)
-			} else {
-				logger.LOG.Warn("检查父目录时出错", "error", err, "pathID", pathID)
-			}
-		}
+		logger.LOG.Warn("文件原父目录已删除，将还原到根目录", "userID", userID, "fileID", recycled.FileID, "original_directory_id", userFile.DirectoryID)
 	}
 
 	// 如果父目录不存在，获取根目录ID
 	if !parentDirExists {
-		rootPath, err := r.factory.VirtualPath().GetRootPath(ctx, userID)
+		rootDirectory, err := r.factory.Directory().GetRoot(ctx, userID)
 		if err != nil {
 			logger.LOG.Error("获取根目录失败", "error", err, "userID", userID)
 			return nil, fmt.Errorf("获取根目录失败: %w", err)
 		}
-		targetVirtualPath = fmt.Sprintf("%d", rootPath.ID)
+		targetDirectoryID = rootDirectory.ID
 		logger.LOG.Info("文件将还原到根目录",
 			"userID", userID,
 			"fileID", recycled.FileID,
-			"originalPath", userFile.VirtualPath,
-			"newPath", targetVirtualPath)
+			"original_directory_id", userFile.DirectoryID,
+			"new_directory_id", targetDirectoryID)
 	}
 
-	// 在事务中执行：1. 恢复 user_files 软删除、2. 更新 VirtualPath（如果父目录不存在）、3. 删除回收站记录
+	// 在事务中恢复文件、必要时更新目录ID并删除回收站记录。
 	err = r.factory.DB().Transaction(func(tx *gorm.DB) error {
 		txFactory := r.factory.WithTx(tx)
 
 		// 恢复 user_files 软删除（清除 deleted_at）
-		// 如果父目录不存在，同时更新 VirtualPath
+		// 如果父目录不存在，同时更新目录ID。
 		updateMap := map[string]interface{}{
 			"deleted_at": nil,
 		}
 		if !parentDirExists {
-			updateMap["virtual_path"] = targetVirtualPath
+			updateMap["directory_id"] = targetDirectoryID
 		}
 
 		if err := tx.Model(&models.UserFiles{}).Unscoped().
@@ -225,8 +208,8 @@ func (r *RecycledService) RestoreFile(req *request.RestoreFileRequest, userID st
 		"recycledID", req.RecycledID,
 		"userID", userID,
 		"fileID", recycled.FileID,
-		"originalPath", userFile.VirtualPath,
-		"newPath", targetVirtualPath)
+		"original_directory_id", userFile.DirectoryID,
+		"new_directory_id", targetDirectoryID)
 	return models.NewJsonResponse(200, message, nil), nil
 }
 
@@ -452,21 +435,21 @@ func (r *RecycledService) deletePhysicalFile(fileInfo *models.FileInfo) error {
 
 	// 如果是分片文件，删除分片目录
 	if fileInfo.IsChunk && fileInfo.Path != "" {
-		// 文件路径格式: {DataPath}/data/{\u539f文件名不带后缀}/{\u865a拟文件名}.data
-		// 分片目录为: {DataPath}/data/{\u539f文件名不带后缀}/{\u865a拟文件名}
+		// 文件路径格式: {DataPath}/data/{原文件名不带后缀}/{虚拟文件名}.data
+		// 分片目录为: {DataPath}/data/{原文件名不带后缀}/{虚拟文件名}
 		chunkDir := strings.TrimSuffix(fileInfo.Path, ".data")
 		if err := r.deleteDirectory(chunkDir); err != nil {
 			logger.LOG.Warn("删除分片目录失败", "path", chunkDir, "error", err)
 		}
 		// 删除父目录（如果为空）
-		// 路径格式: {DataPath}/data/{\u539f文件名不带后缀}
+		// 路径格式: {DataPath}/data/{原文件名不带后缀}
 		parentDir := filepath.Dir(fileInfo.Path)
 		if err := r.deleteDirectoryIfEmpty(parentDir); err != nil {
 			logger.LOG.Warn("删除父目录失败", "path", parentDir, "error", err)
 		}
 	} else if fileInfo.Path != "" {
 		// 对于非分片文件，删除 .data 文件所在的文件夹（如果为空）
-		// 路径格式: {DataPath}/data/{\u539f文件名不带后缀}/{\u865a拟文件名}.data
+		// 路径格式: {DataPath}/data/{原文件名不带后缀}/{虚拟文件名}.data
 		parentDir := filepath.Dir(fileInfo.Path)
 		if err := r.deleteDirectoryIfEmpty(parentDir); err != nil {
 			logger.LOG.Warn("删除文件夹失败", "path", parentDir, "error", err)

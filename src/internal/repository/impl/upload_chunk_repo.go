@@ -75,10 +75,10 @@ func (r *uploadChunkRepository) DeleteByUserID(ctx context.Context, userID strin
 	return r.db.WithContext(ctx).Where("user_id = ?", userID).Delete(&models.UploadChunk{}).Error
 }
 
-// ListByPathID 根据路径ID获取分片列表
-func (r *uploadChunkRepository) ListByPathID(ctx context.Context, pathID string, offset, limit int) ([]*models.UploadChunk, error) {
+// ListByDirectoryID 根据目录ID获取分片列表
+func (r *uploadChunkRepository) ListByDirectoryID(ctx context.Context, directoryID int, offset, limit int) ([]*models.UploadChunk, error) {
 	var chunks []*models.UploadChunk
-	err := r.db.WithContext(ctx).Where("path_id = ?", pathID).
+	err := r.db.WithContext(ctx).Where("directory_id = ?", directoryID).
 		Offset(offset).Limit(limit).Find(&chunks).Error
 	return chunks, err
 }

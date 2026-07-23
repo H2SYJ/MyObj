@@ -32,7 +32,7 @@
           tag="div"
           custom-class="file-name"
         />
-        <div v-else class="file-name folder-name">{{ cleanName(entry.folder.name) }}</div>
+        <div v-else class="file-name folder-name">{{ entry.folder.name }}</div>
       </div>
 
       <button class="more-button" type="button" :aria-label="t('common.more')" @click.stop="openMore(entry, $event)">
@@ -77,7 +77,6 @@
   let longPressTimer: ReturnType<typeof setTimeout> | undefined
   let longPressTriggered = false
 
-  const cleanName = (name: string) => name.replace(/^\/+/, '')
   const startLongPress = (entry: FileEntry, event: PointerEvent) => {
     if (event.pointerType === 'mouse') return
     cancelLongPress()

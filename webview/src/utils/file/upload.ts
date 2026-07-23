@@ -75,7 +75,7 @@ const waitForUploadFinalization = async (
 
 export interface UploadParams {
   file: File
-  pathId: string
+  directoryId: number
   config?: Partial<UploadConfig>
   onProgress?: (progress: number, fileName: string) => void
   onSuccess?: (fileName: string) => void
@@ -316,7 +316,7 @@ class ConcurrentUploader {
  * 包括MD5计算、预检、分片上传等完整流程，支持断点续传
  * @param params 上传参数
  * @param params.file 要上传的文件对象
- * @param params.pathId 上传路径ID
+ * @param params.directoryId 上传目录ID
  * @param params.config 可选的上传配置
  * @param params.onProgress 进度回调函数
  * @param params.onSuccess 成功回调函数
@@ -327,7 +327,7 @@ class ConcurrentUploader {
 export const uploadSingleFile = async (params: UploadParams): Promise<ApiResponse<any> | void> => {
   const {
     file,
-    pathId,
+    directoryId,
     config = {},
     onProgress,
     onSuccess,
@@ -356,7 +356,7 @@ export const uploadSingleFile = async (params: UploadParams): Promise<ApiRespons
       if (taskId) {
         const task = uploadTaskManager.getTask(taskId)
         if (task) {
-          task.pathId = pathId
+          task.directoryId = directoryId
           uploadTaskManager.updateTask(taskId, {
             currentStep: i18n.global.t('upload.prechecking') || '正在预检文件...',
             precheckProgress: 0,
@@ -432,7 +432,7 @@ export const uploadSingleFile = async (params: UploadParams): Promise<ApiRespons
       file_name: file.name,
       file_size: file.size,
       files_md5: filesMD5,
-      path_id: pathId
+      directory_id: directoryId
     }
 
     const precheckResponse = await uploadPrecheck(precheckParams)
@@ -444,7 +444,7 @@ export const uploadSingleFile = async (params: UploadParams): Promise<ApiRespons
       message: precheckResponse.message,
       chunkSignature: fileMD5.substring(0, 16) + '...', // 只显示前16个字符
       fileSize: file.size,
-      pathId: pathId
+      directoryId
     })
 
     if (precheckResponse.code === 200) {
@@ -548,7 +548,7 @@ export const uploadSingleFile = async (params: UploadParams): Promise<ApiRespons
         precheckId,
         chunkSignature: fileMD5,
         filesMd5: filesMD5,
-        pathId,
+        directoryId,
         isEncrypted: is_enc,
         status: 'pending', // 确保状态为 pending，准备上传
         currentStep: i18n.global.t('upload.readyToUpload') || '准备上传...'
@@ -821,7 +821,7 @@ export const uploadSingleFile = async (params: UploadParams): Promise<ApiRespons
  * 处理多文件上传（并行执行）
  * 默认最多同时上传2个文件，最大并行数为5
  * @param files 文件列表
- * @param pathId 上传路径ID
+ * @param directoryId 上传目录ID
  * @param config 可选的上传配置
  * @param onProgress 进度回调函数
  * @param onSuccess 成功回调函数
@@ -830,7 +830,7 @@ export const uploadSingleFile = async (params: UploadParams): Promise<ApiRespons
  */
 export const uploadMultipleFiles = async (
   files: File[],
-  pathId: string,
+  directoryId: number,
   config?: Partial<UploadConfig>,
   onProgress?: (progress: number, fileName: string) => void,
   onSuccess?: (fileName: string) => void,
@@ -850,7 +850,7 @@ export const uploadMultipleFiles = async (
       try {
         await uploadSingleFile({
           file,
-          pathId,
+          directoryId,
           config,
           onProgress,
           onSuccess,
@@ -901,7 +901,7 @@ export const openFileDialog = (multiple: boolean = false): Promise<File[]> => {
 
 /**
  * 处理文件上传（从选择文件到上传完成的完整流程）
- * @param pathId 上传路径ID
+ * @param directoryId 上传目录ID
  * @param config 可选的上传配置
  * @param onProgress 进度回调函数
  * @param onSuccess 成功回调函数
@@ -911,7 +911,7 @@ export const openFileDialog = (multiple: boolean = false): Promise<File[]> => {
  * @returns Promise<void>
  */
 export const handleFileUpload = async (
-  pathId: string,
+  directoryId: number,
   config?: Partial<UploadConfig>,
   onProgress?: (progress: number, fileName: string) => void,
   onSuccess?: (fileName: string) => void,
@@ -934,7 +934,7 @@ export const handleFileUpload = async (
 
     await uploadMultipleFiles(
       files,
-      pathId,
+      directoryId,
       config,
       onProgress,
       onSuccess,

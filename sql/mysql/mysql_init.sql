@@ -17,7 +17,9 @@ DROP TABLE IF EXISTS `power`;
 DROP TABLE IF EXISTS `groups`;
 DROP TABLE IF EXISTS `user_files`;
 DROP TABLE IF EXISTS `file_chunk`;
+DROP TABLE IF EXISTS `virtual_directory`;
 DROP TABLE IF EXISTS `virtual_path`;
+DROP TABLE IF EXISTS `schema_migration`;
 DROP TABLE IF EXISTS `upload_chunk`;
 DROP TABLE IF EXISTS `upload_task`;
 DROP TABLE IF EXISTS `download_task`;
@@ -143,14 +145,15 @@ CREATE TABLE `user_files` (
     `user_id` VARCHAR(64) NOT NULL COMMENT '用户ID',
     `file_id` VARCHAR(64) NOT NULL COMMENT '文件ID',
     `file_name` TEXT NOT NULL COMMENT '文件名',
-    `virtual_path` TEXT NOT NULL COMMENT '虚拟路径',
+    `directory_id` INT NOT NULL COMMENT '虚拟目录ID',
     `public` BOOLEAN NOT NULL DEFAULT FALSE COMMENT '是否公开',
     `created_at` DATETIME NOT NULL COMMENT '创建时间',
     `deleted_at` DATETIME DEFAULT NULL COMMENT '删除时间',
     `uf_id` VARCHAR(64) NOT NULL COMMENT '用户文件ID',
     PRIMARY KEY (`uf_id`),
     KEY `idx_user_id` (`user_id`),
-    KEY `idx_file_id` (`file_id`)
+    KEY `idx_file_id` (`file_id`),
+    KEY `idx_user_files_directory` (`user_id`, `directory_id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='用户文件关联表';
 
 -- 文件分片表
@@ -166,20 +169,24 @@ CREATE TABLE `file_chunk` (
     KEY `idx_file_id` (`file_id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='文件分片表';
 
--- 虚拟路径表
-CREATE TABLE `virtual_path` (
+-- 虚拟目录表
+CREATE TABLE `virtual_directory` (
     `id` INT NOT NULL AUTO_INCREMENT COMMENT '主键ID',
     `user_id` VARCHAR(64) NOT NULL COMMENT '用户ID',
-    `path` TEXT NOT NULL COMMENT '虚拟路径',
-    `is_file` BOOLEAN NOT NULL DEFAULT FALSE COMMENT '是否为文件',
-    `is_dir` BOOLEAN NOT NULL DEFAULT TRUE COMMENT '是否为目录',
-    `parent_level` TEXT DEFAULT NULL COMMENT '父级层级信息',
-    `created_time` DATETIME NOT NULL COMMENT '创建时间',
-    `update_time` DATETIME NOT NULL COMMENT '更新时间',
+    `name` VARCHAR(100) NOT NULL COMMENT '单级目录名称，根目录为空字符串',
+    `parent_id` INT NOT NULL DEFAULT 0 COMMENT '父目录ID，根目录为0',
+    `created_at` DATETIME NOT NULL COMMENT '创建时间',
+    `updated_at` DATETIME NOT NULL COMMENT '更新时间',
     PRIMARY KEY (`id`),
-    UNIQUE KEY `uk_id` (`id`),
-    KEY `idx_user_id` (`user_id`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='虚拟路径表';
+    UNIQUE KEY `uk_virtual_directory_sibling` (`user_id`, `parent_id`, `name`),
+    KEY `idx_virtual_directory_parent` (`user_id`, `parent_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='虚拟目录表';
+
+CREATE TABLE `schema_migration` (
+    `version` VARCHAR(128) NOT NULL,
+    `applied_at` DATETIME NOT NULL,
+    PRIMARY KEY (`version`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='数据库迁移版本';
 
 -- ================================
 -- 5. 创建上传下载任务表
@@ -195,7 +202,7 @@ CREATE TABLE `upload_task` (
     `total_chunks` INT NOT NULL COMMENT '总分片数',
     `uploaded_chunks` INT DEFAULT 0 COMMENT '已上传分片数',
     `chunk_signature` TEXT DEFAULT NULL COMMENT '文件hash签名（用于秒传检测）',
-    `path_id` TEXT DEFAULT NULL COMMENT '路径ID',
+    `directory_id` INT NOT NULL COMMENT '目录ID',
     `temp_dir` TEXT DEFAULT NULL COMMENT '临时目录路径',
     `disk_id` TEXT DEFAULT NULL COMMENT '预检阶段选中的磁盘ID',
     `is_enc` BOOLEAN DEFAULT FALSE COMMENT '是否为加密上传',
@@ -210,19 +217,21 @@ CREATE TABLE `upload_task` (
     `update_time` DATETIME DEFAULT NULL COMMENT '更新时间',
     `expire_time` DATETIME DEFAULT NULL COMMENT '过期时间（7天后自动清理）',
     PRIMARY KEY (`id`),
-    KEY `idx_user_id` (`user_id`)
+    KEY `idx_user_id` (`user_id`),
+    KEY `idx_upload_task_directory` (`user_id`, `directory_id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='上传任务表（支持断点续传）';
 
 -- 上传分片表
 CREATE TABLE `upload_chunk` (
-    `chunk_id` VARCHAR(64) NOT NULL COMMENT '分片ID',
+    `chunk_id` INT NOT NULL AUTO_INCREMENT COMMENT '分片ID',
     `user_id` VARCHAR(64) NOT NULL COMMENT '用户ID',
     `file_name` TEXT NOT NULL COMMENT '文件名',
     `file_size` INT DEFAULT NULL COMMENT '文件大小',
     `md5` TEXT DEFAULT NULL COMMENT 'MD5',
-    `path_id` TEXT DEFAULT NULL COMMENT '路径ID',
+    `directory_id` INT NOT NULL COMMENT '目录ID',
     PRIMARY KEY (`chunk_id`),
-    KEY `idx_user_id` (`user_id`)
+    KEY `idx_user_id` (`user_id`),
+    KEY `idx_upload_chunk_directory` (`user_id`, `directory_id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='上传分片表';
 
 -- 下载任务表
@@ -238,7 +247,7 @@ CREATE TABLE `download_task` (
     `type` INT NOT NULL COMMENT '任务类型',
     `url` TEXT DEFAULT NULL COMMENT '下载URL',
     `path` TEXT DEFAULT NULL COMMENT '下载路径',
-    `virtual_path` TEXT DEFAULT NULL COMMENT '虚拟路径',
+    `save_path` TEXT DEFAULT NULL COMMENT '用户虚拟绝对保存路径',
     `state` INT DEFAULT NULL COMMENT '任务状态',
     `error_msg` TEXT DEFAULT NULL COMMENT '错误信息',
     `target_dir` TEXT DEFAULT NULL COMMENT '目标临时目录',
@@ -303,7 +312,7 @@ CREATE TABLE `subscription` (
     `config_encrypted` TEXT,
     `granted_permissions` TEXT,
     `schedule_time` VARCHAR(5) NOT NULL,
-    `default_path` TEXT NOT NULL,
+    `save_path` TEXT NOT NULL,
     `initial_limit` INT NOT NULL DEFAULT 10,
     `max_items_per_run` INT NOT NULL DEFAULT 100,
     `source_generation` INT NOT NULL DEFAULT 1,

@@ -180,7 +180,7 @@ func (f *FileService) finalizeUploadTask(ctx context.Context, job uploadFinalize
 		IsEnc:               task.IsEnc,
 		IsChunk:             true,
 		ChunkCount:          task.TotalChunks,
-		VirtualPath:         task.PathID,
+		DirectoryID:        task.DirectoryID,
 		UserID:              task.UserID,
 		DiskID:              task.DiskID,
 		FilePassword:        job.filePassword,

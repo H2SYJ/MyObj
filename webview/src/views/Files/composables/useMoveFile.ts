@@ -1,8 +1,8 @@
-import { moveItems, getVirtualPathTree } from '@/api/file'
+import { moveItems, getDirectories, type DirectoryItem } from '@/api/file'
 import { useI18n } from '@/composables'
 
 export function useMoveFile(
-  currentPath: Ref<string>,
+  currentDirectoryId: Ref<number>,
   selectedFileIds: Ref<string[]>,
   selectedFolderIds: Ref<number[]>,
   clearSelection: () => void,
@@ -13,60 +13,52 @@ export function useMoveFile(
 
   const showMoveDialog = ref(false)
   const moving = ref(false)
-  const targetFolderId = ref<string>('')
+  const targetFolderId = ref<number>()
   const folderTreeData = ref<any[]>([])
   const loadingTree = ref(false)
 
   const buildFolderTree = async () => {
     loadingTree.value = true
     try {
-      const res = await getVirtualPathTree()
+      const res = await getDirectories()
 
       if (res.code !== 200 || !res.data) {
         proxy?.$modal.msgError(t('files.getFolderTreeFailed'))
         return
       }
 
-      const virtualPaths = res.data as Array<{
-        id: number
-        path: string
-        parent_level: string
-        is_dir: boolean
-      }>
+      const directories = res.data
 
-      const pathMap = new Map<string, any>()
-      const rawPathMap = new Map(virtualPaths.map(path => [path.id, path]))
+      const pathMap = new Map<number, any>()
+      const rawPathMap = new Map(directories.map(directory => [directory.id, directory]))
       const selectedDirSet = new Set(selectedFolderIds.value)
-      const isBlockedTarget = (path: (typeof virtualPaths)[number]) => {
-        let current: typeof path | undefined = path
+      const isBlockedTarget = (directory: DirectoryItem) => {
+        let current: DirectoryItem | undefined = directory
         while (current) {
           if (selectedDirSet.has(current.id)) return true
-          const parentID = Number(current.parent_level)
-          current = parentID > 0 ? rawPathMap.get(parentID) : undefined
+          current = current.parent_id > 0 ? rawPathMap.get(current.parent_id) : undefined
         }
         return false
       }
       const rootNodes: any[] = []
 
-      virtualPaths.forEach(vp => {
-        const nodeId = String(vp.id)
-        pathMap.set(nodeId, {
-          value: nodeId,
-          label: vp.path.replace(/^\//, '') || t('files.rootDir'),
-          disabled: isBlockedTarget(vp),
+      directories.forEach(directory => {
+        pathMap.set(directory.id, {
+          value: directory.id,
+          label: directory.name || t('files.rootDir'),
+          disabled: isBlockedTarget(directory),
           children: [],
-          _raw: vp
+          _raw: directory
         })
       })
 
-      virtualPaths.forEach(vp => {
-        const nodeId = String(vp.id)
-        const node = pathMap.get(nodeId)
+      directories.forEach(directory => {
+        const node = pathMap.get(directory.id)
 
         if (!node) return
 
-        if (vp.parent_level && vp.parent_level !== '' && vp.parent_level !== '0') {
-          const parentNode = pathMap.get(vp.parent_level)
+        if (directory.parent_id > 0) {
+          const parentNode = pathMap.get(directory.parent_id)
           if (parentNode) {
             parentNode.children.push(node)
           } else {
@@ -108,7 +100,7 @@ export function useMoveFile(
     }
 
     showMoveDialog.value = true
-    targetFolderId.value = ''
+    targetFolderId.value = undefined
     await buildFolderTree()
   }
 
@@ -118,7 +110,7 @@ export function useMoveFile(
       return
     }
 
-    if (targetFolderId.value === currentPath.value) {
+    if (targetFolderId.value === currentDirectoryId.value) {
       proxy?.$modal.msgWarning(t('files.sameDir'))
       return
     }
@@ -128,8 +120,8 @@ export function useMoveFile(
       const count = selectedFileIds.value.length + selectedFolderIds.value.length
       const res = await moveItems({
         file_ids: selectedFileIds.value,
-        dir_ids: selectedFolderIds.value,
-        target_path: targetFolderId.value
+        directory_ids: selectedFolderIds.value,
+        target_directory_id: targetFolderId.value
       })
       if (res.code !== 200) {
         proxy?.$modal.msgError(res.message || t('files.moveFileFailed'))

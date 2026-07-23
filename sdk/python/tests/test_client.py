@@ -106,7 +106,7 @@ class MyObjClientTest(unittest.TestCase):
         client = self.make_client(session)
 
         with self.assertRaises(MyObjAPIError) as caught:
-            client.get_virtual_paths()
+            client.get_directories()
 
         self.assertEqual(caught.exception.code, 401)
 
@@ -129,7 +129,7 @@ class MyObjClientTest(unittest.TestCase):
             file_path.write_bytes(b"a" * MyObjClient.DEFAULT_CHUNK_SIZE + b"b")
             result = client.upload_file(
                 file_path,
-                "root",
+                1,
                 show_progress=False,
             )
 
@@ -207,7 +207,7 @@ class MyObjClientTest(unittest.TestCase):
 
             client.upload_file(
                 file_path,
-                "root",
+                1,
                 show_progress=False,
             )
 
@@ -250,7 +250,7 @@ class MyObjClientTest(unittest.TestCase):
             file_path.write_text("内容", encoding="utf-8")
             result = client.upload_file(
                 file_path,
-                "root",
+                1,
                 show_progress=False,
                 wait_for_completion=True,
             )
@@ -282,7 +282,7 @@ class MyObjClientTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temp_dir:
             file_path = Path(temp_dir) / "异步返回.txt"
             file_path.write_text("内容", encoding="utf-8")
-            result = client.upload_file(file_path, "root", show_progress=False)
+            result = client.upload_file(file_path, 1, show_progress=False)
 
         self.assertEqual(result, processing_response)
         self.assertEqual(len(session.calls), 2)
@@ -291,7 +291,7 @@ class MyObjClientTest(unittest.TestCase):
         client = self.make_client(FakeSession([]))
 
         with self.assertRaises(TypeError):
-            client.upload_file("不存在.txt", "root", chunk_size=1024)  # type: ignore[call-arg]
+            client.upload_file("不存在.txt", 1, chunk_size=1024)  # type: ignore[call-arg]
 
     def test_ensure_directory_creates_missing_folder(self) -> None:
         session = FakeSession(
@@ -309,7 +309,7 @@ class MyObjClientTest(unittest.TestCase):
                         "code": 200,
                         "message": "ok",
                         "data": {
-                            "folders": [{"name": "演员甲", "path": "12"}],
+                            "folders": [{"name": "演员甲", "id": 12}],
                             "total": 1,
                             "page_size": 100,
                         },
@@ -319,11 +319,11 @@ class MyObjClientTest(unittest.TestCase):
         )
         client = self.make_client(session)
 
-        path_id = client.ensure_directory("2", "演员甲")
+        directory_id = client.ensure_directory(2, "演员甲")
 
-        self.assertEqual(path_id, "12")
+        self.assertEqual(directory_id, 12)
         self.assertEqual(
-            session.calls[1]["json"], {"parent_level": "2", "dir_path": "演员甲"}
+            session.calls[1]["json"], {"parent_id": 2, "name": "演员甲"}
         )
 
     def test_debug_logs_request_response_and_redacts_password(self) -> None:
@@ -366,7 +366,7 @@ class MyObjClientTest(unittest.TestCase):
             with self.assertLogs("myobj_sdk", level="DEBUG") as captured:
                 client.upload_file(
                     file_path,
-                    "root",
+                    1,
                     encrypted=True,
                     file_password="上传密码",
                     show_progress=False,
@@ -383,7 +383,7 @@ class MyObjClientTest(unittest.TestCase):
 
         with self.assertLogs("myobj_sdk", level="DEBUG") as captured:
             with self.assertRaises(MyObjHTTPError):
-                client.get_virtual_paths()
+                client.get_directories()
 
         logs = "\n".join(captured.output)
         self.assertIn("请求失败 method=GET", logs)
@@ -418,7 +418,7 @@ class MyObjClientTest(unittest.TestCase):
                 redirect.return_value.__enter__.return_value = None
                 client.upload_file(
                     file_path,
-                    "root",
+                    1,
                     progress=lambda completed, total: callback_values.append(
                         (completed, total)
                     ),
@@ -453,7 +453,7 @@ class MyObjClientTest(unittest.TestCase):
             with patch("myobj_sdk.client.tqdm") as progress_bar, patch(
                 "myobj_sdk.client.logging_redirect_tqdm"
             ) as redirect:
-                client.upload_file(file_path, "root", show_progress=False)
+                client.upload_file(file_path, 1, show_progress=False)
 
         progress_bar.assert_not_called()
         redirect.assert_not_called()
@@ -480,7 +480,7 @@ class MyObjClientTest(unittest.TestCase):
                 redirect.return_value.__enter__.return_value = None
                 client.upload_file(
                     file_path,
-                    "root",
+                    1,
                     progress=lambda completed, total: callback_values.append(
                         (completed, total)
                     ),
@@ -520,7 +520,7 @@ class MyObjClientTest(unittest.TestCase):
                 file_path.write_text("abc", encoding="utf-8")
                 with patch("myobj_sdk.client.tqdm", side_effect=make_progress_bar):
                     with self.assertRaises(MyObjHTTPError):
-                        client.upload_file(file_path, "root")
+                        client.upload_file(file_path, 1)
 
             self.assertEqual(root_logger.handlers, original_handlers)
             self.assertTrue(progress_bars[0].closed)

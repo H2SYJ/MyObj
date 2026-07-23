@@ -20,7 +20,7 @@ type RepositoryFactory struct {
 	powerRepo        repository.PowerRepository
 	groupPowerRepo   repository.GroupPowerRepository
 	userFilesRepo    repository.UserFilesRepository
-	virtualPathRepo  repository.VirtualPathRepository
+	directoryRepo    repository.DirectoryRepository
 	recycledRepo     repository.RecycledRepository
 	downloadTaskRepo repository.DownloadTaskRepository
 	sysConfigRepo    repository.SysConfigRepository
@@ -115,12 +115,12 @@ func (f *RepositoryFactory) UserFiles() repository.UserFilesRepository {
 	return f.userFilesRepo
 }
 
-// VirtualPath 获取虚拟路径仓储
-func (f *RepositoryFactory) VirtualPath() repository.VirtualPathRepository {
-	if f.virtualPathRepo == nil {
-		f.virtualPathRepo = NewVirtualPathRepository(f.db)
+// Directory 获取虚拟目录仓储。
+func (f *RepositoryFactory) Directory() repository.DirectoryRepository {
+	if f.directoryRepo == nil {
+		f.directoryRepo = NewDirectoryRepository(f.db)
 	}
-	return f.virtualPathRepo
+	return f.directoryRepo
 }
 
 // Recycled 获取回收站仓储

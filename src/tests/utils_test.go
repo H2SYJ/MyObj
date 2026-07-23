@@ -7,6 +7,7 @@ import (
 	"myobj/src/pkg/logger"
 	"myobj/src/pkg/preview"
 	"myobj/src/pkg/util"
+	"os"
 	"runtime"
 	"testing"
 	"time"
@@ -14,6 +15,9 @@ import (
 
 // 测试生成图片缩略图
 func TestGenerateImageThumbnail(t *testing.T) {
+	if os.Getenv("MYOBJ_RUN_MANUAL_UTILS_TEST") != "1" {
+		t.Skip("设置 MYOBJ_RUN_MANUAL_UTILS_TEST=1 后运行本地资源手工测试")
+	}
 	config.InitConfig()
 	logger.InitLogger()
 	err := preview.GenerateImageThumbnail("C:\\Users\\29120\\Pictures\\【哲风壁纸】剑客-水墨.png", "C:\\Users\\29120\\Pictures\\1.png", 200)
@@ -77,6 +81,9 @@ func TestDiskUtil(t *testing.T) {
 }
 
 func TestFileEncrypt(t *testing.T) {
+	if os.Getenv("MYOBJ_RUN_MANUAL_UTILS_TEST") != "1" {
+		t.Skip("设置 MYOBJ_RUN_MANUAL_UTILS_TEST=1 后运行本地资源手工测试")
+	}
 	config.InitConfig()
 	logger.InitLogger()
 	tn := time.Now()

@@ -241,14 +241,14 @@ func (u *UserService) Register(req *request.UserRegisterRequest) (*models.JsonRe
 		logger.LOG.Error("创建用户失败", "error", err)
 		return nil, err
 	}
-	virtualPath := &models.VirtualPath{
-		UserID:      user.ID,
-		Path:        "home",
-		ParentLevel: "",
-		CreatedTime: custom_type.Now(),
-		UpdateTime:  custom_type.Now(),
+	rootDirectory := &models.VirtualDirectory{
+		UserID:    user.ID,
+		Name:      "",
+		ParentID:  0,
+		CreatedAt: custom_type.Now(),
+		UpdatedAt: custom_type.Now(),
 	}
-	err = u.factory.VirtualPath().Create(ctx, virtualPath)
+	err = u.factory.Directory().Create(ctx, rootDirectory)
 	if err != nil {
 		logger.LOG.Error("创建目录失败", "error", err)
 		return nil, err

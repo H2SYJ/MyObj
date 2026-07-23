@@ -82,15 +82,16 @@ export interface FileInfo {
 export interface Breadcrumb {
   id: number
   name: string
-  path: string
+  absolute_path: string
 }
 
 // 目录项
 export interface FolderItem {
   id: number
   name: string
-  path: string
-  created_time: string
+  parent_id: number
+  absolute_path: string
+  created_at: string
 }
 
 // 文件项
@@ -107,7 +108,7 @@ export interface FileItem {
 
 // 文件列表请求
 export interface FileListRequest {
-  virtualPath?: string
+  directory_id?: number
   type?: string
   sortBy?: string
   sortOrder?: 'asc' | 'desc'
@@ -118,7 +119,7 @@ export interface FileListRequest {
 // 文件列表响应
 export interface FileListResponse {
   breadcrumbs: Breadcrumb[]
-  current_path: string
+  current_directory_id: number
   folders: FolderItem[]
   files: FileItem[]
   total: number

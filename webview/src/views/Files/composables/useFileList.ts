@@ -17,7 +17,7 @@ export function useFileList() {
 
   const fileListData = ref<FileListResponse>({
     breadcrumbs: [],
-    current_path: '0',
+    current_directory_id: 0,
     folders: [],
     files: [],
     total: 0,
@@ -27,7 +27,7 @@ export function useFileList() {
 
   const currentPage = ref(1)
   const pageSize = ref(20)
-  const currentPath = ref<string>('')
+  const currentDirectoryId = ref(0)
   const thumbnailCache = ref<Map<string, string>>(new Map())
   const loading = ref(false)
   const cachedSortBy = cache.local.get(SORT_BY_KEY)
@@ -41,18 +41,17 @@ export function useFileList() {
 
   const formatBreadcrumbName = (name: string): string => {
     if (!name) return ''
-    let formatted = name.replace(/^\/+/, '')
-    if (formatted === 'home' || formatted === '') {
+    if (name === 'home' || name === '') {
       return t('files.home')
     }
-    return formatted
+    return name
   }
 
   const loadFileList = async () => {
     loading.value = true
     try {
       const res = await getFileList({
-        virtualPath: currentPath.value,
+        directory_id: currentDirectoryId.value,
         sortBy: sortBy.value,
         sortOrder: sortOrder.value,
         page: currentPage.value,
@@ -62,9 +61,7 @@ export function useFileList() {
       if (res.code === 200) {
         fileListData.value = res.data
 
-        if (res.data.current_path) {
-          currentPath.value = res.data.current_path
-        }
+        currentDirectoryId.value = res.data.current_directory_id
 
         // 使用 Promise.all 并发加载缩略图
         const thumbnailPromises = res.data.files
@@ -96,12 +93,11 @@ export function useFileList() {
     }
   }
 
-  const navigateToPath = (path: string) => {
-    // 先更新路由，watch 会自动处理 currentPath 和 loadFileList
+  const navigateToDirectory = (directoryId: number) => {
     router.push({
       path: route.path,
       query: {
-        virtualPath: path
+        directoryId: String(directoryId)
       }
     })
     // 注意：不需要手动调用 loadFileList，watch 会自动处理
@@ -133,13 +129,14 @@ export function useFileList() {
 
   // 监听路由变化，支持首次加载及浏览器前进/后退
   watch(
-    () => route.query.virtualPath,
-    newPath => {
-      const pathValue = newPath && typeof newPath === 'string' ? newPath : ''
-      const pathChanged = currentPath.value !== pathValue
+    () => route.query.directoryId,
+    rawDirectoryId => {
+      const parsed = typeof rawDirectoryId === 'string' ? Number(rawDirectoryId) : 0
+      const directoryId = Number.isInteger(parsed) && parsed > 0 ? parsed : 0
+      const pathChanged = currentDirectoryId.value !== directoryId
 
       if (pathChanged) {
-        currentPath.value = pathValue
+        currentDirectoryId.value = directoryId
         currentPage.value = 1
       }
 
@@ -155,11 +152,11 @@ export function useFileList() {
     fileListData,
     currentPage,
     pageSize,
-    currentPath,
+    currentPath: currentDirectoryId,
     breadcrumbs,
     formatBreadcrumbName,
     loadFileList,
-    navigateToPath,
+    navigateToPath: navigateToDirectory,
     getThumbnailUrl,
     handlePageChange,
     handleSizeChange,

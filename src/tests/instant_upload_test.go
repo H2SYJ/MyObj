@@ -243,9 +243,21 @@ func TestPrepareFileInfo(t *testing.T) {
 
 	// 准备文件信息
 	fileInfo := &models.FileInfo{
-		ID:   "test-file-001",
-		Name: "test.bin",
-		Size: int(quickResult.FileSize),
+		ID:             "test-file-001",
+		Name:           "test.bin",
+		Size:           int(quickResult.FileSize),
+		ChunkSignature: quickResult.ChunkSignature,
+		FileHash:       quickResult.FullHash,
+		HasFullHash:    quickResult.FullHash != "",
+	}
+	if len(quickResult.ChunkHashes) > 0 {
+		fileInfo.FirstChunkHash = quickResult.ChunkHashes[0]
+	}
+	if len(quickResult.ChunkHashes) > 1 {
+		fileInfo.SecondChunkHash = quickResult.ChunkHashes[1]
+	}
+	if len(quickResult.ChunkHashes) > 2 {
+		fileInfo.ThirdChunkHash = quickResult.ChunkHashes[2]
 	}
 
 	// 验证

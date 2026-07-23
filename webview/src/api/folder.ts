@@ -4,8 +4,8 @@ import type { ApiResponse } from '@/types'
 
 // 创建文件夹请求参数
 export interface CreateFolderRequest {
-  parent_level: string
-  dir_path: string
+  parent_id: number
+  name: string
 }
 
 /**

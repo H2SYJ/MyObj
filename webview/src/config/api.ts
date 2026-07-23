@@ -29,6 +29,7 @@ export const API_ENDPOINTS = {
   // 文件相关
   FILE: {
     LIST: '/file/list',
+    DIRECTORIES: '/file/directories',
     UPLOAD: '/file/upload',
     DOWNLOAD: '/file/download',
     DELETE: '/file/delete',

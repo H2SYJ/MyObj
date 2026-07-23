@@ -9,8 +9,8 @@ type UploadPrecheckRequest struct {
 	FileSize int64 `json:"file_size"`
 	// 文件hash签名
 	ChunkSignature string `json:"chunk_signature"`
-	// 路径ID
-	PathID string `json:"path_id"`
+	// 目录ID
+	DirectoryID int `json:"directory_id" binding:"required,min=1"`
 	// 文件分片的DM5列表
 	FilesMd5 []string `json:"files_md5"`
 }
@@ -27,8 +27,8 @@ type FileSearchRequest struct {
 
 // FileListRequest 文件列表请求
 type FileListRequest struct {
-	// 虚拟路径（当前所在目录）
-	VirtualPath string `form:"virtualPath"`
+	// 当前目录ID，0表示用户根目录
+	DirectoryID int `form:"directory_id" binding:"min=0"`
 	// 文件类型
 	Type string `form:"type"`
 	// 排序字段（name, size, time）
@@ -43,27 +43,21 @@ type FileListRequest struct {
 
 // MakeDirRequest 创建文件夹请求
 type MakeDirRequest struct {
-	// 父级路径
-	ParentLevel string `json:"parent_level"`
-	// 新文件夹路径
-	DirPath string `json:"dir_path"`
+	ParentID int    `json:"parent_id" binding:"required,min=1"`
+	Name     string `json:"name" binding:"required"`
 }
 
 // MoveFileRequest 移动文件请求
 type MoveFileRequest struct {
-	// 源文件ID
-	FileID string `json:"file_id"`
-	// 源文件路径
-	SourcePath string `json:"source_path"`
-	// 目标文件路径
-	TargetPath string `json:"target_path"`
+	FileID           string `json:"file_id" binding:"required"`
+	TargetDirectoryID int    `json:"target_directory_id" binding:"required,min=1"`
 }
 
 // MoveItemsRequest 批量移动文件和目录。
 type MoveItemsRequest struct {
-	FileIDs    []string `json:"file_ids"`
-	DirIDs     []int    `json:"dir_ids"`
-	TargetPath string   `json:"target_path" binding:"required"`
+	FileIDs           []string `json:"file_ids"`
+	DirectoryIDs      []int    `json:"directory_ids"`
+	TargetDirectoryID int      `json:"target_directory_id" binding:"required,min=1"`
 }
 
 // DeleteItemsRequest 批量将文件和目录移动到回收站。

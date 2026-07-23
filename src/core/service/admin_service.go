@@ -167,11 +167,12 @@ func (a *AdminService) AdminCreateUser(req *request.AdminCreateUserRequest) (*mo
 		logger.LOG.Error("创建用户失败", "error", err)
 		return nil, err
 	}
-	if err := a.factory.VirtualPath().Create(ctx, &models.VirtualPath{
-		UserID:      user.ID,
-		Path:        "home",
-		CreatedTime: custom_type.Now(),
-		UpdateTime:  custom_type.Now(),
+	if err := a.factory.Directory().Create(ctx, &models.VirtualDirectory{
+		UserID:    user.ID,
+		Name:      "",
+		ParentID:  0,
+		CreatedAt: custom_type.Now(),
+		UpdatedAt: custom_type.Now(),
 	}); err != nil {
 		logger.LOG.Error("创建虚拟路径失败", "error", err)
 		a.factory.User().Delete(ctx, user.ID)

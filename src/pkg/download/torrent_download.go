@@ -7,8 +7,8 @@ import (
 	"myobj/src/internal/repository/impl"
 	"myobj/src/pkg/custom_type"
 	"myobj/src/pkg/logger"
-	"myobj/src/pkg/models"
 	"myobj/src/pkg/upload"
+	"myobj/src/pkg/virtualpath"
 	"os"
 	"path/filepath"
 	"strings"
@@ -56,7 +56,7 @@ type TorrentDownloadOptions struct {
 //   - magnetOrTorrentPath: 磁力链接(magnet:?xt=urn:btih:...)或种子文件路径(.torrent)
 //   - userID: 用户ID
 //   - tempDir: 临时存放文件的目录
-//   - virtualPath: 要关联的逻辑路径(如: /home/我的文件)
+//   - savePath: 用户虚拟绝对保存路径（如：/我的文件）
 //   - repoFactory: 数据库仓储工厂
 //   - opts: 下载配置选项(可选，传nil使用默认配置)
 //
@@ -67,7 +67,7 @@ func DownloadTorrent(
 	magnetOrTorrentPath string,
 	userID string,
 	tempDir string,
-	virtualPath string,
+	savePath string,
 	repoFactory *impl.RepositoryFactory,
 	opts *TorrentDownloadOptions,
 ) (*TorrentDownloadResult, error) {
@@ -185,9 +185,12 @@ func DownloadTorrent(
 	}
 
 DownloadComplete:
-	// 创建虚拟目录结构（包含种子名称的子目录）
-	torrentVirtualPath := filepath.Join(virtualPath, torrentName)
-	if err := ensureVirtualPath(ctx, userID, torrentVirtualPath, repoFactory); err != nil {
+	// 创建虚拟目录结构（包含种子名称的子目录）。虚拟路径始终使用/分隔。
+	torrentSavePath, err := virtualpath.JoinSavePath(savePath, torrentName)
+	if err != nil {
+		return nil, fmt.Errorf("种子保存目录无效: %w", err)
+	}
+	if err := ensureSavePath(ctx, userID, torrentSavePath, repoFactory); err != nil {
 		return nil, fmt.Errorf("创建虚拟目录失败: %w", err)
 	}
 
@@ -233,12 +236,18 @@ DownloadComplete:
 				relativeDir = filepath.Join(torrentFile.Path[:len(torrentFile.Path)-1]...)
 			}
 
-			// 文件的虚拟路径
-			fileVirtualPath := filepath.Join(torrentVirtualPath, relativeDir)
+			// 文件的用户虚拟绝对保存路径
+			fileSavePath, pathErr := virtualpath.JoinSavePath(torrentSavePath, strings.ReplaceAll(relativeDir, "\\", "/"))
+			if pathErr != nil {
+				mu.Lock()
+				result.FailedFiles = append(result.FailedFiles, FailedFile{FileName: uniqueFileNames[idx], FilePath: relativeDir, Error: pathErr.Error()})
+				mu.Unlock()
+				return
+			}
 
 			// 确保文件的虚拟目录存在
 			if relativeDir != "" {
-				if err := ensureVirtualPath(ctx, userID, fileVirtualPath, repoFactory); err != nil {
+				if err := ensureSavePath(ctx, userID, fileSavePath, repoFactory); err != nil {
 					mu.Lock()
 					result.FailedFiles = append(result.FailedFiles, FailedFile{
 						FileName: uniqueFileNames[idx],
@@ -277,7 +286,7 @@ DownloadComplete:
 					TempFilePath: downloadedPath,
 					FileName:     uniqueFileNames[idx],
 					FileSize:     fileInfo.Size(),
-					VirtualPath:  fileVirtualPath,
+					SavePath:     fileSavePath,
 					UserID:       userID,
 					IsEnc:        opts.EnableEncryption,
 					IsChunk:      false, // BT下载的文件已经是完整的，不是分片上传
@@ -329,91 +338,10 @@ DownloadComplete:
 	return result, nil
 }
 
-// ensureVirtualPath 确保虚拟路径存在，不存在则创建（支持层级结构）
-func ensureVirtualPath(ctx context.Context, userID, fullPath string, repoFactory *impl.RepositoryFactory) error {
-	// 分割路径为各层级
-	parts := strings.Split(strings.Trim(fullPath, "/"), "/")
-	if len(parts) == 0 {
-		return fmt.Errorf("无效的虚拟路径: %s", fullPath)
-	}
-
-	// 首先获取用户的根目录（home），作为第一级子目录的父级
-	rootPath, err := repoFactory.VirtualPath().GetRootPath(ctx, userID)
-	if err != nil {
-		return fmt.Errorf("获取根目录失败: %w", err)
-	}
-	var parentID = fmt.Sprintf("%d", rootPath.ID) // 使用根目录的ID作为第一级子目录的父级ID
-
-	// 逐层创建虚拟路径
-	for i, part := range parts {
-		if part == "" {
-			continue
-		}
-
-		currentPath := "/" + part
-
-		// 查询当前层级路径是否存在（通过用户ID和路径匹配）
-		existingPaths, err := repoFactory.VirtualPath().ListByUserID(ctx, userID, 0, 1000)
-		if err != nil {
-			return fmt.Errorf("查询虚拟路径失败: %w", err)
-		}
-
-		// 查找是否已存在当前路径且父级匹配的记录
-		var existingPath *models.VirtualPath
-		for _, vp := range existingPaths {
-			if vp.Path == currentPath && vp.ParentLevel == parentID {
-				existingPath = vp
-				break
-			}
-		}
-
-		if existingPath != nil {
-			// 路径已存在，使用该路径的ID作为下一层的父级ID
-			parentID = fmt.Sprintf("%d", existingPath.ID)
-			continue
-		}
-
-		// 路径不存在，创建新记录
-		newPath := &models.VirtualPath{
-			UserID:      userID,
-			Path:        currentPath,
-			IsFile:      false,
-			IsDir:       true,
-			ParentLevel: parentID,
-			CreatedTime: custom_type.Now(),
-			UpdateTime:  custom_type.Now(),
-		}
-
-		if err := repoFactory.VirtualPath().Create(ctx, newPath); err != nil {
-			// 可能是并发创建导致的重复，再次查询
-			existingPaths, queryErr := repoFactory.VirtualPath().ListByUserID(ctx, userID, 0, 1000)
-			if queryErr != nil {
-				return fmt.Errorf("创建虚拟路径失败: %w, 查询失败: %w", err, queryErr)
-			}
-			for _, vp := range existingPaths {
-				if vp.Path == currentPath && vp.ParentLevel == parentID {
-					existingPath = vp
-					break
-				}
-			}
-			if existingPath != nil {
-				parentID = fmt.Sprintf("%d", existingPath.ID)
-			} else {
-				return fmt.Errorf("创建虚拟路径失败且无法查询到已创建的路径")
-			}
-		} else {
-			parentID = fmt.Sprintf("%d", newPath.ID)
-		}
-
-		logger.LOG.Debug("创建虚拟路径",
-			"userID", userID,
-			"path", currentPath,
-			"parentID", parentID,
-			"level", i+1,
-		)
-	}
-
-	return nil
+// ensureSavePath 确保用户虚拟绝对保存路径存在，不存在则创建（支持层级结构）。
+func ensureSavePath(ctx context.Context, userID, fullPath string, repoFactory *impl.RepositoryFactory) error {
+	_, err := virtualpath.EnsureDirectory(ctx, userID, fullPath, repoFactory)
+	return err
 }
 
 // TorrentFileInfo 种子文件信息
@@ -614,7 +542,7 @@ type TorrentSingleFileDownloadOptions struct {
 	DownloadRateMbps   int           // 下载速率限制(Mbps)
 	UploadRateMbps     int           // 上传速率限制(Mbps)
 	EnableEncryption   bool          // 是否加密存储
-	VirtualPath        string        // 虚拟路径
+	SavePath           string        // 用户虚拟绝对保存路径
 	TorrentName        string        // 种子名称
 	InfoHash           string        // InfoHash
 	FilePassword       string        // 文件密码（加密存储时必需）
@@ -670,7 +598,7 @@ func DownloadTorrentSingleFile(
 		opts = &TorrentSingleFileDownloadOptions{
 			MaxConcurrentPeers: 100,
 			EnableEncryption:   false,
-			VirtualPath:        "/离线下载/",
+			SavePath:           "/离线下载",
 		}
 	}
 
@@ -846,14 +774,17 @@ DownloadComplete:
 	// 单文件种子relativeDir保持为空
 
 	// 使用 / 拼接虚拟路径
-	torrentVirtualPath := strings.TrimSuffix(opts.VirtualPath, "/") + "/" + torrentName
-	fileVirtualPath := torrentVirtualPath
-	if relativeDir != "" {
-		fileVirtualPath = torrentVirtualPath + "/" + relativeDir
+	torrentSavePath, err := virtualpath.JoinSavePath(opts.SavePath, torrentName)
+	if err != nil {
+		return "", fmt.Errorf("种子保存目录无效: %w", err)
+	}
+	fileSavePath, err := virtualpath.JoinSavePath(torrentSavePath, relativeDir)
+	if err != nil {
+		return "", fmt.Errorf("文件保存目录无效: %w", err)
 	}
 
 	// 确保虚拟路径存在
-	if err := ensureVirtualPath(ctx, userID, fileVirtualPath, repoFactory); err != nil {
+	if err := ensureSavePath(ctx, userID, fileSavePath, repoFactory); err != nil {
 		return "", fmt.Errorf("创建虚拟目录失败: %w", err)
 	}
 
@@ -891,7 +822,7 @@ DownloadComplete:
 		TempFilePath:          downloadedPath,
 		FileName:              fileName,
 		FileSize:              fileStat.Size(),
-		VirtualPath:           fileVirtualPath,
+		SavePath:              fileSavePath,
 		UserID:                userID,
 		IsEnc:                 opts.EnableEncryption,
 		IsChunk:               false,
@@ -977,7 +908,7 @@ func ResumeTorrentDownload(taskID string, userID string, tempDir string, repoFac
 		opts := &TorrentSingleFileDownloadOptions{
 			MaxConcurrentPeers: 200, // 提高并发连接数以加速下载
 			EnableEncryption:   task.EnableEncryption,
-			VirtualPath:        task.VirtualPath,
+			SavePath:           task.SavePath,
 			TorrentName:        task.TorrentName,
 			InfoHash:           task.InfoHash,
 		}

@@ -35,7 +35,7 @@ func setupThumbnailService(t *testing.T, encrypted bool) (*FileService, *models.
 		user_id TEXT NOT NULL,
 		file_id TEXT NOT NULL,
 		file_name TEXT NOT NULL,
-		virtual_path TEXT NOT NULL,
+		directory_id INTEGER NOT NULL,
 		public BOOLEAN NOT NULL,
 		created_at DATETIME NOT NULL,
 		deleted_at DATETIME,
@@ -69,7 +69,7 @@ func setupThumbnailService(t *testing.T, encrypted bool) (*FileService, *models.
 		UserID:      "user-1",
 		FileID:      fileInfo.ID,
 		FileName:    fileInfo.Name,
-		VirtualPath: "1",
+		DirectoryID: 1,
 		UfID:        "user-file-1",
 		CreatedAt:   custom_type.Now(),
 	}

@@ -226,7 +226,7 @@ func (m *DownloadManager) runTask(ctx context.Context, task *models.DownloadTask
 		opts := &download.TorrentSingleFileDownloadOptions{
 			MaxConcurrentPeers: 200,
 			EnableEncryption:   task.EnableEncryption,
-			VirtualPath:        task.VirtualPath,
+			SavePath:           task.SavePath,
 			TorrentName:        task.TorrentName,
 			InfoHash:           task.InfoHash,
 			FilePassword:       filePassword,
@@ -240,7 +240,7 @@ func (m *DownloadManager) runTask(ctx context.Context, task *models.DownloadTask
 	} else if task.Type == enum.DownloadTaskTypeHLS.Value() {
 		opts := &download.HLSDownloadOptions{
 			EnableEncryption: task.EnableEncryption,
-			VirtualPath:      task.VirtualPath,
+			SavePath:         task.SavePath,
 			MaxRetries:       m.config.MaxRetries,
 			MaxConcurrent:    m.config.HTTPMaxConnectionsPerTask,
 			FilePassword:     filePassword,
@@ -270,7 +270,7 @@ func (m *DownloadManager) runTask(ctx context.Context, task *models.DownloadTask
 	} else {
 		opts := &download.HTTPDownloadOptions{
 			EnableEncryption: task.EnableEncryption,
-			VirtualPath:      task.VirtualPath,
+			SavePath:         task.SavePath,
 			MaxRetries:       m.config.MaxRetries,
 			ChunkSize:        int64(m.config.HTTPChunkSizeMB) * 1024 * 1024,
 			MaxConcurrent:    m.config.HTTPMaxConnectionsPerTask,

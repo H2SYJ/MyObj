@@ -12,6 +12,7 @@ import (
 	"myobj/src/pkg/enum"
 	"myobj/src/pkg/logger"
 	"myobj/src/pkg/models"
+	"myobj/src/pkg/virtualpath"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -162,8 +163,12 @@ func (d *DownloadService) buildSubscriptionDownload(input SubscriptionDownloadIn
 		return nil, err
 	}
 	now := custom_type.Now()
+	savePath, err := virtualpath.NormalizeAbsolutePath(input.SavePath)
+	if err != nil {
+		return nil, err
+	}
 	return &models.DownloadTask{ID: taskID, UserID: input.UserID, Type: taskType, FileName: fileName, URL: input.URL,
-		VirtualPath: input.SavePath, State: enum.DownloadTaskStateInit.Value(), TargetDir: d.tempDir, SupportRange: taskType == enum.DownloadTaskTypeHLS.Value(),
+		SavePath: savePath, State: enum.DownloadTaskStateInit.Value(), TargetDir: d.tempDir, SupportRange: taskType == enum.DownloadTaskTypeHLS.Value(),
 		RequestHeadersEncrypted: taskHeaders, HeaderHostsJSON: input.HeaderHostsJSON, CreateTime: now, UpdateTime: now}, nil
 }
 
@@ -232,9 +237,13 @@ func (d *DownloadService) CreateOfflineDownload(req *request.CreateOfflineDownlo
 	}
 
 	// 2. 设置默认虚拟路径
-	virtualPath := req.VirtualPath
-	if virtualPath == "" {
-		virtualPath = "/离线下载/"
+	savePath := req.SavePath
+	if savePath == "" {
+		savePath = "/离线下载"
+	}
+	savePath, err = virtualpath.NormalizeAbsolutePath(savePath)
+	if err != nil {
+		return nil, err
 	}
 
 	if req.EnableEncryption {
@@ -341,7 +350,7 @@ func (d *DownloadService) CreateOfflineDownload(req *request.CreateOfflineDownlo
 		Type:                    taskType,
 		FileName:                fileName,
 		URL:                     req.URL,
-		VirtualPath:             virtualPath,
+		SavePath:                savePath,
 		EnableEncryption:        req.EnableEncryption,
 		State:                   enum.DownloadTaskStateInit.Value(),
 		TargetDir:               d.tempDir,
@@ -776,7 +785,7 @@ func (d *DownloadService) convertTaskToResponse(task *models.DownloadTask) *resp
 		TypeText:         typeText,
 		State:            task.State,
 		StateText:        stateText,
-		VirtualPath:      task.VirtualPath,
+		SavePath:         task.SavePath,
 		SupportRange:     task.SupportRange,
 		EnableEncryption: task.EnableEncryption,
 		RequiresPassword: task.EnableEncryption && (task.State == enum.DownloadTaskStatePaused.Value() ||
@@ -880,7 +889,7 @@ func (d *DownloadService) CreateLocalFileDownload(req *request.CreateLocalFileDo
 		URL:              req.FileID, // 存储 uf_id 在URL字段
 		FileName:         fileInfo.Name,
 		FileSize:         int64(fileInfo.Size),
-		VirtualPath:      "",    // 网盘下载不需要虚拟路径
+		SavePath:         "",    // 网盘下载不需要保存目录
 		EnableEncryption: false, // 网盘文件下载不加密存储（文件本身可能已加密）
 		State:            enum.DownloadTaskStateInit.Value(),
 		TargetDir:        d.tempDir,
@@ -1034,9 +1043,13 @@ func (d *DownloadService) StartTorrentDownload(req *request.StartTorrentDownload
 		"user_id", userID)
 
 	// 5. 设置默认虚拟路径
-	virtualPath := req.VirtualPath
-	if virtualPath == "" {
-		virtualPath = "/离线下载/"
+	savePath := req.SavePath
+	if savePath == "" {
+		savePath = "/离线下载"
+	}
+	savePath, err = virtualpath.NormalizeAbsolutePath(savePath)
+	if err != nil {
+		return nil, err
 	}
 
 	// 验证加密存储密码
@@ -1066,7 +1079,7 @@ func (d *DownloadService) StartTorrentDownload(req *request.StartTorrentDownload
 			URL:              req.Content, // 存储种子内容或磁力链
 			FileName:         fileInfo.Name,
 			FileSize:         fileInfo.Size,
-			VirtualPath:      virtualPath,
+			SavePath:         savePath,
 			EnableEncryption: req.EnableEncryption,
 			InfoHash:         parseResult.InfoHash,
 			FileIndex:        fileIndex,

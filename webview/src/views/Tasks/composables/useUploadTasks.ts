@@ -93,7 +93,7 @@ export function useUploadTasks() {
       return
     }
 
-    if (!task.pathId) {
+    if (!task.directoryId) {
       proxy?.$modal.msgError(t('tasks.taskInfoIncomplete'))
       return
     }
@@ -191,7 +191,7 @@ export function useUploadTasks() {
 
       await uploadSingleFile({
         file: selectedFile,
-        pathId: task.pathId!,
+        directoryId: task.directoryId,
         taskId: taskId,
         onProgress: () => {},
         onSuccess: fileName => {

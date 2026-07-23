@@ -29,8 +29,8 @@ type DownloadTask struct {
 	URL string `gorm:"column:url;type:text"`
 	// 下载路径
 	Path string `gorm:"column:path;type:text"`
-	// 虚拟路径
-	VirtualPath string `gorm:"column:virtual_path;type:text"`
+	// 保存目录的用户虚拟绝对路径
+	SavePath string `gorm:"column:save_path;type:text"`
 	// 任务状态
 	State int `gorm:"column:state;type:integer;index:idx_download_user_type_state_create,priority:3;index:idx_download_schedule,priority:1"`
 	// 错误信息

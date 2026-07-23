@@ -9,7 +9,6 @@ import (
 	"myobj/src/pkg/custom_type"
 	"myobj/src/pkg/models"
 	"sort"
-	"strconv"
 	"strings"
 
 	"github.com/google/uuid"
@@ -19,20 +18,20 @@ import (
 // MoveItems 原子移动文件和目录。
 func (f *FileService) MoveItems(req *request.MoveItemsRequest, userID string) (*models.JsonResponse, error) {
 	fileIDs := uniqueStrings(req.FileIDs)
-	dirIDs := uniqueInts(req.DirIDs)
+	dirIDs := uniqueInts(req.DirectoryIDs)
 	if len(fileIDs) == 0 && len(dirIDs) == 0 {
 		return models.NewJsonResponse(400, "请选择要移动的文件或目录", nil), nil
 	}
-	targetID, err := strconv.Atoi(req.TargetPath)
-	if err != nil || targetID <= 0 {
+	targetID := req.TargetDirectoryID
+	if targetID <= 0 {
 		return models.NewJsonResponse(400, "目标目录无效", nil), nil
 	}
 
 	ctx := context.Background()
-	err = f.factory.DB().WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+	err := f.factory.DB().WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		txFactory := f.factory.WithTx(tx)
-		target, err := txFactory.VirtualPath().GetByID(ctx, targetID)
-		if err != nil || target.UserID != userID || !target.IsDir {
+		target, err := txFactory.Directory().GetByID(ctx, targetID)
+		if err != nil || target.UserID != userID {
 			return errors.New("目标目录不存在或无权访问")
 		}
 
@@ -41,12 +40,12 @@ func (f *FileService) MoveItems(req *request.MoveItemsRequest, userID string) (*
 			if err != nil {
 				return fmt.Errorf("文件不存在或无权访问: %s", fileID)
 			}
-			if userFile.VirtualPath == req.TargetPath {
+			if userFile.DirectoryID == targetID {
 				return fmt.Errorf("文件“%s”已在目标目录", userFile.FileName)
 			}
 			var count int64
 			if err := tx.Model(&models.UserFiles{}).
-				Where("user_id = ? AND virtual_path = ? AND file_name = ? AND uf_id <> ? AND deleted_at IS NULL", userID, req.TargetPath, userFile.FileName, fileID).
+				Where("user_id = ? AND directory_id = ? AND file_name = ? AND uf_id <> ? AND deleted_at IS NULL", userID, targetID, userFile.FileName, fileID).
 				Count(&count).Error; err != nil {
 				return err
 			}
@@ -55,36 +54,36 @@ func (f *FileService) MoveItems(req *request.MoveItemsRequest, userID string) (*
 			}
 			if err := tx.Model(&models.UserFiles{}).
 				Where("user_id = ? AND uf_id = ?", userID, fileID).
-				Update("virtual_path", req.TargetPath).Error; err != nil {
+				Update("directory_id", targetID).Error; err != nil {
 				return err
 			}
 		}
 
 		for _, dirID := range dirIDs {
-			dir, err := txFactory.VirtualPath().GetByID(ctx, dirID)
-			if err != nil || dir.UserID != userID || !dir.IsDir {
+			dir, err := txFactory.Directory().GetByID(ctx, dirID)
+			if err != nil || dir.UserID != userID {
 				return fmt.Errorf("目录不存在或无权访问: %d", dirID)
 			}
-			if dir.ParentLevel == "" {
+			if dir.ParentID == 0 {
 				return errors.New("根目录不能移动")
 			}
-			if dir.ParentLevel == req.TargetPath {
-				return fmt.Errorf("目录“%s”已在目标位置", cleanFolderName(dir.Path))
+			if dir.ParentID == targetID {
+				return fmt.Errorf("目录“%s”已在目标位置", dir.Name)
 			}
 			if dirID == targetID || directoryContains(ctx, txFactory, userID, dirID, targetID) {
-				return fmt.Errorf("不能将目录“%s”移动到自身或其子目录", cleanFolderName(dir.Path))
+				return fmt.Errorf("不能将目录“%s”移动到自身或其子目录", dir.Name)
 			}
 			var count int64
-			if err := tx.Model(&models.VirtualPath{}).
-				Where("user_id = ? AND parent_level = ? AND path = ? AND id <> ?", userID, req.TargetPath, dir.Path, dirID).
+			if err := tx.Model(&models.VirtualDirectory{}).
+				Where("user_id = ? AND parent_id = ? AND name = ? AND id <> ?", userID, targetID, dir.Name, dirID).
 				Count(&count).Error; err != nil {
 				return err
 			}
 			if count > 0 {
-				return fmt.Errorf("目标目录已存在目录“%s”", cleanFolderName(dir.Path))
+				return fmt.Errorf("目标目录已存在目录“%s”", dir.Name)
 			}
-			if err := tx.Model(&models.VirtualPath{}).Where("id = ? AND user_id = ?", dirID, userID).
-				Updates(map[string]interface{}{"parent_level": req.TargetPath, "update_time": custom_type.Now()}).Error; err != nil {
+			if err := tx.Model(&models.VirtualDirectory{}).Where("id = ? AND user_id = ?", dirID, userID).
+				Updates(map[string]interface{}{"parent_id": targetID, "updated_at": custom_type.Now()}).Error; err != nil {
 				return err
 			}
 		}
@@ -170,20 +169,20 @@ func recycleSingleUserFile(ctx context.Context, factory *impl.RepositoryFactory,
 }
 
 func recycleDirectoryTree(ctx context.Context, factory *impl.RepositoryFactory, tx *gorm.DB, userID string, rootID int) ([]string, error) {
-	root, err := factory.VirtualPath().GetByID(ctx, rootID)
-	if err != nil || root.UserID != userID || !root.IsDir {
+	root, err := factory.Directory().GetByID(ctx, rootID)
+	if err != nil || root.UserID != userID {
 		return nil, fmt.Errorf("目录不存在或无权访问: %d", rootID)
 	}
-	if root.ParentLevel == "" {
+	if root.ParentID == 0 {
 		return nil, errors.New("根目录不能删除")
 	}
 	type nodeWithDepth struct {
-		Node  *models.VirtualPath
+		Node  *models.VirtualDirectory
 		Depth int
 	}
 	nodes := []nodeWithDepth{{Node: root, Depth: 0}}
 	for i := 0; i < len(nodes); i++ {
-		children, err := factory.VirtualPath().ListSubFoldersByParentID(ctx, userID, nodes[i].Node.ID, 0, -1)
+		children, err := factory.Directory().ListChildren(ctx, userID, nodes[i].Node.ID, 0, -1)
 		if err != nil {
 			return nil, err
 		}
@@ -196,12 +195,12 @@ func recycleDirectoryTree(ctx context.Context, factory *impl.RepositoryFactory, 
 		dirIDs = append(dirIDs, node.Node.ID)
 	}
 	var files []*models.UserFiles
-	if err := tx.Where("user_id = ? AND virtual_path IN ? AND deleted_at IS NULL", userID, intStrings(dirIDs)).Find(&files).Error; err != nil {
+	if err := tx.Where("user_id = ? AND directory_id IN ? AND deleted_at IS NULL", userID, dirIDs).Find(&files).Error; err != nil {
 		return nil, err
 	}
 
 	recycledID := uuid.Must(uuid.NewV7()).String()
-	parentID, _ := strconv.Atoi(root.ParentLevel)
+	parentID := root.ParentID
 	var totalSize int64
 	for _, file := range files {
 		var info models.FileInfo
@@ -212,17 +211,16 @@ func recycleDirectoryTree(ctx context.Context, factory *impl.RepositoryFactory, 
 	}
 	recycled := &models.Recycled{
 		ID: recycledID, FileID: "", UserID: userID, ItemType: models.RecycledItemTypeFolder,
-		ItemName: cleanFolderName(root.Path), OriginalParentID: parentID,
+		ItemName: root.Name, OriginalParentID: parentID,
 		TotalSize: totalSize, ItemCount: len(nodes) + len(files), CreatedAt: custom_type.Now(),
 	}
 	if err := factory.Recycled().Create(ctx, recycled); err != nil {
 		return nil, err
 	}
 	for _, node := range nodes {
-		parentOriginalID, _ := strconv.Atoi(node.Node.ParentLevel)
 		record := &models.RecycledDirectoryNode{
-			RecycledID: recycledID, OriginalDirID: node.Node.ID, ParentOriginalID: parentOriginalID,
-			Name: cleanFolderName(node.Node.Path), Depth: node.Depth,
+			RecycledID: recycledID, OriginalDirID: node.Node.ID, ParentOriginalID: node.Node.ParentID,
+			Name: node.Node.Name, Depth: node.Depth,
 		}
 		if err := tx.Create(record).Error; err != nil {
 			return nil, err
@@ -230,9 +228,8 @@ func recycleDirectoryTree(ctx context.Context, factory *impl.RepositoryFactory, 
 	}
 	memberIDs := make([]string, 0, len(files))
 	for _, file := range files {
-		originalDirID, _ := strconv.Atoi(file.VirtualPath)
 		if err := tx.Create(&models.RecycledDirectoryFile{
-			RecycledID: recycledID, FileID: file.UfID, OriginalDirID: originalDirID,
+			RecycledID: recycledID, FileID: file.UfID, OriginalDirID: file.DirectoryID,
 		}).Error; err != nil {
 			return nil, err
 		}
@@ -245,7 +242,7 @@ func recycleDirectoryTree(ctx context.Context, factory *impl.RepositoryFactory, 
 	}
 	sort.Slice(nodes, func(i, j int) bool { return nodes[i].Depth > nodes[j].Depth })
 	for _, node := range nodes {
-		if err := tx.Unscoped().Where("id = ? AND user_id = ?", node.Node.ID, userID).Delete(&models.VirtualPath{}).Error; err != nil {
+		if err := tx.Unscoped().Where("id = ? AND user_id = ?", node.Node.ID, userID).Delete(&models.VirtualDirectory{}).Error; err != nil {
 			return nil, err
 		}
 	}
@@ -259,22 +256,22 @@ func filterNestedDirectories(ctx context.Context, factory *impl.RepositoryFactor
 	}
 	result := make([]int, 0, len(dirIDs))
 	for _, id := range dirIDs {
-		dir, err := factory.VirtualPath().GetByID(ctx, id)
+		dir, err := factory.Directory().GetByID(ctx, id)
 		if err != nil || dir.UserID != userID {
 			return nil, fmt.Errorf("目录不存在或无权访问: %d", id)
 		}
-		parent, _ := strconv.Atoi(dir.ParentLevel)
+		parent := dir.ParentID
 		nested := false
 		for parent > 0 {
 			if _, ok := selected[parent]; ok {
 				nested = true
 				break
 			}
-			ancestor, err := factory.VirtualPath().GetByID(ctx, parent)
+			ancestor, err := factory.Directory().GetByID(ctx, parent)
 			if err != nil || ancestor.UserID != userID {
 				break
 			}
-			parent, _ = strconv.Atoi(ancestor.ParentLevel)
+			parent = ancestor.ParentID
 		}
 		if !nested {
 			result = append(result, id)
@@ -289,11 +286,11 @@ func directoryContains(ctx context.Context, factory *impl.RepositoryFactory, use
 		if currentID == ancestorID {
 			return true
 		}
-		current, err := factory.VirtualPath().GetByID(ctx, currentID)
+		current, err := factory.Directory().GetByID(ctx, currentID)
 		if err != nil || current.UserID != userID {
 			return false
 		}
-		currentID, _ = strconv.Atoi(current.ParentLevel)
+		currentID = current.ParentID
 	}
 	return false
 }
@@ -326,14 +323,6 @@ func uniqueInts(values []int) []int {
 		}
 		seen[value] = struct{}{}
 		result = append(result, value)
-	}
-	return result
-}
-
-func intStrings(values []int) []string {
-	result := make([]string, 0, len(values))
-	for _, value := range values {
-		result = append(result, strconv.Itoa(value))
 	}
 	return result
 }

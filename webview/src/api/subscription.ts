@@ -9,7 +9,7 @@ export interface Subscription {
   plugin_id: string
   plugin_version: string
   schedule_time: string
-  default_path: string
+  save_path: string
   initial_limit: number
   max_items_per_run: number
   enabled: boolean
@@ -59,7 +59,7 @@ export interface SubscriptionPayload {
   config: Record<string, unknown>
   granted_permissions: string[]
   schedule_time: string
-  default_path: string
+  save_path: string
   initial_limit: number
   max_items_per_run: number
   enabled?: boolean

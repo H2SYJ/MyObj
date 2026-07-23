@@ -40,7 +40,7 @@
         />
         <div class="name-content">
           <file-name-tooltip v-if="entry.type === 'file'" :file-name="entry.file.file_name" view-mode="table" />
-          <span v-else class="folder-name">{{ cleanName(entry.folder.name) }}</span>
+          <span v-else class="folder-name">{{ entry.folder.name }}</span>
           <span v-if="entry.type === 'file'" class="mobile-meta">
             {{ formatSize(entry.file.file_size) }} · {{ formatDate(entry.file.created_at) }}
           </span>
@@ -52,7 +52,7 @@
       </div>
       <span class="desktop-only size-cell">{{ entry.type === 'file' ? formatSize(entry.file.file_size) : '-' }}</span>
       <span class="desktop-only time-cell">{{
-        formatDate(entry.type === 'file' ? entry.file.created_at : entry.folder.created_time)
+        formatDate(entry.type === 'file' ? entry.file.created_at : entry.folder.created_at)
       }}</span>
       <button class="more-button" type="button" :aria-label="t('common.more')" @click.stop="openMore(entry, $event)">
         <el-icon><More /></el-icon>
@@ -81,7 +81,6 @@
   const { t } = useI18n()
   let longPressTimer: ReturnType<typeof setTimeout> | undefined
   let longPressTriggered = false
-  const cleanName = (name: string) => name.replace(/^\/+/, '')
   const startLongPress = (entry: FileEntry, event: PointerEvent) => {
     if (event.pointerType === 'mouse') return
     cancelLongPress()

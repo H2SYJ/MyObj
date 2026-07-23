@@ -28,7 +28,7 @@ import (
 
 type HLSDownloadOptions struct {
 	EnableEncryption bool
-	VirtualPath      string
+	SavePath         string
 	MaxRetries       int
 	MaxConcurrent    int
 	FilePassword     string
@@ -59,7 +59,7 @@ type hlsProgress struct {
 
 func DownloadHLSWithContext(ctx context.Context, taskID, rawURL, userID, tempDir string, repoFactory *impl.RepositoryFactory, opts *HLSDownloadOptions) (*HTTPDownloadResult, error) {
 	if opts == nil {
-		opts = &HLSDownloadOptions{VirtualPath: "/离线下载/", MaxRetries: 3, MaxConcurrent: 4}
+		opts = &HLSDownloadOptions{SavePath: "/离线下载", MaxRetries: 3, MaxConcurrent: 4}
 	}
 	if opts.MaxConcurrent <= 0 {
 		opts.MaxConcurrent = 4
@@ -67,8 +67,8 @@ func DownloadHLSWithContext(ctx context.Context, taskID, rawURL, userID, tempDir
 	if opts.MaxRetries < 0 {
 		opts.MaxRetries = 0
 	}
-	if opts.VirtualPath == "" {
-		opts.VirtualPath = "/离线下载/"
+	if opts.SavePath == "" {
+		opts.SavePath = "/离线下载"
 	}
 	if opts.OutputFileName == "" {
 		return nil, fmt.Errorf("HLS输出文件名不能为空")
@@ -135,7 +135,7 @@ func DownloadHLSWithContext(ctx context.Context, taskID, rawURL, userID, tempDir
 	}
 	uploadData := &upload.FileUploadData{
 		TempFilePath: outputPath, FileName: opts.OutputFileName, FileSize: stat.Size(),
-		VirtualPath: opts.VirtualPath, UserID: userID, IsEnc: opts.EnableEncryption,
+		SavePath: opts.SavePath, UserID: userID, IsEnc: opts.EnableEncryption,
 		IsChunk: false, FilePassword: opts.FilePassword, ReservedSize: opts.ReservedSize,
 	}
 	fileID, err := upload.ProcessUploadedFile(uploadData, repoFactory)

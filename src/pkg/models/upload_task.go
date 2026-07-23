@@ -22,8 +22,8 @@ type UploadTask struct {
 	UploadedChunks int `gorm:"column:uploaded_chunks;type:integer;default:0" json:"uploaded_chunks"`
 	// 文件hash签名（用于秒传检测）
 	ChunkSignature string `gorm:"column:chunk_signature;type:text" json:"chunk_signature"`
-	// 路径ID
-	PathID string `gorm:"column:path_id;type:text" json:"path_id"`
+	// 目录ID
+	DirectoryID int `gorm:"column:directory_id;type:integer;not null" json:"directory_id"`
 	// 临时目录路径
 	TempDir string `gorm:"column:temp_dir;type:text" json:"temp_dir"`
 	// 预检阶段选中的磁盘ID

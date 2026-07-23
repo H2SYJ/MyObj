@@ -168,17 +168,30 @@ func (s *PluginService) List(ctx context.Context, enabledOnly bool) ([]map[strin
 	for _, record := range records {
 		var manifest pluginpkg.Manifest
 		_ = json.Unmarshal([]byte(record.ManifestJSON), &manifest)
+		status := "ready"
+		if record.APIVersion != pluginpkg.APIVersion {
+			status = "incompatible_api"
+		} else if !record.Enabled {
+			status = "disabled"
+		}
 		result = append(result, map[string]interface{}{
 			"id": record.ID, "name": record.Name, "version": record.Version, "author": record.Author,
 			"description": record.Description, "enabled": record.Enabled, "package_sha256": record.PackageSHA256,
 			"wasm_sha256": record.WASMSHA256, "permissions": manifest.Permissions, "config_fields": manifest.ConfigFields,
-			"signed": false, "trust_status": "unsigned_admin_trusted",
+			"api_version": record.APIVersion, "status": status, "signed": false, "trust_status": "unsigned_admin_trusted",
 		})
 	}
 	return result, nil
 }
 
 func (s *PluginService) Toggle(ctx context.Context, id string, enabled bool) error {
+	var plugin models.InstalledPlugin
+	if err := s.factory.DB().WithContext(ctx).Where("id = ?", id).First(&plugin).Error; err != nil {
+		return fmt.Errorf("插件不存在")
+	}
+	if enabled && plugin.APIVersion != pluginpkg.APIVersion {
+		return fmt.Errorf("插件API版本不兼容，请升级到v%s", pluginpkg.APIVersion)
+	}
 	result := s.factory.DB().WithContext(ctx).Model(&models.InstalledPlugin{}).Where("id = ?", id).Updates(map[string]interface{}{"enabled": enabled, "updated_at": time.Now()})
 	if result.Error != nil {
 		return result.Error

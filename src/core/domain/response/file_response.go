@@ -7,7 +7,7 @@ type FileListResponse struct {
 	// 面包屑路径
 	Breadcrumbs []Breadcrumb `json:"breadcrumbs"`
 	// 当前路径
-	CurrentPath string `json:"current_path"`
+	CurrentDirectoryID int `json:"current_directory_id"`
 	// 目录列表
 	Folders []*FolderItem `json:"folders"`
 	// 文件列表
@@ -22,17 +22,28 @@ type FileListResponse struct {
 
 // Breadcrumb 面包屑项
 type Breadcrumb struct {
-	ID   int    `json:"id"`
-	Name string `json:"name"`
-	Path string `json:"path"`
+	ID           int    `json:"id"`
+	Name         string `json:"name"`
+	AbsolutePath string `json:"absolute_path"`
 }
 
 // FolderItem 目录项
 type FolderItem struct {
-	ID          int                  `json:"id"`
-	Name        string               `json:"name"`
-	Path        string               `json:"path"`
-	CreatedTime custom_type.JsonTime `json:"created_time"`
+	ID           int                  `json:"id"`
+	Name         string               `json:"name"`
+	ParentID     int                  `json:"parent_id"`
+	AbsolutePath string               `json:"absolute_path"`
+	CreatedAt    custom_type.JsonTime `json:"created_at"`
+}
+
+// DirectoryItem 是目录树接口返回的规范目录节点。
+type DirectoryItem struct {
+	ID           int                  `json:"id"`
+	Name         string               `json:"name"`
+	ParentID     int                  `json:"parent_id"`
+	AbsolutePath string               `json:"absolute_path"`
+	CreatedAt    custom_type.JsonTime `json:"created_at"`
+	UpdatedAt    custom_type.JsonTime `json:"updated_at"`
 }
 
 // FileItem 文件项
@@ -46,23 +57,6 @@ type FileItem struct {
 	HasThumbnail bool                 `json:"has_thumbnail"` // 是否有缩略图
 	Public       bool                 `json:"public"`        // 是否公开
 	CreatedAt    custom_type.JsonTime `json:"created_at"`
-}
-
-// FileDir 文件目录结构体
-type FileDir struct {
-	//路径ID
-	ID int `json:"id"`
-	// 路径
-	Path string `json:"path"`
-	// 子路径
-	Subpath []struct {
-		ID   int    `json:"id"`
-		Path string `json:"path"`
-	} `json:"subpath"`
-	// 父级路径id
-	ParentID string `json:"parent_id"`
-	// 文件夹创建时间
-	CreatedTime custom_type.JsonTime `json:"created_time"`
 }
 
 // FileInfoData 文件信息结构体
@@ -80,7 +74,8 @@ type FileInfoData struct {
 	// 文件类型
 	MimeType string `json:"mime_type"`
 	// 文件虚拟路径
-	VirtualPath string `json:"virtual_path"`
+	DirectoryID  int    `json:"directory_id"`
+	AbsolutePath string `json:"absolute_path"`
 	// 文件上传时间
 	CreatedAt string `json:"created_at"`
 	// 文件缩略图 base64
@@ -193,7 +188,7 @@ type UploadTaskItem struct {
 	// 文件hash签名
 	ChunkSignature string `json:"chunk_signature"`
 	// 路径ID
-	PathID string `json:"path_id"`
+	DirectoryID int `json:"directory_id"`
 	// 任务状态（pending/uploading/processing/completed/failed/aborted）
 	Status string `json:"status"`
 	// 后台处理阶段

@@ -54,7 +54,7 @@ type CreateOfflineDownloadRequest struct {
 	// 下载URL
 	URL string `json:"url" binding:"required"`
 	// 保存的虚拟路径（可选，默认为/离线下载/）
-	VirtualPath string `json:"virtual_path"`
+	SavePath string `json:"save_path"`
 	// 是否加密存储
 	EnableEncryption bool `json:"enable_encryption"`
 	// 文件密码（加密文件必需）
@@ -136,7 +136,7 @@ type StartTorrentDownloadRequest struct {
 	// 要下载的文件索引列表
 	FileIndexes []int `json:"file_indexes" binding:"required"`
 	// 保存的虚拟路径（可选，默认为/离线下载/）
-	VirtualPath string `json:"virtual_path"`
+	SavePath string `json:"save_path"`
 	// 是否加密存储
 	EnableEncryption bool `json:"enable_encryption"`
 	// 文件密码（加密文件必需）

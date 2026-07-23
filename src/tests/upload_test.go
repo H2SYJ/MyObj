@@ -6,11 +6,15 @@ import (
 	"myobj/src/internal/repository/impl"
 	"myobj/src/pkg/logger"
 	"myobj/src/pkg/upload"
+	"os"
 	"testing"
 	"time"
 )
 
 func TestUpload(t *testing.T) {
+	if os.Getenv("MYOBJ_RUN_MANUAL_UPLOAD_TEST") != "1" {
+		t.Skip("未启用依赖本地数据库和大文件的手工上传测试")
+	}
 	err := config.InitConfig()
 	if err != nil {
 		panic(err)
@@ -29,7 +33,7 @@ func TestUpload(t *testing.T) {
 		IsEnc:           true,
 		IsChunk:         false,
 		ChunkCount:      0,
-		VirtualPath:     "/home/我的文件",
+		SavePath:        "/我的文件",
 		UserID:          "cloaihdnlaishcweoc",
 	}
 	tn := time.Now()
@@ -44,6 +48,9 @@ func TestUpload(t *testing.T) {
 }
 
 func TestDownload(t *testing.T) {
+	if os.Getenv("MYOBJ_RUN_MANUAL_UPLOAD_TEST") != "1" {
+		t.Skip("未启用依赖本地数据库的手工下载测试")
+	}
 	err := config.InitConfig()
 	if err != nil {
 		panic(err)

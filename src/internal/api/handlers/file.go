@@ -91,8 +91,8 @@ func (f *FileHandler) Router(c *gin.RouterGroup) {
 		fileGroup.POST("/deleteDir", f.DeleteDir)
 		// 设置文件公开状态（业务逻辑已验证文件所有权和加密状态，无需额外权限验证）
 		fileGroup.POST("/setPublic", f.SetFilePublic)
-		// 获取虚拟路径
-		fileGroup.GET("/virtualPath", middleware.PowerVerify("file:preview"), f.GetVirtualPath)
+		// 获取虚拟目录
+		fileGroup.GET("/directories", middleware.PowerVerify("file:preview"), f.GetDirectories)
 		// 打包下载
 		fileGroup.POST("/package/create", middleware.PowerVerify("file:download"), f.CreatePackage)
 		fileGroup.GET("/package/progress", middleware.PowerVerify("file:download"), f.GetPackageProgress)
@@ -179,10 +179,10 @@ func (f *FileHandler) SearchPublicFiles(c *gin.Context) {
 // @Accept json
 // @Produce json
 // @Security BearerAuth
-// @Param virtualPath query string false "虚拟路径"
+// @Param directory_id query int false "目录ID，0表示用户根目录"
 // @Param page query int true "页码" minimum(1)
 // @Param pageSize query int true "每页数量" minimum(1) maximum(100)
-// @Success 200 {object} models.JsonResponse{data=object} "文件列表"
+// @Success 200 {object} models.JsonResponse{data=response.FileListResponse} "文件列表"
 // @Failure 500 {object} models.JsonResponse "获取失败"
 // @Router /file/list [get]
 func (f *FileHandler) GetFileList(c *gin.Context) {
@@ -316,6 +316,15 @@ func (f *FileHandler) UpdateThumbnail(c *gin.Context) {
 }
 
 // MakeDir 创建目录
+// MakeDir godoc
+// @Summary 创建虚拟目录
+// @Tags 文件管理
+// @Accept json
+// @Produce json
+// @Security BearerAuth
+// @Param request body request.MakeDirRequest true "目录名称和父目录ID"
+// @Success 200 {object} models.JsonResponse{data=response.DirectoryItem}
+// @Router /file/makeDir [post]
 func (f *FileHandler) MakeDir(c *gin.Context) {
 	req := new(request.MakeDirRequest)
 	if err := c.ShouldBindJSON(req); err != nil {
@@ -331,7 +340,15 @@ func (f *FileHandler) MakeDir(c *gin.Context) {
 	c.JSON(200, makeDir)
 }
 
-// MoveFile 移动文件
+// MoveFile godoc
+// @Summary 移动单个文件
+// @Tags 文件管理
+// @Accept json
+// @Produce json
+// @Security BearerAuth
+// @Param request body request.MoveFileRequest true "文件ID和目标目录ID"
+// @Success 200 {object} models.JsonResponse
+// @Router /file/move [post]
 func (f *FileHandler) MoveFile(c *gin.Context) {
 	req := new(request.MoveFileRequest)
 	if err := c.ShouldBindJSON(req); err != nil {
@@ -346,7 +363,15 @@ func (f *FileHandler) MoveFile(c *gin.Context) {
 	c.JSON(200, moveFile)
 }
 
-// MoveItems 批量移动文件和目录。
+// MoveItems godoc
+// @Summary 批量移动文件和目录
+// @Tags 文件管理
+// @Accept json
+// @Produce json
+// @Security BearerAuth
+// @Param request body request.MoveItemsRequest true "文件ID、目录ID和目标目录ID"
+// @Success 200 {object} models.JsonResponse
+// @Router /file/moveBatch [post]
 func (f *FileHandler) MoveItems(c *gin.Context) {
 	req := new(request.MoveItemsRequest)
 	if err := c.ShouldBindJSON(req); err != nil {
@@ -361,12 +386,18 @@ func (f *FileHandler) MoveItems(c *gin.Context) {
 	c.JSON(200, result)
 }
 
-// GetVirtualPath 获取虚拟路径
-func (f *FileHandler) GetVirtualPath(c *gin.Context) {
+// GetDirectories godoc
+// @Summary 获取虚拟目录
+// @Tags 文件管理
+// @Produce json
+// @Security BearerAuth
+// @Success 200 {object} models.JsonResponse{data=[]response.DirectoryItem}
+// @Router /file/directories [get]
+func (f *FileHandler) GetDirectories(c *gin.Context) {
 	userID := c.GetString("userID")
-	result, err := f.service.GetVirtualPath(userID)
+	result, err := f.service.GetDirectories(userID)
 	if err != nil {
-		c.JSON(200, models.NewJsonResponse(500, "获取虚拟路径失败", err.Error()))
+		c.JSON(200, models.NewJsonResponse(500, "获取虚拟目录失败", err.Error()))
 		return
 	}
 	c.JSON(200, result)

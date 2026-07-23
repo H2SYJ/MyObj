@@ -26,7 +26,7 @@ DELETE FROM api_key;
 DELETE FROM user_files;
 DELETE FROM file_info;
 DELETE FROM file_chunk;
-DELETE FROM virtual_path;
+DELETE FROM virtual_directory;
 
 -- ================================
 -- 3. 删除上传下载任务数据
@@ -57,7 +57,7 @@ DELETE FROM sqlite_sequence WHERE name IN (
     'user_files',
     'file_info',
     'file_chunk',
-    'virtual_path',
+    'virtual_directory',
     'upload_task',
     'upload_chunk',
     'download_task',

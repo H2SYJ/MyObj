@@ -34,7 +34,7 @@ var (
 // HTTPDownloadOptions HTTP下载配置
 type HTTPDownloadOptions struct {
 	EnableEncryption bool                       // 是否加密存储
-	VirtualPath      string                     // 虚拟保存路径
+	SavePath         string                     // 用户虚拟绝对保存路径
 	MaxRetries       int                        // 最大重试次数
 	ChunkSize        int64                      // 分片大小（字节），默认10MB
 	MaxConcurrent    int                        // 最大并发数，默认4
@@ -220,7 +220,7 @@ func DownloadHTTPWithContext(
 	if opts == nil {
 		opts = &HTTPDownloadOptions{
 			EnableEncryption: false,
-			VirtualPath:      "/离线下载/",
+			SavePath:         "/离线下载",
 			MaxRetries:       3,
 			ChunkSize:        10 * 1024 * 1024, // 10MB
 			MaxConcurrent:    4,
@@ -340,7 +340,7 @@ func DownloadHTTPWithContext(
 		TempFilePath: filePath,
 		FileName:     fileInfo.FileName,
 		FileSize:     fileInfo.FileSize,
-		VirtualPath:  opts.VirtualPath,
+		SavePath:     opts.SavePath,
 		UserID:       userID,
 		IsEnc:        opts.EnableEncryption,
 		IsChunk:      false,
@@ -1026,7 +1026,7 @@ func ResumeDownload(taskID string, userID string, tempDir string, repoFactory *i
 	go func() {
 		opts := &HTTPDownloadOptions{
 			EnableEncryption: false, // HTTP离线下载不加密
-			VirtualPath:      task.VirtualPath,
+			SavePath:         task.SavePath,
 			MaxRetries:       3,
 			ChunkSize:        10 * 1024 * 1024,
 			MaxConcurrent:    4,

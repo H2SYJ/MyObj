@@ -19,6 +19,8 @@ export interface InstalledPlugin {
   id: string
   name: string
   version: string
+  api_version: string
+  status: 'ready' | 'disabled' | 'incompatible_api'
   author?: string
   description?: string
   enabled: boolean
@@ -66,7 +68,7 @@ const uploadPluginRequest = async (file: File, fields: Record<string, string>): 
 export const inspectPlugin = (file: File) =>
   uploadPluginRequest(file, { review_only: 'true' }) as Promise<
     ApiResponse<{
-      manifest: InstalledPlugin & { api_version: string }
+      manifest: InstalledPlugin
       package_sha256: string
       wasm_sha256: string
       signed: false

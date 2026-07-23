@@ -127,7 +127,7 @@ export function useFileOperations(
       selectedFolderIds.value.length === 1 && selectedFileIds.value.length === 0
         ? displayData.value.folders.find(folder => folder.id === selectedFolderIds.value[0])
         : undefined
-    const packageName = singleFolder ? `${singleFolder.name.replace(/^\/+/, '')}.zip` : `files_${Date.now()}.zip`
+    const packageName = singleFolder ? `${singleFolder.name}.zip` : `files_${Date.now()}.zip`
 
     proxy?.$modal.loading(t('files.creatingPackage'))
     try {

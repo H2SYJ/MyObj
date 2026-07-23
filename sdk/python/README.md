@@ -85,26 +85,25 @@ logging.getLogger("myobj_sdk").setLevel(logging.DEBUG)
 
 ```python
 # 文件列表
-result = client.list_files(virtual_path="/", page=1, page_size=20)
+result = client.list_files(directory_id=1, page=1, page_size=20)
 print(result["data"])
 
 # 搜索文件
 result = client.search_files("报告", page=1, page_size=20)
 
 # 获取目录树
-paths = client.get_virtual_paths()
+directories = client.get_directories()
 
 # 创建、重命名和删除目录
-client.create_directory(parent_level="/", dir_path="资料")
-path_id = client.ensure_directory(parent_level="2", dir_path="资料")
+client.create_directory(parent_id=1, name="资料")
+directory_id = client.ensure_directory(parent_id=1, name="资料")
 client.rename_directory(dir_id=12, new_dir_name="归档资料")
 client.delete_directory(dir_id=12)
 
 # 移动、重命名和删除文件
 client.move_file(
     file_id="用户文件ID",
-    source_path="/报告.pdf",
-    target_path="/资料/报告.pdf",
+    target_directory_id=12,
 )
 client.rename_file("用户文件ID", "年度报告.pdf")
 client.set_file_public("用户文件ID", True)
@@ -118,7 +117,7 @@ client.delete_files(["用户文件ID一", "用户文件ID二"])
 ```python
 result = client.upload_file(
     "D:/资料/报告.pdf",
-    path_id="目标目录ID",
+    directory_id=12,
 )
 print(result["message"])
 ```
@@ -130,7 +129,7 @@ print(result["message"])
 ```python
 result = client.upload_file(
     "D:/资料/报告.pdf",
-    path_id="目标目录ID",
+    directory_id=12,
     wait_for_completion=True,
     finalize_timeout=600,
 )
@@ -141,7 +140,7 @@ result = client.upload_file(
 ```python
 client.upload_file(
     "D:/资料/报告.pdf",
-    path_id="目标目录ID",
+    directory_id=12,
     show_progress=False,
 )
 ```
@@ -156,7 +155,7 @@ def show_progress(completed: int, total: int) -> None:
 
 client.upload_file(
     "D:/资料/报告.pdf",
-    path_id="目标目录ID",
+    directory_id=12,
     progress=show_progress,
     show_progress=False,
 )
@@ -167,7 +166,7 @@ client.upload_file(
 ```python
 client.upload_file(
     "D:/资料/机密报告.pdf",
-    path_id="目标目录ID",
+    directory_id=12,
     encrypted=True,
     file_password="文件解密密码",
 )

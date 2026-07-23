@@ -22,8 +22,8 @@ type DownloadableItem struct {
 	PublishedAt  *time.Time `json:"published_at,omitempty"`
 	DownloadType string     `json:"download_type"`
 	FileName     string     `json:"file_name,omitempty"`
-	// SavePath 是订阅保存目录下以 / 开头的根相对目录。
-	SavePath       string            `json:"save_path,omitempty"`
+	// RelativeSavePath 是订阅保存目录下不带前导/的相对目录。
+	RelativeSavePath string            `json:"relative_save_path,omitempty"`
 	ThumbnailURL   string            `json:"thumbnail_url,omitempty"`
 	RequestHeaders map[string]string `json:"request_headers,omitempty"`
 	HeaderHosts    []string          `json:"header_hosts,omitempty"`
@@ -114,8 +114,8 @@ type HTTPResponse struct {
 type FileQueryRequest struct {
 	Operation string `json:"operation,omitempty"`
 	UFID      string `json:"uf_id,omitempty"`
-	// Path 是订阅保存目录下的根相对目录。
-	Path          string     `json:"path,omitempty"`
+	// RelativePath 是订阅保存目录下不带前导/的相对目录。
+	RelativePath  string     `json:"relative_path,omitempty"`
 	Recursive     bool       `json:"recursive,omitempty"`
 	NameEquals    string     `json:"name_equals,omitempty"`
 	NameContains  string     `json:"name_contains,omitempty"`
@@ -134,7 +134,7 @@ type FileQueryRequest struct {
 type SafeFileInfo struct {
 	UFID         string    `json:"uf_id"`
 	FileName     string    `json:"file_name"`
-	VirtualPath  string    `json:"virtual_path"`
+	AbsolutePath string    `json:"absolute_path"`
 	FileSize     int64     `json:"file_size"`
 	MIMEType     string    `json:"mime_type"`
 	CreatedAt    time.Time `json:"created_at"`
