@@ -21,6 +21,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"golang.org/x/time/rate"
@@ -54,12 +55,13 @@ type hlsProgress struct {
 	totalDuration     float64
 	completedDuration float64
 	downloadedBytes   int64
-	lastBytes         int64
-	lastUpdate        time.Time
 	reservedSize      int64
 	reserveSpace      func(int64) (int64, error)
 	progressCallback  func(downloadedSize, speed int64, progress int)
 	progressReporter  ProgressReporter
+	transferredBytes  atomic.Int64
+	sampler           *speedSampler
+	sampleInterval    time.Duration
 	persistMu         sync.Mutex
 }
 
@@ -110,19 +112,28 @@ func DownloadHLSWithContext(ctx context.Context, taskID, rawURL, userID, tempDir
 		return nil, context.Canceled
 	}
 
-	progress := newHLSProgress(ctx, taskID, opts.RunToken, repoFactory, manifest, opts)
+	downloadCtx, cancelDownload := context.WithCancel(ctx)
+	defer cancelDownload()
+	progress := newHLSProgress(downloadCtx, taskID, opts.RunToken, repoFactory, manifest, opts)
 	if err := progress.syncInitial(); err != nil {
 		return nil, err
 	}
-	if err := downloadHLSManifest(ctx, client, sessionDir, manifest, progress, opts); err != nil {
+	progress.startSampler(cancelDownload)
+	downloadErr := downloadHLSManifest(downloadCtx, client, sessionDir, manifest, progress, opts)
+	samplerErr := progress.stopSampler()
+	if samplerErr != nil && (downloadErr == nil || errors.Is(downloadErr, context.Canceled)) {
+		downloadErr = samplerErr
+	}
+	if downloadErr != nil {
 		if flushErr := progress.flushCurrent(); flushErr != nil && !errors.Is(flushErr, context.Canceled) {
 			logger.LOG.Warn("刷新HLS任务最终进度失败", "taskID", taskID, "error", flushErr)
 		}
-		return nil, err
+		return nil, downloadErr
 	}
 	if err := progress.markPackaging(); err != nil {
 		return nil, err
 	}
+	cancelDownload()
 	localPlaylists, err := writeLocalHLSPlaylists(sessionDir, manifest)
 	if err != nil {
 		return nil, err
@@ -159,7 +170,7 @@ func DownloadHLSWithContext(ctx context.Context, taskID, rawURL, userID, tempDir
 
 func newHLSProgress(ctx context.Context, taskID, runToken string, repo *impl.RepositoryFactory, manifest *hlsManifest, opts *HLSDownloadOptions) *hlsProgress {
 	progress := &hlsProgress{
-		ctx: ctx, taskID: taskID, runToken: runToken, repo: repo, lastUpdate: time.Now(),
+		ctx: ctx, taskID: taskID, runToken: runToken, repo: repo,
 		reservedSize: opts.ReservedSize, reserveSpace: opts.ReserveSpace,
 		progressCallback: opts.ProgressCallback, progressReporter: opts.ProgressReporter,
 	}
@@ -177,7 +188,6 @@ func newHLSProgress(ctx context.Context, taskID, runToken string, repo *impl.Rep
 			}
 		}
 	}
-	progress.lastBytes = progress.downloadedBytes
 	return progress
 }
 
@@ -195,62 +205,67 @@ func (p *hlsProgress) complete(size int64, duration float64) error {
 		}
 		p.reservedSize = reserved
 	}
-	now := time.Now()
-	elapsed := now.Sub(p.lastUpdate).Seconds()
-	if elapsed < 1 {
-		p.mu.Unlock()
-		return nil
-	}
-	speed := int64(0)
-	if elapsed > 0 {
-		speed = int64(float64(p.downloadedBytes-p.lastBytes) / elapsed)
-	}
-	progressValue := 0
-	if p.totalDuration > 0 {
-		progressValue = min(95, int(p.completedDuration/p.totalDuration*95))
-	}
-	downloadedBytes := p.downloadedBytes
-	p.lastBytes = p.downloadedBytes
-	p.lastUpdate = now
-	return p.persistLocked(downloadedBytes, speed, progressValue)
+	p.mu.Unlock()
+	return nil
 }
 
 func (p *hlsProgress) syncInitial() error {
-	p.mu.Lock()
-	progressValue := 0
-	if p.totalDuration > 0 {
-		progressValue = min(95, int(p.completedDuration/p.totalDuration*95))
-	}
-	downloadedBytes := p.downloadedBytes
-	p.lastBytes = downloadedBytes
-	p.lastUpdate = time.Now()
-	return p.persistLocked(downloadedBytes, 0, progressValue)
+	return p.reportSpeed(0)
 }
 
 func (p *hlsProgress) markPackaging() error {
-	p.mu.Lock()
-	downloadedBytes := p.downloadedBytes
-	p.lastBytes = downloadedBytes
-	p.lastUpdate = time.Now()
-	return p.persistLocked(downloadedBytes, 0, 99)
+	downloadedBytes, _ := p.snapshot()
+	return p.persist(downloadedBytes, 0, 99)
 }
 
 func (p *hlsProgress) flushCurrent() error {
+	return p.reportSpeed(0)
+}
+
+func (p *hlsProgress) recordTransfer(size int64) {
+	if size > 0 {
+		p.transferredBytes.Add(size)
+	}
+}
+
+func (p *hlsProgress) startSampler(cancel context.CancelFunc) {
 	p.mu.Lock()
+	defer p.mu.Unlock()
+	if p.sampler != nil {
+		return
+	}
+	interval := p.sampleInterval
+	if interval <= 0 {
+		interval = speedSampleInterval
+	}
+	p.sampler = startSpeedSampler(p.ctx, cancel, interval, p.transferredBytes.Load, p.reportSpeed)
+}
+
+func (p *hlsProgress) stopSampler() error {
+	p.mu.Lock()
+	sampler := p.sampler
+	p.mu.Unlock()
+	return sampler.Stop()
+}
+
+func (p *hlsProgress) snapshot() (int64, int) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
 	progressValue := 0
 	if p.totalDuration > 0 {
 		progressValue = min(95, int(p.completedDuration/p.totalDuration*95))
 	}
-	downloadedBytes := p.downloadedBytes
-	p.lastBytes = downloadedBytes
-	p.lastUpdate = time.Now()
-	return p.persistLocked(downloadedBytes, 0, progressValue)
+	return p.downloadedBytes, progressValue
 }
 
-// persistLocked 在持有 p.mu 时取得持久化序列锁，确保较早快照不会覆盖终态刷新。
-func (p *hlsProgress) persistLocked(downloadedSize, speed int64, progress int) error {
+func (p *hlsProgress) reportSpeed(speed int64) error {
+	downloadedSize, progressValue := p.snapshot()
+	return p.persist(downloadedSize, speed, progressValue)
+}
+
+// persist 串行持久化快照，确保较早的速度样本不会覆盖后续状态。
+func (p *hlsProgress) persist(downloadedSize, speed int64, progress int) error {
 	p.persistMu.Lock()
-	p.mu.Unlock()
 	defer p.persistMu.Unlock()
 	var updated bool
 	var err error
@@ -291,7 +306,7 @@ func downloadHLSManifest(ctx context.Context, client *http.Client, sessionDir st
 			if item.Done {
 				continue
 			}
-			hash, size, downloadErr := downloadHLSItemWithRetry(ctx, client, sessionDir, item.URL, item.Offset, item.Length, item.LocalName, item.Key, 0, keys, opts.MaxRetries)
+			hash, size, downloadErr := downloadHLSItemWithRetry(ctx, client, sessionDir, item.URL, item.Offset, item.Length, item.LocalName, item.Key, 0, keys, opts.MaxRetries, progress.recordTransfer)
 			if downloadErr != nil {
 				return downloadErr
 			}
@@ -320,7 +335,7 @@ func downloadHLSManifest(ctx context.Context, client *http.Client, sessionDir st
 			for item := range jobs {
 				segment := &manifest.Renditions[item.renditionIndex].Segments[item.segmentIndex]
 				hash, size, downloadErr := downloadHLSItemWithRetry(workerCtx, client, sessionDir, segment.URL, segment.Offset, segment.Length,
-					segment.LocalName, segment.Key, segment.Sequence, keys, opts.MaxRetries)
+					segment.LocalName, segment.Key, segment.Sequence, keys, opts.MaxRetries, progress.recordTransfer)
 				if downloadErr != nil {
 					errorOnce.Do(func() { firstErr = downloadErr; cancel() })
 					continue
@@ -411,7 +426,7 @@ func fetchHLSKeyWithRetry(ctx context.Context, client *http.Client, keyURL strin
 }
 
 func downloadHLSItemWithRetry(ctx context.Context, client *http.Client, sessionDir, rawURL string, offset, length int64, localName string,
-	keySpec hlsKeySpec, sequence uint64, keys map[string][]byte, maxRetries int) (string, int64, error) {
+	keySpec hlsKeySpec, sequence uint64, keys map[string][]byte, maxRetries int, onTransfer func(int64)) (string, int64, error) {
 	var lastErr error
 	for attempt := 0; attempt <= maxRetries; attempt++ {
 		if attempt > 0 {
@@ -422,7 +437,7 @@ func downloadHLSItemWithRetry(ctx context.Context, client *http.Client, sessionD
 			case <-time.After(delay):
 			}
 		}
-		hash, size, err := downloadHLSItem(ctx, client, rawURL, offset, length, filepath.Join(sessionDir, localName), keySpec, sequence, keys)
+		hash, size, err := downloadHLSItem(ctx, client, rawURL, offset, length, filepath.Join(sessionDir, localName), keySpec, sequence, keys, onTransfer)
 		if err == nil {
 			return hash, size, nil
 		}
@@ -446,7 +461,7 @@ func isRetryableHLSItemError(err error) bool {
 }
 
 func downloadHLSItem(ctx context.Context, client *http.Client, rawURL string, offset, length int64, destination string,
-	keySpec hlsKeySpec, sequence uint64, keys map[string][]byte) (string, int64, error) {
+	keySpec hlsKeySpec, sequence uint64, keys map[string][]byte, onTransfer func(int64)) (string, int64, error) {
 	if err := ValidatePublicHTTPURL(rawURL); err != nil {
 		return "", 0, err
 	}
@@ -485,7 +500,7 @@ func downloadHLSItem(ctx context.Context, client *http.Client, rawURL string, of
 	if err != nil {
 		return "", 0, err
 	}
-	written, copyErr := io.Copy(output, resp.Body)
+	written, copyErr := io.Copy(&transferCountingWriter{writer: output, onTransfer: onTransfer}, resp.Body)
 	syncErr := output.Sync()
 	closeErr := output.Close()
 	if copyErr != nil {
@@ -528,6 +543,19 @@ func downloadHLSItem(ctx context.Context, client *http.Client, rawURL string, of
 	}
 	hash, size, err := hashHLSFile(destination)
 	return hash, size, err
+}
+
+type transferCountingWriter struct {
+	writer     io.Writer
+	onTransfer func(int64)
+}
+
+func (w *transferCountingWriter) Write(data []byte) (int, error) {
+	written, err := w.writer.Write(data)
+	if written > 0 && w.onTransfer != nil {
+		w.onTransfer(int64(written))
+	}
+	return written, err
 }
 
 func hlsAES128IV(rawIV string, sequence uint64) ([]byte, error) {

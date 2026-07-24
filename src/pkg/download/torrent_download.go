@@ -686,8 +686,6 @@ func DownloadTorrentSingleFile(
 
 	// 等待下载完成，带进度监控
 	logger.LOG.Info("开始下载文件...", "taskID", taskID, "fileName", fileName)
-	ticker := time.NewTicker(2 * time.Second)
-	defer ticker.Stop()
 
 	// 获取目标文件
 	var targetFile *torrent.File
@@ -701,8 +699,33 @@ func DownloadTorrentSingleFile(
 		targetFile = t.Files()[fileIndex]
 		targetTotalSize = info.Files[fileIndex].Length
 	}
-	var lastCompleted int64
-	lastUpdate := time.Now()
+	ticker := time.NewTicker(speedSampleInterval)
+	defer ticker.Stop()
+	estimator := newSpeedEstimator(speedTimeConstant, speedIdleSamples)
+	estimator.Reset(targetFile.BytesCompleted(), time.Now())
+	reportProgress := func(completed, speed int64, progress int) error {
+		var updated bool
+		var updateErr error
+		if opts.ProgressReporter != nil {
+			updated, updateErr = opts.ProgressReporter(ctx, completed, speed, progress)
+		} else {
+			updated, updateErr = repoFactory.DownloadTask().UpdateIfRunToken(ctx, taskID, opts.RunToken, map[string]interface{}{
+				"downloaded_size": completed,
+				"progress":        progress,
+				"speed":           speed,
+			})
+		}
+		if updateErr != nil {
+			return updateErr
+		}
+		if !updated {
+			return context.Canceled
+		}
+		if opts.ProgressReporter == nil && opts.ProgressCallback != nil {
+			opts.ProgressCallback(completed, speed, progress)
+		}
+		return nil
+	}
 
 	for {
 		select {
@@ -716,35 +739,14 @@ func DownloadTorrentSingleFile(
 			totalSize := targetTotalSize
 
 			// 计算进度和速度
-			progress := int(float64(completed) / float64(totalSize) * 100)
-			now := time.Now()
-			elapsed := now.Sub(lastUpdate).Seconds()
-			var speed int64
-			if elapsed > 0 {
-				speed = int64(float64(completed-lastCompleted) / elapsed)
+			progress := 0
+			if totalSize > 0 {
+				progress = min(100, int(float64(completed)/float64(totalSize)*100))
 			}
-
-			var updated bool
-			var updateErr error
-			if opts.ProgressReporter != nil {
-				updated, updateErr = opts.ProgressReporter(ctx, completed, speed, progress)
-			} else {
-				updated, updateErr = repoFactory.DownloadTask().UpdateIfRunToken(ctx, taskID, opts.RunToken, map[string]interface{}{
-					"downloaded_size": completed,
-					"progress":        progress,
-					"speed":           speed,
-				})
+			speed := estimator.Sample(completed, time.Now())
+			if updateErr := reportProgress(completed, speed, progress); updateErr != nil {
+				return "", updateErr
 			}
-			if updateErr != nil {
-				logger.LOG.Error("更新下载任务进度失败", "taskID", taskID, "error", updateErr)
-			} else if !updated {
-				return "", context.Canceled
-			} else if opts.ProgressReporter == nil && opts.ProgressCallback != nil {
-				opts.ProgressCallback(completed, speed, progress)
-			}
-
-			lastCompleted = completed
-			lastUpdate = now
 
 			// 记录进度
 			stats := t.Stats()
@@ -766,6 +768,9 @@ func DownloadTorrentSingleFile(
 	}
 
 DownloadComplete:
+	if updateErr := reportProgress(targetFile.BytesCompleted(), 0, 100); updateErr != nil {
+		return "", updateErr
+	}
 	// 构建文件的虚拟路径（根据种子名称创建子目录）
 	torrentName := opts.TorrentName
 	if torrentName == "" {

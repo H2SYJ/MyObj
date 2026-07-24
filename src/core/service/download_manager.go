@@ -99,7 +99,7 @@ func (m *DownloadManager) progressReporter(task *models.DownloadTask) download.P
 		snapshot.Speed = speed
 		snapshot.DownloadedSize = downloadedSize
 		snapshot.UpdateTime = custom_type.Now()
-		m.taskEvents.Publish(downloadTaskEvent(&snapshot, "updated"), true)
+		m.taskEvents.Publish(downloadTaskEvent(&snapshot, "updated"), false)
 		return true, nil
 	}
 }

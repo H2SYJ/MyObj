@@ -253,6 +253,28 @@ func TestStaleRunTokenDoesNotPublishFinishedEvent(t *testing.T) {
 	}
 }
 
+func TestDownloadProgressEventPublishesWithoutExtraCoalescingDelay(t *testing.T) {
+	factory := newManagerTestFactory(t)
+	task := &models.DownloadTask{ID: "task-progress-event", UserID: "u", Type: 0, State: 1, RunToken: "run"}
+	if err := factory.DownloadTask().Create(context.Background(), task); err != nil {
+		t.Fatal(err)
+	}
+	hub := NewTaskEventHub()
+	events, cancel := hub.Subscribe(task.UserID)
+	defer cancel()
+	manager := NewDownloadManager(factory, t.TempDir())
+	manager.SetTaskEventHub(hub)
+
+	updated, err := manager.progressReporter(task)(context.Background(), 4096, 2048, 50)
+	if err != nil || !updated {
+		t.Fatalf("上报下载进度失败: updated=%v err=%v", updated, err)
+	}
+	event := receiveTaskEvent(t, events, 100*time.Millisecond)
+	if event.ResourceID != task.ID || event.Payload["speed"] != int64(2048) || event.Payload["progress"] != 50 {
+		t.Fatalf("下载进度事件内容异常: %#v", event)
+	}
+}
+
 func TestEncryptedResumeRequiresPassword(t *testing.T) {
 	factory := newManagerTestFactory(t)
 	task := &models.DownloadTask{ID: "task", UserID: "u", Type: 0, State: 2, EnableEncryption: true}

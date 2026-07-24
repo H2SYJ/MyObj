@@ -123,6 +123,7 @@ func TestRangeResumeUsesManifestInsteadOfPreallocatedSize(t *testing.T) {
 	}
 	info := &FileInfoResult{FileName: "file.bin", FileSize: int64(len(data)), ETag: `"stable"`}
 	progress := newDownloadProgress(task.ID, info.FileSize, factory, task.RunToken)
+	defer func() { _ = progress.stopSampler() }()
 	opts := &HTTPDownloadOptions{ChunkSize: 1024, MaxConcurrent: 2, MaxRetries: 0}
 	if err := downloadWithRange(context.Background(), server.URL, filePath, info, opts, progress, server.Client()); err != nil {
 		t.Fatalf("恢复下载失败: %v", err)

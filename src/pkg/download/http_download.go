@@ -71,33 +71,30 @@ type chunkInfo struct {
 
 // downloadProgress 下载进度管理器
 type downloadProgress struct {
-	Context            context.Context
-	TaskID             string
-	TotalSize          int64
-	DownloadedSize     int64
-	LastDownloadedSize int64 // 上次下载量，用于计算实时速度
-	Speed              int64
-	LastUpdate         time.Time
-	SpeedHistory       []int64 // 速度历史记录（最多10条），用于平滑显示
-	RepoFactory        *impl.RepositoryFactory
-	RunToken           string
-	ReservedSize       int64
-	ReserveSpace       func(int64) (int64, error)
-	ProgressCallback   func(downloadedSize, speed int64, progress int)
-	ProgressReporter   ProgressReporter
-	mu                 sync.RWMutex
+	Context          context.Context
+	Cancel           context.CancelFunc
+	TaskID           string
+	TotalSize        int64
+	DownloadedSize   int64
+	RepoFactory      *impl.RepositoryFactory
+	RunToken         string
+	ReservedSize     int64
+	ReserveSpace     func(int64) (int64, error)
+	ProgressCallback func(downloadedSize, speed int64, progress int)
+	ProgressReporter ProgressReporter
+	transferredBytes atomic.Int64
+	sampler          *speedSampler
+	sampleInterval   time.Duration
+	mu               sync.RWMutex
 }
 
 // newDownloadProgress 创建进度管理器
 func newDownloadProgress(taskID string, totalSize int64, repoFactory *impl.RepositoryFactory, runToken string, callbacks ...func(int64, int64, int)) *downloadProgress {
 	progress := &downloadProgress{
-		TaskID:             taskID,
-		TotalSize:          totalSize,
-		LastDownloadedSize: 0,
-		LastUpdate:         time.Now(),
-		SpeedHistory:       make([]int64, 0, 10),
-		RepoFactory:        repoFactory,
-		RunToken:           runToken,
+		TaskID:      taskID,
+		TotalSize:   totalSize,
+		RepoFactory: repoFactory,
+		RunToken:    runToken,
 	}
 	if len(callbacks) > 0 {
 		progress.ProgressCallback = callbacks[0]
@@ -105,72 +102,64 @@ func newDownloadProgress(taskID string, totalSize int64, repoFactory *impl.Repos
 	return progress
 }
 
-// updateProgress 更新下载进度（计算实时速度）
-func (dp *downloadProgress) updateProgress(downloaded int64) {
-	dp.mu.Lock()
-	defer dp.mu.Unlock()
-
-	now := time.Now()
-	elapsed := now.Sub(dp.LastUpdate).Seconds()
-	dp.DownloadedSize = downloaded
-
-	// 每秒更新一次速度
-	if elapsed >= 1.0 {
-		// 计算实时速度（增量/时间差）
-		sizeDiff := downloaded - dp.LastDownloadedSize
-		if sizeDiff > 0 && elapsed > 0 {
-			currentSpeed := int64(float64(sizeDiff) / elapsed)
-
-			// 添加到速度历史记录（最多保留10条）
-			dp.SpeedHistory = append(dp.SpeedHistory, currentSpeed)
-			if len(dp.SpeedHistory) > 10 {
-				dp.SpeedHistory = dp.SpeedHistory[1:]
-			}
-
-			// 计算平均速度（平滑显示）
-			var totalSpeed int64 = 0
-			validCount := 0
-			for _, speed := range dp.SpeedHistory {
-				if speed >= 0 {
-					totalSpeed += speed
-					validCount++
-				}
-			}
-			if validCount > 0 {
-				dp.Speed = totalSpeed / int64(validCount)
-			} else {
-				dp.Speed = currentSpeed
-			}
-		} else if sizeDiff == 0 {
-			// 如果没有下载进度，速度设为0
-			dp.Speed = 0
-		}
-
-		dp.LastUpdate = now
-		dp.LastDownloadedSize = downloaded
-		progressValue := 0
-		if dp.TotalSize > 0 {
-			progressValue = int(float64(dp.DownloadedSize) / float64(dp.TotalSize) * 100)
-			if progressValue > 100 {
-				progressValue = 100
-			}
-		}
-		_, err := dp.persistProgress(dp.DownloadedSize, dp.Speed, progressValue)
-		if err != nil {
-			logger.LOG.Error("更新下载任务进度失败", "taskID", dp.TaskID, "error", err)
-		}
+// recordTransfer 记录已经成功写入临时文件的本次传输字节。
+func (dp *downloadProgress) recordTransfer(downloaded, transferred int64) {
+	if transferred > 0 {
+		dp.transferredBytes.Add(transferred)
 	}
+	dp.setDownloadedSize(downloaded)
 }
 
-func (dp *downloadProgress) flushProgress() error {
+func (dp *downloadProgress) setDownloadedSize(downloaded int64) {
 	dp.mu.Lock()
-	defer dp.mu.Unlock()
+	dp.DownloadedSize = downloaded
+	dp.mu.Unlock()
+}
+
+func (dp *downloadProgress) snapshot() (int64, int) {
+	dp.mu.RLock()
+	defer dp.mu.RUnlock()
 	progressValue := 0
 	if dp.TotalSize > 0 {
 		progressValue = min(100, int(float64(dp.DownloadedSize)/float64(dp.TotalSize)*100))
 	}
-	_, err := dp.persistProgress(dp.DownloadedSize, dp.Speed, progressValue)
-	return err
+	return dp.DownloadedSize, progressValue
+}
+
+func (dp *downloadProgress) startSampler() {
+	dp.mu.Lock()
+	defer dp.mu.Unlock()
+	if dp.sampler != nil {
+		return
+	}
+	interval := dp.sampleInterval
+	if interval <= 0 {
+		interval = speedSampleInterval
+	}
+	dp.sampler = startSpeedSampler(dp.Context, dp.Cancel, interval, dp.transferredBytes.Load, dp.reportSpeed)
+}
+
+func (dp *downloadProgress) stopSampler() error {
+	dp.mu.RLock()
+	sampler := dp.sampler
+	dp.mu.RUnlock()
+	return sampler.Stop()
+}
+
+func (dp *downloadProgress) reportSpeed(speed int64) error {
+	downloadedSize, progressValue := dp.snapshot()
+	updated, err := dp.persistProgress(downloadedSize, speed, progressValue)
+	if err != nil {
+		return err
+	}
+	if !updated {
+		return context.Canceled
+	}
+	return nil
+}
+
+func (dp *downloadProgress) flushProgress(speed int64) error {
+	return dp.reportSpeed(speed)
 }
 
 func (dp *downloadProgress) persistProgress(downloadedSize, speed int64, progress int) (bool, error) {
@@ -334,27 +323,35 @@ func DownloadHTTPWithContext(
 	// 4. 下载文件
 	filePath := filepath.Join(sessionDir, fileInfo.FileName)
 	progress := newDownloadProgress(taskID, fileInfo.FileSize, repoFactory, opts.RunToken, opts.ProgressCallback)
-	progress.Context = ctx
+	downloadCtx, cancelDownload := context.WithCancel(ctx)
+	defer cancelDownload()
+	progress.Context = downloadCtx
+	progress.Cancel = cancelDownload
 	progress.ProgressReporter = opts.ProgressReporter
 	progress.ReservedSize = opts.ReservedSize
 	progress.ReserveSpace = opts.ReserveSpace
 
 	if supportRange && fileInfo.FileSize > 0 {
 		logger.LOG.Info("使用多线程下载", "chunkSize", opts.ChunkSize, "concurrent", opts.MaxConcurrent)
-		err = downloadWithRange(ctx, url, filePath, fileInfo, opts, progress, client)
+		err = downloadWithRange(downloadCtx, url, filePath, fileInfo, opts, progress, client)
 		if errors.Is(err, errRangeUnsupported) {
 			logger.LOG.Warn("服务器未正确实现Range，回退到单线程下载", "url", RedactURLForLog(url))
 			_ = os.Remove(filePath)
 			_ = os.Remove(filePath + ".manifest.json")
-			err = downloadDirect(ctx, url, filePath, client, progress)
+			err = downloadDirect(downloadCtx, url, filePath, client, progress)
 		}
 	} else {
 		logger.LOG.Info("使用单线程下载")
-		err = downloadDirect(ctx, url, filePath, client, progress)
+		err = downloadDirect(downloadCtx, url, filePath, client, progress)
 	}
-	if flushErr := progress.flushProgress(); flushErr != nil && !errors.Is(flushErr, context.Canceled) {
+	samplerErr := progress.stopSampler()
+	if samplerErr != nil && (err == nil || errors.Is(err, context.Canceled)) {
+		err = samplerErr
+	}
+	if flushErr := progress.flushProgress(0); flushErr != nil && !errors.Is(flushErr, context.Canceled) {
 		logger.LOG.Warn("刷新HTTP任务最终进度失败", "taskID", taskID, "error", flushErr)
 	}
+	cancelDownload()
 
 	if err != nil {
 		logger.LOG.Error("文件下载失败", "taskID", taskID, "error", RedactErrorForLog(err))
@@ -684,6 +681,7 @@ func downloadDirect(
 	// 带进度的复制
 	buffer := make([]byte, 32*1024) // 32KB缓冲区
 	var downloaded int64
+	progress.startSampler()
 
 	for {
 		n, err := resp.Body.Read(buffer)
@@ -695,7 +693,7 @@ func downloadDirect(
 				return fmt.Errorf("写入文件失败: %w", writeErr)
 			}
 			downloaded += int64(n)
-			progress.updateProgress(downloaded)
+			progress.recordTransfer(downloaded, int64(n))
 		}
 		if err == io.EOF {
 			break
@@ -771,10 +769,16 @@ func downloadWithRange(
 	if len(pendingChunks) == 0 {
 		return nil
 	}
-	progress.DownloadedSize = downloadedBytes
-	progress.LastDownloadedSize = downloadedBytes
+	progress.setDownloadedSize(downloadedBytes)
 	initialProgress := int(float64(downloadedBytes) / float64(totalSize) * 100)
-	_, _ = progress.persistProgress(downloadedBytes, 0, initialProgress)
+	updated, persistErr := progress.persistProgress(downloadedBytes, 0, initialProgress)
+	if persistErr != nil {
+		return persistErr
+	}
+	if !updated {
+		return context.Canceled
+	}
+	progress.startSampler()
 	logger.LOG.Info("待下载分片", "总数", len(manifest.Chunks), "待下载", len(pendingChunks), "已下载", len(manifest.Chunks)-len(pendingChunks))
 
 	var wg sync.WaitGroup
@@ -952,7 +956,7 @@ func downloadChunk(
 	defer func() {
 		if resultErr != nil && written > 0 {
 			current := atomic.AddInt64(downloadedBytes, -written)
-			progress.updateProgress(current)
+			progress.setDownloadedSize(current)
 		}
 	}()
 
@@ -970,8 +974,8 @@ func downloadChunk(
 			offset += int64(n)
 			remaining -= int64(n)
 			written += int64(n)
-			atomic.AddInt64(downloadedBytes, int64(n))
-			progress.updateProgress(atomic.LoadInt64(downloadedBytes))
+			current := atomic.AddInt64(downloadedBytes, int64(n))
+			progress.recordTransfer(current, int64(n))
 		}
 		if err == io.EOF && remaining > 0 {
 			return fmt.Errorf("Range响应提前结束，还缺少%d字节", remaining)
