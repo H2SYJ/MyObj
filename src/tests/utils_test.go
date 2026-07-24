@@ -90,19 +90,16 @@ func TestFileEncrypt(t *testing.T) {
 	err := util.NewFileCrypto("123456").EncryptFile("C:\\Users\\29120\\Pictures\\天空小姐姐 黑色唯美裙子 厚涂画风 4k动漫壁纸_彼岸图网.jpg", "C:\\Users\\29120\\Pictures\\1.jpg.enc")
 	if err != nil {
 		panic(err)
-		return
 	}
 	fmt.Println(time.Since(tn))
 	err = util.NewFileCrypto("123456").DecryptFile("C:\\Users\\29120\\Pictures\\1.jpg.enc", "C:\\Users\\29120\\Pictures\\天空1.jpg")
 	if err != nil {
 		panic(err)
-		return
 	}
 	fmt.Println(time.Since(tn))
 	memory, u, err := util.NewFileCrypto("123456").GetSystemMemory()
 	if err != nil {
 		panic(err)
-		return
 	}
 	fmt.Println(memory, u)
 }

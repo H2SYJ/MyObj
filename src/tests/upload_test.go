@@ -18,7 +18,6 @@ func TestUpload(t *testing.T) {
 	err := config.InitConfig()
 	if err != nil {
 		panic(err)
-		return
 	}
 	logger.InitLogger()
 	database.InitDataBase()
@@ -41,7 +40,6 @@ func TestUpload(t *testing.T) {
 	file, err := upload.ProcessUploadedFile(&data, factory)
 	if err != nil {
 		panic(err)
-		return
 	}
 	t.Log(time.Now().Sub(tn))
 	t.Log(file)
@@ -54,7 +52,6 @@ func TestDownload(t *testing.T) {
 	err := config.InitConfig()
 	if err != nil {
 		panic(err)
-		return
 	}
 	logger.InitLogger()
 	database.InitDataBase()
