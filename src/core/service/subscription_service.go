@@ -581,6 +581,7 @@ func (s *SubscriptionService) executeRun(runID string) {
 	s.activeMu.Lock()
 	if _, exists := s.active[subscription.ID]; exists {
 		s.activeMu.Unlock()
+		cancel()
 		s.failRun(&run, fmt.Errorf("订阅正在运行"))
 		return
 	}
