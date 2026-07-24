@@ -26,4 +26,15 @@ func TestMigrateSubscriptionSchema(t *testing.T) {
 			t.Fatalf("subscription_item缺少字段%s", column)
 		}
 	}
+	for _, test := range []struct {
+		model interface{}
+		index string
+	}{
+		{model: &models.Subscription{}, index: "idx_subscription_dispatch"},
+		{model: &models.SubscriptionItem{}, index: "idx_subscription_thumbnail_dispatch"},
+	} {
+		if !db.Migrator().HasIndex(test.model, test.index) {
+			t.Fatalf("订阅迁移缺少索引%s", test.index)
+		}
+	}
 }

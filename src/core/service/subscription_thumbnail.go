@@ -3,6 +3,7 @@ package service
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"image"
 	"image/color"
@@ -13,6 +14,7 @@ import (
 	"io"
 	"myobj/src/pkg/download"
 	"myobj/src/pkg/enum"
+	"myobj/src/pkg/logger"
 	"myobj/src/pkg/models"
 	"net/http"
 	"os"
@@ -22,6 +24,7 @@ import (
 
 	"golang.org/x/image/draw"
 	_ "golang.org/x/image/webp"
+	"gorm.io/gorm"
 )
 
 const (
@@ -34,6 +37,10 @@ const (
 type thumbnailDownloadError struct {
 	err       error
 	transient bool
+}
+
+type thumbnailCandidate struct {
+	ID string
 }
 
 func (e *thumbnailDownloadError) Error() string { return e.err.Error() }
@@ -51,47 +58,114 @@ func (s *SubscriptionService) recoverInterruptedThumbnails() {
 }
 
 func (s *SubscriptionService) thumbnailLoop() {
-	ticker := time.NewTicker(30 * time.Second)
-	defer ticker.Stop()
-	s.dispatchThumbnails()
+	timer := time.NewTimer(0)
+	defer timer.Stop()
+	runDispatch := func() {
+		next, err := s.dispatchThumbnails()
+		delay := schedulerWakeDelay(time.Now(), next)
+		if err != nil {
+			logger.LOG.Error("查询待处理订阅缩略图失败", "error", err)
+			delay = schedulerErrorRetry
+		}
+		resetSchedulerTimer(timer, delay)
+	}
 	for {
 		select {
 		case <-s.stop:
 			return
-		case <-ticker.C:
-			s.dispatchThumbnails()
+		case <-timer.C:
+			runDispatch()
+		case <-s.thumbnailWake:
+			runDispatch()
 		}
 	}
 }
 
-func (s *SubscriptionService) dispatchThumbnails() {
-	var items []models.SubscriptionItem
-	now := time.Now()
-	if err := s.factory.DB().Where("thumbnail_url <> '' AND thumbnail_status IN ? AND (thumbnail_next_retry_at IS NULL OR thumbnail_next_retry_at <= ?)",
-		[]string{"waiting_file", "retry_wait"}, now).Order("updated_at ASC").Limit(10).Find(&items).Error; err != nil {
+func (s *SubscriptionService) NotifyThumbnailForDownloadTask(_ string) {
+	if s.ctx.Err() != nil {
 		return
 	}
-	for _, item := range items {
-		if item.DownloadTaskID == "" {
-			continue
-		}
-		var task models.DownloadTask
-		if err := s.factory.DB().Where("id = ? AND state = ?", item.DownloadTaskID, enum.DownloadTaskStateFinished.Value()).First(&task).Error; err != nil {
-			continue
-		}
-		itemID := item.ID
-		go s.processThumbnailItem(itemID)
+	select {
+	case s.thumbnailWake <- struct{}{}:
+	default:
 	}
 }
 
-func (s *SubscriptionService) processThumbnailItem(itemID string) {
-	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
-	defer cancel()
+func (s *SubscriptionService) dispatchThumbnails() (*time.Time, error) {
+	available := cap(s.thumbnailSem) - len(s.thumbnailSem)
+	if available <= 0 {
+		return nil, nil
+	}
 	now := time.Now()
+	items, err := s.listRunnableThumbnailItems(now, available)
+	if err != nil {
+		return nil, err
+	}
+	for _, item := range items {
+		itemID := item.ID
+		select {
+		case s.thumbnailSem <- struct{}{}:
+		case <-s.stop:
+			return nil, nil
+		}
+		claimed, claimErr := s.claimThumbnailItem(itemID, now)
+		if claimErr != nil {
+			<-s.thumbnailSem
+			return nil, claimErr
+		}
+		if !claimed {
+			<-s.thumbnailSem
+			continue
+		}
+		s.thumbnailWG.Add(1)
+		go func() {
+			defer s.thumbnailWG.Done()
+			defer func() {
+				<-s.thumbnailSem
+				s.NotifyThumbnailForDownloadTask("")
+			}()
+			s.processThumbnailItem(itemID)
+		}()
+	}
+	return s.nextThumbnailRetryAt(now)
+}
+
+func (s *SubscriptionService) listRunnableThumbnailItems(now time.Time, limit int) ([]thumbnailCandidate, error) {
+	var items []thumbnailCandidate
+	err := s.factory.DB().Table("subscription_item AS si").
+		Select("si.id").
+		Joins("JOIN download_task AS dt ON dt.id = si.download_task_id AND dt.state = ?", enum.DownloadTaskStateFinished.Value()).
+		Where("si.thumbnail_url <> ''").
+		Where("(si.thumbnail_status = ? OR (si.thumbnail_status = ? AND si.thumbnail_next_retry_at IS NOT NULL AND si.thumbnail_next_retry_at <= ?))", "waiting_file", "retry_wait", now).
+		Order("si.updated_at ASC").Limit(limit).Scan(&items).Error
+	return items, err
+}
+
+func (s *SubscriptionService) nextThumbnailRetryAt(now time.Time) (*time.Time, error) {
+	var next models.SubscriptionItem
+	err := s.factory.DB().Select("thumbnail_next_retry_at").
+		Where("thumbnail_status = ? AND thumbnail_next_retry_at IS NOT NULL AND thumbnail_next_retry_at > ?", "retry_wait", now).
+		Order("thumbnail_next_retry_at ASC").Limit(1).Take(&next).Error
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, nil
+		}
+		return nil, err
+	}
+	return next.ThumbnailNextRetryAt, nil
+}
+
+func (s *SubscriptionService) claimThumbnailItem(itemID string, now time.Time) (bool, error) {
 	claimed := s.factory.DB().Model(&models.SubscriptionItem{}).
 		Where("id = ? AND thumbnail_status IN ? AND (thumbnail_next_retry_at IS NULL OR thumbnail_next_retry_at <= ?)", itemID, []string{"waiting_file", "retry_wait"}, now).
 		Updates(map[string]interface{}{"thumbnail_status": "processing", "thumbnail_error": "", "updated_at": now})
-	if claimed.Error != nil || claimed.RowsAffected != 1 {
+	return claimed.RowsAffected == 1, claimed.Error
+}
+
+func (s *SubscriptionService) processThumbnailItem(itemID string) {
+	ctx, cancel := context.WithTimeout(s.ctx, 2*time.Minute)
+	defer cancel()
+	if ctx.Err() != nil {
 		return
 	}
 	var item models.SubscriptionItem
@@ -233,6 +307,9 @@ func normalizePluginThumbnail(content []byte) ([]byte, error) {
 }
 
 func (s *SubscriptionService) failThumbnail(item *models.SubscriptionItem, failure *thumbnailDownloadError) {
+	if s.ctx != nil && s.ctx.Err() != nil {
+		return
+	}
 	updates := map[string]interface{}{"thumbnail_error": failure.Error(), "updated_at": time.Now()}
 	if failure.transient && item.ThumbnailRetryCount < 3 {
 		delays := []time.Duration{time.Minute, 5 * time.Minute, 30 * time.Minute}
@@ -256,6 +333,6 @@ func (s *SubscriptionService) RetryThumbnail(ctx context.Context, userID, itemID
 	if result.RowsAffected != 1 {
 		return fmt.Errorf("订阅条目不存在或没有缩略图")
 	}
-	go s.processThumbnailItem(itemID)
+	s.NotifyThumbnailForDownloadTask("")
 	return nil
 }

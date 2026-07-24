@@ -6,7 +6,7 @@ import logger from '@/plugins/logger'
 import { uploadTaskManager } from './uploadTaskManager'
 import { generateVideoThumbnail, isVideoFile } from './videoThumbnail'
 import i18n from '@/i18n'
-import { taskEventClient, type TaskEvent } from '@/utils/taskEvents'
+import { waitForTaskTerminal } from '@/utils/waitForTask'
 
 export interface UploadConfig {
   chunkSize: number
@@ -36,25 +36,21 @@ const waitForUploadFinalization = async (
   fileName: string,
   onProgress?: (progress: number, fileName: string) => void
 ) => {
-  let unsubscribeTask: () => void = () => {}
-  let unsubscribeSync: () => void = () => {}
-  let reconcilePromise: Promise<UploadProgressResponse | null> | null = null
-
-  const result = new Promise<void>((resolve, reject) => {
-    let settled = false
-    const applyProgress = (progress: Partial<UploadProgressResponse> | null | undefined) => {
-      if (settled || !progress) return
+  await waitForTaskTerminal<UploadProgressResponse, UploadProgressResponse>({
+    eventKind: 'upload.task',
+    resourceId: precheckId,
+    reconcile: async () => {
+      const response = await getUploadProgress(precheckId)
+      return response.code === 200 ? response.data || null : null
+    },
+    evaluate: progress => {
       if (progress.status === 'completed') {
-        settled = true
         if (taskId) uploadTaskManager.completeTask(taskId)
         onProgress?.(100, fileName)
-        resolve()
-        return
+        return { status: 'success', value: progress as UploadProgressResponse }
       }
       if (progress.status === 'failed' || progress.status === 'aborted') {
-        settled = true
-        reject(new Error(progress.error_message || '服务器处理文件失败'))
-        return
+        return { status: 'error', error: new Error(progress.error_message || '服务器处理文件失败') }
       }
       const processingProgress = Math.max(90, Math.min(99, Math.floor(progress.progress || 90)))
       if (taskId) {
@@ -65,42 +61,12 @@ const waitForUploadFinalization = async (
         )
       }
       onProgress?.(processingProgress, fileName)
+      return { status: 'pending' }
+    },
+    onReconcileError: error => {
+      logger.warn('查询文件处理进度失败，等待实时连接恢复后重试', { precheckId, error })
     }
-
-    const reconcile = () => {
-      if (settled) return Promise.resolve(null)
-      if (reconcilePromise) return reconcilePromise
-      reconcilePromise = getUploadProgress(precheckId)
-        .then(response => {
-          const progress = response.code === 200 ? response.data || null : null
-          applyProgress(progress)
-          return progress
-        })
-        .catch(error => {
-          logger.warn('查询文件处理进度失败，等待实时连接恢复后重试', { precheckId, error })
-          return null
-        })
-        .finally(() => {
-          reconcilePromise = null
-        })
-      return reconcilePromise
-    }
-
-    unsubscribeTask = taskEventClient.subscribe('upload.task', precheckId, (event: TaskEvent) => {
-      applyProgress(event.payload as Partial<UploadProgressResponse> | undefined)
-    })
-    unsubscribeSync = taskEventClient.subscribe('sync', undefined, () => {
-      void reconcile()
-    })
-    void reconcile()
   })
-
-  try {
-    await result
-  } finally {
-    unsubscribeTask()
-    unsubscribeSync()
-  }
 }
 
 export interface UploadParams {

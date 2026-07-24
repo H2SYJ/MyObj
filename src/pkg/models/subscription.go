@@ -36,10 +36,10 @@ type Subscription struct {
 	InitialLimit       int        `gorm:"column:initial_limit;type:integer;not null;default:10" json:"initial_limit"`
 	MaxItemsPerRun     int        `gorm:"column:max_items_per_run;type:integer;not null;default:100" json:"max_items_per_run"`
 	SourceGeneration   int        `gorm:"column:source_generation;type:integer;not null;default:1" json:"source_generation"`
-	Enabled            bool       `gorm:"column:enabled;type:boolean;not null;index:idx_subscription_due,priority:1" json:"enabled"`
-	Status             string     `gorm:"column:status;type:varchar(32);not null;default:'ready'" json:"status"`
+	Enabled            bool       `gorm:"column:enabled;type:boolean;not null;index:idx_subscription_due,priority:1;index:idx_subscription_dispatch,priority:1" json:"enabled"`
+	Status             string     `gorm:"column:status;type:varchar(32);not null;default:'ready';index:idx_subscription_dispatch,priority:2" json:"status"`
 	LastError          string     `gorm:"column:last_error;type:text" json:"last_error,omitempty"`
-	NextRunAt          *time.Time `gorm:"column:next_run_at;type:datetime;index:idx_subscription_due,priority:2" json:"next_run_at"`
+	NextRunAt          *time.Time `gorm:"column:next_run_at;type:datetime;index:idx_subscription_due,priority:2;index:idx_subscription_dispatch,priority:3" json:"next_run_at"`
 	LastRunAt          *time.Time `gorm:"column:last_run_at;type:datetime" json:"last_run_at"`
 	CreatedAt          time.Time  `gorm:"column:created_at;type:datetime;not null" json:"created_at"`
 	UpdatedAt          time.Time  `gorm:"column:updated_at;type:datetime;not null" json:"updated_at"`
@@ -83,13 +83,13 @@ type SubscriptionItem struct {
 	DownloadTaskID          string     `gorm:"column:download_task_id;type:varchar(64);index" json:"download_task_id,omitempty"`
 	Status                  string     `gorm:"column:status;type:varchar(32);not null;index" json:"status"`
 	ErrorMsg                string     `gorm:"column:error_msg;type:text" json:"error_msg,omitempty"`
-	ThumbnailStatus         string     `gorm:"column:thumbnail_status;type:varchar(32);not null;default:'none';index" json:"thumbnail_status"`
+	ThumbnailStatus         string     `gorm:"column:thumbnail_status;type:varchar(32);not null;default:'none';index;index:idx_subscription_thumbnail_dispatch,priority:1" json:"thumbnail_status"`
 	ThumbnailRetryCount     int        `gorm:"column:thumbnail_retry_count;type:integer;not null;default:0" json:"thumbnail_retry_count"`
-	ThumbnailNextRetryAt    *time.Time `gorm:"column:thumbnail_next_retry_at;type:datetime;index" json:"thumbnail_next_retry_at,omitempty"`
+	ThumbnailNextRetryAt    *time.Time `gorm:"column:thumbnail_next_retry_at;type:datetime;index;index:idx_subscription_thumbnail_dispatch,priority:2" json:"thumbnail_next_retry_at,omitempty"`
 	ThumbnailError          string     `gorm:"column:thumbnail_error;type:text" json:"thumbnail_error,omitempty"`
 	PublishedAt             *time.Time `gorm:"column:published_at;type:datetime;index" json:"published_at,omitempty"`
 	CreatedAt               time.Time  `gorm:"column:created_at;type:datetime;not null" json:"created_at"`
-	UpdatedAt               time.Time  `gorm:"column:updated_at;type:datetime;not null" json:"updated_at"`
+	UpdatedAt               time.Time  `gorm:"column:updated_at;type:datetime;not null;index:idx_subscription_thumbnail_dispatch,priority:3" json:"updated_at"`
 }
 
 func (SubscriptionItem) TableName() string { return "subscription_item" }

@@ -11,7 +11,7 @@ import {
 import cache from '@/plugins/cache'
 import type { FileItem } from '@/types'
 import { useI18n } from '@/composables'
-import { taskEventClient, type TaskEvent } from '@/utils/taskEvents'
+import { waitForTaskTerminal } from '@/utils/waitForTask'
 
 export interface DownloadPasswordForm {
   file_id: string
@@ -34,73 +34,28 @@ export function useFileDownload(options?: {
   const downloadingFile = ref(false)
 
   const waitForDownloadReady = async (taskId: string): Promise<OfflineDownloadTask> => {
-    let timeoutTimer: number | null = null
-    let unsubscribeTask: () => void = () => {}
-    let unsubscribeSync: () => void = () => {}
-    let reconcilePromise: Promise<OfflineDownloadTask | null> | null = null
-
-    const result = new Promise<OfflineDownloadTask>((resolve, reject) => {
-      let settled = false
-
-      const settleFromTask = (task: Partial<OfflineDownloadTask> | null | undefined) => {
-        if (settled || !task) return
-        if (task.state === 3) {
-          settled = true
-          resolve(task as OfflineDownloadTask)
-        } else if (task.state === 4) {
-          settled = true
-          reject(new Error(task.error_msg || t('tasks.downloadPrepareFailed') || '下载准备失败'))
-        } else if (task.state === 5) {
-          settled = true
-          reject(new Error(t('tasks.cancelled') || '下载任务已取消'))
+    return waitForTaskTerminal<OfflineDownloadTask, OfflineDownloadTask>({
+      eventKind: 'download.task',
+      resourceId: taskId,
+      reconcile: async () => {
+        const response = await getLocalFileDownloadTask(taskId)
+        return response.code === 200 ? response.data || null : null
+      },
+      evaluate: task => {
+        if (task.state === 3) return { status: 'success', value: task as OfflineDownloadTask }
+        if (task.state === 4) {
+          return {
+            status: 'error',
+            error: new Error(task.error_msg || t('tasks.downloadPrepareFailed') || '下载准备失败')
+          }
         }
-      }
-
-      const reconcile = () => {
-        if (settled) return Promise.resolve(null)
-        if (reconcilePromise) return reconcilePromise
-        reconcilePromise = getLocalFileDownloadTask(taskId)
-          .then(response => {
-            const task = response.code === 200 ? response.data || null : null
-            settleFromTask(task)
-            return task
-          })
-          .catch(error => {
-            proxy?.$log.warn('查询下载准备任务失败:', error)
-            return null
-          })
-          .finally(() => {
-            reconcilePromise = null
-          })
-        return reconcilePromise
-      }
-
-      unsubscribeTask = taskEventClient.subscribe('download.task', taskId, (event: TaskEvent) => {
-        settleFromTask(event.payload as Partial<OfflineDownloadTask> | undefined)
-      })
-      unsubscribeSync = taskEventClient.subscribe('sync', undefined, () => {
-        void reconcile()
-      })
-
-      void reconcile()
-      timeoutTimer = window.setTimeout(async () => {
-        const finalTask = await reconcile()
-        if (settled) return
-        settleFromTask(finalTask)
-        if (!settled) {
-          settled = true
-          reject(new Error(t('tasks.prepareTimeout') || '准备超时，请到任务中心查看'))
-        }
-      }, 30_000)
+        if (task.state === 5) return { status: 'error', error: new Error(t('tasks.cancelled') || '下载任务已取消') }
+        return { status: 'pending' }
+      },
+      timeoutMs: 30_000,
+      timeoutError: () => new Error(t('tasks.prepareTimeout') || '准备超时，请到任务中心查看'),
+      onReconcileError: error => proxy?.$log.warn('查询下载准备任务失败:', error)
     })
-
-    try {
-      return await result
-    } finally {
-      if (timeoutTimer !== null) window.clearTimeout(timeoutTimer)
-      unsubscribeTask()
-      unsubscribeSync()
-    }
   }
 
   const downloadPreparedFile = async (taskId: string, fileName: string) => {

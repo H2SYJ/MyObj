@@ -167,6 +167,13 @@ type RecycledRepository interface {
 	CountFileReferences(ctx context.Context, fileID string) (int64, error)
 }
 
+// RunnableDownloadQueryOptions 描述调度器当前无法接收的任务范围。
+type RunnableDownloadQueryOptions struct {
+	ExcludedUserIDs  []string
+	ExcludedBatchIDs []string
+	AllowTorrent     bool
+}
+
 // DownloadTaskRepository 下载任务仓储接口
 type DownloadTaskRepository interface {
 	Create(ctx context.Context, task *models.DownloadTask) error
@@ -192,7 +199,9 @@ type DownloadTaskRepository interface {
 	// CountByFilters 统计按状态和多个类型过滤后的任务数量。
 	CountByFilters(ctx context.Context, userID string, state *int, taskTypes []int) (int64, error)
 	// ListRunnable 查询当前可认领的离线下载任务。
-	ListRunnable(ctx context.Context, now time.Time, limit int) ([]*models.DownloadTask, error)
+	ListRunnable(ctx context.Context, now time.Time, limit int, options RunnableDownloadQueryOptions) ([]*models.DownloadTask, error)
+	// NextRunnableAt 查询下一条延迟重试任务的可运行时间。
+	NextRunnableAt(ctx context.Context, now time.Time, options RunnableDownloadQueryOptions) (*time.Time, error)
 	// Claim 将排队任务原子认领为下载中。
 	Claim(ctx context.Context, id, workerID, runToken string, leaseExpiresAt time.Time) (bool, error)
 	// Transition 按允许的原状态原子切换任务状态。

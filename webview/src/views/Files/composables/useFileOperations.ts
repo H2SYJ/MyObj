@@ -5,7 +5,7 @@ import { useI18n } from '@/composables/core/useI18n'
 import cache from '@/plugins/cache'
 import { useUserStore } from '@/stores'
 import type { FileItem, FileListResponse } from '@/types'
-import { taskEventClient, type TaskEvent } from '@/utils/taskEvents'
+import { waitForTaskTerminal } from '@/utils/waitForTask'
 
 export function useFileOperations(
   displayData: Ref<FileListResponse>,
@@ -91,69 +91,24 @@ export function useFileOperations(
   }
 
   const waitForPackageReady = async (packageId: string): Promise<PackageProgressResponse> => {
-    let timeoutTimer: number | null = null
-    let unsubscribeTask: () => void = () => {}
-    let unsubscribeSync: () => void = () => {}
-    let reconcilePromise: Promise<PackageProgressResponse | null> | null = null
-
-    const result = new Promise<PackageProgressResponse>((resolve, reject) => {
-      let settled = false
-      const settleFromTask = (task: Partial<PackageProgressResponse> | null | undefined) => {
-        if (settled || !task) return
-        if (task.status === 'ready') {
-          settled = true
-          resolve(task as PackageProgressResponse)
-        } else if (task.status === 'failed') {
-          settled = true
-          reject(new Error(task.error_msg || t('files.packageFailed')))
+    return waitForTaskTerminal<PackageProgressResponse, PackageProgressResponse>({
+      eventKind: 'package.task',
+      resourceId: packageId,
+      reconcile: async () => {
+        const response = await getPackageProgress(packageId)
+        return response.code === 200 ? response.data || null : null
+      },
+      evaluate: task => {
+        if (task.status === 'ready') return { status: 'success', value: task as PackageProgressResponse }
+        if (task.status === 'failed') {
+          return { status: 'error', error: new Error(task.error_msg || t('files.packageFailed')) }
         }
-      }
-
-      const reconcile = () => {
-        if (settled) return Promise.resolve(null)
-        if (reconcilePromise) return reconcilePromise
-        reconcilePromise = getPackageProgress(packageId)
-          .then(response => {
-            const task = response.code === 200 ? response.data || null : null
-            settleFromTask(task)
-            return task
-          })
-          .catch(error => {
-            proxy?.$log.warn('查询打包进度失败:', error)
-            return null
-          })
-          .finally(() => {
-            reconcilePromise = null
-          })
-        return reconcilePromise
-      }
-
-      unsubscribeTask = taskEventClient.subscribe('package.task', packageId, (event: TaskEvent) => {
-        settleFromTask(event.payload as Partial<PackageProgressResponse> | undefined)
-      })
-      unsubscribeSync = taskEventClient.subscribe('sync', undefined, () => {
-        void reconcile()
-      })
-
-      void reconcile()
-      timeoutTimer = window.setTimeout(async () => {
-        const finalTask = await reconcile()
-        if (settled) return
-        settleFromTask(finalTask)
-        if (!settled) {
-          settled = true
-          reject(new Error(t('files.packageTimeout')))
-        }
-      }, 5 * 60_000)
+        return { status: 'pending' }
+      },
+      timeoutMs: 5 * 60_000,
+      timeoutError: () => new Error(t('files.packageTimeout')),
+      onReconcileError: error => proxy?.$log.warn('查询打包进度失败:', error)
     })
-
-    try {
-      return await result
-    } finally {
-      if (timeoutTimer !== null) window.clearTimeout(timeoutTimer)
-      unsubscribeTask()
-      unsubscribeSync()
-    }
   }
 
   const requestPackagePassword = async (): Promise<string | undefined> => {

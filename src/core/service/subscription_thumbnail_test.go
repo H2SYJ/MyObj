@@ -8,6 +8,7 @@ import (
 	"image/color"
 	"image/png"
 	"myobj/src/internal/repository/impl"
+	"myobj/src/pkg/enum"
 	"myobj/src/pkg/models"
 	"testing"
 	"time"
@@ -66,6 +67,60 @@ func TestRecoverInterruptedThumbnails(t *testing.T) {
 	}
 	if item.ThumbnailStatus != "retry_wait" || item.ThumbnailNextRetryAt == nil {
 		t.Fatalf("中断缩略图任务未恢复: status=%s next=%v", item.ThumbnailStatus, item.ThumbnailNextRetryAt)
+	}
+}
+
+func TestListRunnableThumbnailItemsJoinsFinishedDownloads(t *testing.T) {
+	db, err := gorm.Open(sqlite.Open("file:"+t.Name()+"?mode=memory&cache=shared"), &gorm.Config{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := db.AutoMigrate(&models.SubscriptionItem{}, &models.DownloadTask{}); err != nil {
+		t.Fatal(err)
+	}
+	now := time.Now()
+	due := now.Add(-time.Second)
+	future := now.Add(time.Minute)
+	for _, task := range []models.DownloadTask{
+		{ID: "finished-1", State: enum.DownloadTaskStateFinished.Value()},
+		{ID: "finished-2", State: enum.DownloadTaskStateFinished.Value()},
+		{ID: "downloading", State: enum.DownloadTaskStateDownloading.Value()},
+	} {
+		if err := db.Create(&task).Error; err != nil {
+			t.Fatal(err)
+		}
+	}
+	items := []models.SubscriptionItem{
+		{ID: "waiting-finished", SubscriptionID: "s", SourceGeneration: 1, ItemKey: "a", URL: "https://example.com/a", DownloadType: "http", SavePath: "/", DownloadTaskID: "finished-1", Status: "submitted", ThumbnailURL: "https://example.com/a.jpg", ThumbnailStatus: "waiting_file", CreatedAt: now.Add(-4 * time.Minute), UpdatedAt: now.Add(-4 * time.Minute)},
+		{ID: "retry-due", SubscriptionID: "s", SourceGeneration: 1, ItemKey: "b", URL: "https://example.com/b", DownloadType: "http", SavePath: "/", DownloadTaskID: "finished-2", Status: "submitted", ThumbnailURL: "https://example.com/b.jpg", ThumbnailStatus: "retry_wait", ThumbnailNextRetryAt: &due, CreatedAt: now.Add(-3 * time.Minute), UpdatedAt: now.Add(-3 * time.Minute)},
+		{ID: "waiting-downloading", SubscriptionID: "s", SourceGeneration: 1, ItemKey: "c", URL: "https://example.com/c", DownloadType: "http", SavePath: "/", DownloadTaskID: "downloading", Status: "submitted", ThumbnailURL: "https://example.com/c.jpg", ThumbnailStatus: "waiting_file", CreatedAt: now.Add(-2 * time.Minute), UpdatedAt: now.Add(-2 * time.Minute)},
+		{ID: "retry-future", SubscriptionID: "s", SourceGeneration: 1, ItemKey: "d", URL: "https://example.com/d", DownloadType: "http", SavePath: "/", DownloadTaskID: "finished-2", Status: "submitted", ThumbnailURL: "https://example.com/d.jpg", ThumbnailStatus: "retry_wait", ThumbnailNextRetryAt: &future, CreatedAt: now.Add(-time.Minute), UpdatedAt: now.Add(-time.Minute)},
+	}
+	if err := db.Create(&items).Error; err != nil {
+		t.Fatal(err)
+	}
+	service := &SubscriptionService{factory: impl.NewRepositoryFactory(db)}
+	candidates, err := service.listRunnableThumbnailItems(now, 4)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(candidates) != 2 || candidates[0].ID != "waiting-finished" || candidates[1].ID != "retry-due" {
+		t.Fatalf("缩略图JOIN筛选结果不符合预期: %#v", candidates)
+	}
+	claimed, err := service.claimThumbnailItem("waiting-finished", now)
+	if err != nil || !claimed {
+		t.Fatalf("首次认领缩略图任务失败: claimed=%v err=%v", claimed, err)
+	}
+	claimed, err = service.claimThumbnailItem("waiting-finished", now)
+	if err != nil || claimed {
+		t.Fatalf("重复认领缩略图任务未被阻止: claimed=%v err=%v", claimed, err)
+	}
+	next, err := service.nextThumbnailRetryAt(now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if next == nil || next.Sub(future) > time.Millisecond || future.Sub(*next) > time.Millisecond {
+		t.Fatalf("缩略图最早重试时间=%v，期望%v", next, future)
 	}
 }
 

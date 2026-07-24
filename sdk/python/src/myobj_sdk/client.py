@@ -257,6 +257,25 @@ class MyObjClient:
         if not 1 <= page_size <= 100:
             raise ValueError("page_size 必须在 1 到 100 之间")
 
+    @staticmethod
+    def _check_polling(initial_interval: float, max_interval: float) -> None:
+        if initial_interval <= 0:
+            raise ValueError("poll_interval 必须大于0")
+        if max_interval < initial_interval:
+            raise ValueError("max_poll_interval 不能小于 poll_interval")
+
+    @staticmethod
+    def _sleep_with_backoff(
+        interval: float,
+        max_interval: float,
+        deadline: Optional[float] = None,
+    ) -> float:
+        delay = interval
+        if deadline is not None:
+            delay = min(delay, max(0.0, deadline - time.monotonic()))
+        time.sleep(delay)
+        return min(max_interval, interval * 1.5)
+
     # 文件与目录
 
     def list_files(
@@ -537,6 +556,7 @@ class MyObjClient:
         wait_for_completion: bool = False,
         finalize_timeout: Optional[float] = None,
         finalize_poll_interval: float = 1.0,
+        finalize_max_poll_interval: float = 5.0,
     ) -> dict[str, Any]:
         """预检并上传文件，默认在分片上传完成后立即返回后台处理状态。"""
 
@@ -547,8 +567,10 @@ class MyObjClient:
             raise ValueError("加密上传必须提供 file_password")
         if finalize_timeout is not None and finalize_timeout <= 0:
             raise ValueError("finalize_timeout 必须大于0")
-        if finalize_poll_interval <= 0:
-            raise ValueError("finalize_poll_interval 必须大于0")
+        self._check_polling(
+            finalize_poll_interval,
+            finalize_max_poll_interval,
+        )
 
         chunk_size = self.DEFAULT_CHUNK_SIZE
         file_size = source_path.stat().st_size
@@ -688,6 +710,7 @@ class MyObjClient:
                     precheck_id,
                     timeout=finalize_timeout,
                     poll_interval=finalize_poll_interval,
+                    max_poll_interval=finalize_max_poll_interval,
                 )
             return last_response
 
@@ -697,8 +720,10 @@ class MyObjClient:
         *,
         timeout: Optional[float],
         poll_interval: float,
+        max_poll_interval: float,
     ) -> dict[str, Any]:
         deadline = time.monotonic() + timeout if timeout is not None else None
+        current_interval = poll_interval
         while True:
             progress_response = self.get_upload_progress(precheck_id)
             progress_data = progress_response.get("data")
@@ -721,7 +746,11 @@ class MyObjClient:
                 raise MyObjHTTPError(message)
             if deadline is not None and time.monotonic() >= deadline:
                 raise TimeoutError("等待服务器处理文件超时")
-            time.sleep(poll_interval)
+            current_interval = self._sleep_with_backoff(
+                current_interval,
+                max_poll_interval,
+                deadline,
+            )
 
     def get_upload_progress(self, precheck_id: str) -> dict[str, Any]:
         return self._request_json(
@@ -804,6 +833,11 @@ class MyObjClient:
             json={"file_id": file_id, "file_password": file_password},
         )
 
+    def get_local_download_task(self, task_id: str) -> dict[str, Any]:
+        """查询网盘文件下载准备任务。"""
+
+        return self._request_json("GET", f"/download/local/task/{task_id}")
+
     def download_file(
         self,
         file_id: str,
@@ -812,10 +846,12 @@ class MyObjClient:
         file_password: str = "",
         prepare_timeout: float = 300.0,
         poll_interval: float = 0.5,
+        max_poll_interval: float = 5.0,
         progress: Optional[ProgressCallback] = None,
     ) -> Path:
         """等待服务端完成文件准备后，将文件流式保存到指定路径。"""
 
+        self._check_polling(poll_interval, max_poll_interval)
         task = self.create_file_download(file_id, file_password=file_password)
         data = task.get("data")
         if not isinstance(data, Mapping) or not data.get("task_id"):
@@ -823,18 +859,29 @@ class MyObjClient:
         task_id = str(data["task_id"])
 
         deadline = time.monotonic() + prepare_timeout
+        current_interval = poll_interval
         while True:
-            try:
-                response = self._request_binary(
-                    "GET", f"/download/local/file/{task_id}"
-                )
+            state_response = self.get_local_download_task(task_id)
+            state_data = state_response.get("data")
+            state = state_data.get("state") if isinstance(state_data, Mapping) else None
+            if state == 3:
                 break
-            except MyObjAPIError as exc:
-                if exc.code != 400 or "未准备完成" not in exc.message:
-                    raise
-                if time.monotonic() >= deadline:
-                    raise TimeoutError("等待 MyObj 准备下载文件超时") from exc
-                time.sleep(poll_interval)
+            if state == 4:
+                message = str(state_data.get("error_msg") or "准备下载文件失败")
+                raise MyObjAPIError(500, message, data=state_data)
+            if state == 5:
+                raise MyObjAPIError(400, "下载任务已取消", data=state_data)
+            if time.monotonic() >= deadline:
+                raise TimeoutError("等待 MyObj 准备下载文件超时")
+            current_interval = self._sleep_with_backoff(
+                current_interval,
+                max_poll_interval,
+                deadline,
+            )
+
+        response = self._request_binary(
+            "GET", f"/download/local/file/{task_id}"
+        )
 
         return self._save_binary_response(response, destination, progress=progress)
 
@@ -869,9 +916,12 @@ class MyObjClient:
         *,
         wait_timeout: float = 300.0,
         poll_interval: float = 0.5,
+        max_poll_interval: float = 5.0,
         progress: Optional[ProgressCallback] = None,
     ) -> Path:
+        self._check_polling(poll_interval, max_poll_interval)
         deadline = time.monotonic() + wait_timeout
+        current_interval = poll_interval
         while True:
             state = self.get_package_progress(package_id)
             data = state.get("data")
@@ -883,7 +933,11 @@ class MyObjClient:
                 raise MyObjAPIError(500, message, data=data)
             if time.monotonic() >= deadline:
                 raise TimeoutError("等待 MyObj 打包文件超时")
-            time.sleep(poll_interval)
+            current_interval = self._sleep_with_backoff(
+                current_interval,
+                max_poll_interval,
+                deadline,
+            )
 
         response = self._request_binary(
             "GET",

@@ -35,6 +35,16 @@ def json_response(payload: dict[str, Any], status_code: int = 200) -> Response:
     return response
 
 
+def binary_response(content: bytes) -> Response:
+    response = Response()
+    response.status_code = 200
+    response.headers["Content-Type"] = "application/octet-stream"
+    response.headers["Content-Length"] = str(len(content))
+    response._content = content
+    response._content_consumed = True
+    return response
+
+
 class FakeSession:
     def __init__(self, responses: list[Response]) -> None:
         self.responses = responses
@@ -245,7 +255,7 @@ class MyObjClientTest(unittest.TestCase):
         )
         client = self.make_client(session)
 
-        with tempfile.TemporaryDirectory() as temp_dir, patch("time.sleep"):
+        with tempfile.TemporaryDirectory() as temp_dir, patch("time.sleep") as sleep:
             file_path = Path(temp_dir) / "异步.txt"
             file_path.write_text("内容", encoding="utf-8")
             result = client.upload_file(
@@ -258,6 +268,117 @@ class MyObjClientTest(unittest.TestCase):
         self.assertEqual(result["data"]["id"], "file-1")
         self.assertEqual(session.calls[2]["params"]["precheck_id"], "precheck-1")
         self.assertEqual(session.calls[3]["params"]["precheck_id"], "precheck-1")
+        sleep.assert_called_once_with(1.0)
+
+    def test_download_file_polls_task_status_before_requesting_binary(self) -> None:
+        content = "文件内容".encode("utf-8")
+        session = FakeSession(
+            [
+                json_response(
+                    {"code": 200, "message": "创建成功", "data": {"task_id": "task-1"}}
+                ),
+                json_response(
+                    {"code": 200, "message": "查询成功", "data": {"state": 1}}
+                ),
+                json_response(
+                    {"code": 200, "message": "查询成功", "data": {"state": 3}}
+                ),
+                binary_response(content),
+            ]
+        )
+        client = self.make_client(session)
+        with tempfile.TemporaryDirectory() as temp_dir, patch("time.sleep") as sleep:
+            destination = Path(temp_dir) / "下载.bin"
+            result = client.download_file("file-1", destination)
+            self.assertEqual(result.read_bytes(), content)
+
+        self.assertTrue(session.calls[1]["url"].endswith("/download/local/task/task-1"))
+        self.assertTrue(session.calls[2]["url"].endswith("/download/local/task/task-1"))
+        self.assertTrue(session.calls[3]["url"].endswith("/download/local/file/task-1"))
+        sleep.assert_called_once_with(0.5)
+
+    def test_download_polling_uses_backoff_and_max_interval(self) -> None:
+        states = [1, 1, 1, 1, 1, 1, 3]
+        session = FakeSession(
+            [
+                json_response(
+                    {"code": 200, "message": "创建成功", "data": {"task_id": "task-backoff"}}
+                ),
+                *[
+                    json_response(
+                        {"code": 200, "message": "查询成功", "data": {"state": state}}
+                    )
+                    for state in states
+                ],
+                binary_response(b"done"),
+            ]
+        )
+        client = self.make_client(session)
+        with (
+            tempfile.TemporaryDirectory() as temp_dir,
+            patch("time.sleep") as sleep,
+            patch("time.monotonic", return_value=0.0),
+        ):
+            client.download_file(
+                "file-1",
+                Path(temp_dir) / "退避.bin",
+                poll_interval=0.5,
+                max_poll_interval=2.0,
+            )
+        self.assertEqual(
+            [call.args[0] for call in sleep.call_args_list],
+            [0.5, 0.75, 1.125, 1.6875, 2.0, 2.0],
+        )
+
+    def test_download_polling_reports_failed_and_canceled_states(self) -> None:
+        for state, message in ((4, "远端下载失败"), (5, "下载任务已取消")):
+            with self.subTest(state=state):
+                session = FakeSession(
+                    [
+                        json_response(
+                            {"code": 200, "message": "创建成功", "data": {"task_id": "task-error"}}
+                        ),
+                        json_response(
+                            {
+                                "code": 200,
+                                "message": "查询成功",
+                                "data": {"state": state, "error_msg": "远端下载失败"},
+                            }
+                        ),
+                    ]
+                )
+                client = self.make_client(session)
+                with self.assertRaisesRegex(MyObjAPIError, message):
+                    client.download_file("file-1", "不会创建.bin")
+                self.assertEqual(len(session.calls), 2)
+
+    def test_download_polling_honors_prepare_timeout(self) -> None:
+        session = FakeSession(
+            [
+                json_response(
+                    {"code": 200, "message": "创建成功", "data": {"task_id": "task-timeout"}}
+                ),
+                json_response(
+                    {"code": 200, "message": "查询成功", "data": {"state": 1}}
+                ),
+            ]
+        )
+        client = self.make_client(session)
+        with patch("time.monotonic", side_effect=[0.0, 0.0, 0.0, 0.0, 0.0, 2.0]):
+            with self.assertRaisesRegex(TimeoutError, "准备下载文件超时"):
+                client.download_file("file-1", "不会创建.bin", prepare_timeout=1.0)
+
+    def test_polling_parameters_are_validated_before_request(self) -> None:
+        client = self.make_client(FakeSession([]))
+        with self.assertRaisesRegex(ValueError, "poll_interval"):
+            client.download_file("file-1", "目标.bin", poll_interval=0)
+        with self.assertRaisesRegex(ValueError, "max_poll_interval"):
+            client.download_package(
+                "package-1",
+                "目标.zip",
+                poll_interval=2,
+                max_poll_interval=1,
+            )
 
     def test_upload_does_not_wait_for_background_processing_by_default(self) -> None:
         processing_response = {

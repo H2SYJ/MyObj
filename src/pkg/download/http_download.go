@@ -50,6 +50,7 @@ type HTTPDownloadOptions struct {
 	ReservedSize     int64                      // 已预留的用户空间
 	ReserveSpace     func(int64) (int64, error) // 根据远端大小预留用户空间
 	ProgressCallback func(downloadedSize, speed int64, progress int)
+	ProgressReporter ProgressReporter
 }
 
 // HTTPDownloadResult HTTP下载结果
@@ -70,6 +71,7 @@ type chunkInfo struct {
 
 // downloadProgress 下载进度管理器
 type downloadProgress struct {
+	Context            context.Context
 	TaskID             string
 	TotalSize          int64
 	DownloadedSize     int64
@@ -82,6 +84,7 @@ type downloadProgress struct {
 	ReservedSize       int64
 	ReserveSpace       func(int64) (int64, error)
 	ProgressCallback   func(downloadedSize, speed int64, progress int)
+	ProgressReporter   ProgressReporter
 	mu                 sync.RWMutex
 }
 
@@ -109,6 +112,7 @@ func (dp *downloadProgress) updateProgress(downloaded int64) {
 
 	now := time.Now()
 	elapsed := now.Sub(dp.LastUpdate).Seconds()
+	dp.DownloadedSize = downloaded
 
 	// 每秒更新一次速度
 	if elapsed >= 1.0 {
@@ -144,8 +148,6 @@ func (dp *downloadProgress) updateProgress(downloaded int64) {
 
 		dp.LastUpdate = now
 		dp.LastDownloadedSize = downloaded
-		dp.DownloadedSize = downloaded
-
 		progressValue := 0
 		if dp.TotalSize > 0 {
 			progressValue = int(float64(dp.DownloadedSize) / float64(dp.TotalSize) * 100)
@@ -153,17 +155,41 @@ func (dp *downloadProgress) updateProgress(downloaded int64) {
 				progressValue = 100
 			}
 		}
-		updated, err := dp.RepoFactory.DownloadTask().UpdateIfRunToken(context.Background(), dp.TaskID, dp.RunToken, map[string]interface{}{
-			"downloaded_size": dp.DownloadedSize,
-			"speed":           dp.Speed,
-			"progress":        progressValue,
-		})
+		_, err := dp.persistProgress(dp.DownloadedSize, dp.Speed, progressValue)
 		if err != nil {
 			logger.LOG.Error("更新下载任务进度失败", "taskID", dp.TaskID, "error", err)
-		} else if updated && dp.ProgressCallback != nil {
-			dp.ProgressCallback(dp.DownloadedSize, dp.Speed, progressValue)
 		}
 	}
+}
+
+func (dp *downloadProgress) flushProgress() error {
+	dp.mu.Lock()
+	defer dp.mu.Unlock()
+	progressValue := 0
+	if dp.TotalSize > 0 {
+		progressValue = min(100, int(float64(dp.DownloadedSize)/float64(dp.TotalSize)*100))
+	}
+	_, err := dp.persistProgress(dp.DownloadedSize, dp.Speed, progressValue)
+	return err
+}
+
+func (dp *downloadProgress) persistProgress(downloadedSize, speed int64, progress int) (bool, error) {
+	if dp.ProgressReporter != nil {
+		ctx := dp.Context
+		if ctx == nil {
+			ctx = context.Background()
+		}
+		return dp.ProgressReporter(ctx, downloadedSize, speed, progress)
+	}
+	updated, err := dp.RepoFactory.DownloadTask().UpdateIfRunToken(context.Background(), dp.TaskID, dp.RunToken, map[string]interface{}{
+		"downloaded_size": downloadedSize,
+		"speed":           speed,
+		"progress":        progress,
+	})
+	if err == nil && updated && dp.ProgressCallback != nil {
+		dp.ProgressCallback(downloadedSize, speed, progress)
+	}
+	return updated, err
 }
 
 func (dp *downloadProgress) ensureUnknownSizeReservation(requiredSize int64) error {
@@ -308,6 +334,8 @@ func DownloadHTTPWithContext(
 	// 4. 下载文件
 	filePath := filepath.Join(sessionDir, fileInfo.FileName)
 	progress := newDownloadProgress(taskID, fileInfo.FileSize, repoFactory, opts.RunToken, opts.ProgressCallback)
+	progress.Context = ctx
+	progress.ProgressReporter = opts.ProgressReporter
 	progress.ReservedSize = opts.ReservedSize
 	progress.ReserveSpace = opts.ReserveSpace
 
@@ -323,6 +351,9 @@ func DownloadHTTPWithContext(
 	} else {
 		logger.LOG.Info("使用单线程下载")
 		err = downloadDirect(ctx, url, filePath, client, progress)
+	}
+	if flushErr := progress.flushProgress(); flushErr != nil && !errors.Is(flushErr, context.Canceled) {
+		logger.LOG.Warn("刷新HTTP任务最终进度失败", "taskID", taskID, "error", flushErr)
 	}
 
 	if err != nil {
@@ -743,11 +774,7 @@ func downloadWithRange(
 	progress.DownloadedSize = downloadedBytes
 	progress.LastDownloadedSize = downloadedBytes
 	initialProgress := int(float64(downloadedBytes) / float64(totalSize) * 100)
-	_, _ = progress.RepoFactory.DownloadTask().UpdateIfRunToken(context.Background(), progress.TaskID, progress.RunToken, map[string]interface{}{
-		"downloaded_size": downloadedBytes,
-		"progress":        initialProgress,
-		"speed":           0,
-	})
+	_, _ = progress.persistProgress(downloadedBytes, 0, initialProgress)
 	logger.LOG.Info("待下载分片", "总数", len(manifest.Chunks), "待下载", len(pendingChunks), "已下载", len(manifest.Chunks)-len(pendingChunks))
 
 	var wg sync.WaitGroup

@@ -8,6 +8,7 @@ import (
 	"myobj/src/pkg/download"
 	"myobj/src/pkg/enum"
 	"myobj/src/pkg/models"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -25,6 +26,76 @@ func newManagerTestFactory(t *testing.T) *impl.RepositoryFactory {
 		t.Fatal(err)
 	}
 	return impl.NewRepositoryFactory(db)
+}
+
+func TestDownloadManagerSkipsHeartbeatAfterRecentProgress(t *testing.T) {
+	now := time.Now()
+	manager := &DownloadManager{
+		active: map[string]*activeDownloadTask{
+			"task-1": {lastLeaseRefresh: now},
+		},
+	}
+	if manager.shouldHeartbeat("task-1", now.Add(14*time.Second)) {
+		t.Fatal("最近已有进度更新时不应重复写入租约")
+	}
+	if !manager.shouldHeartbeat("task-1", now.Add(15*time.Second)) {
+		t.Fatal("长时间无进度时应继续写入租约")
+	}
+}
+
+func TestDownloadManagerIdleFallbackAndNotify(t *testing.T) {
+	factory := newManagerTestFactory(t)
+	var queryCount atomic.Int32
+	if err := factory.DB().Callback().Query().After("gorm:query").Register("test:count-download-scheduler-query", func(db *gorm.DB) {
+		if db.Statement.Table == "download_task" {
+			queryCount.Add(1)
+		}
+	}); err != nil {
+		t.Fatal(err)
+	}
+	manager := NewDownloadManager(factory, t.TempDir())
+	manager.Start()
+	defer manager.Stop()
+
+	deadline := time.Now().Add(time.Second)
+	for queryCount.Load() < 3 && time.Now().Before(deadline) {
+		time.Sleep(10 * time.Millisecond)
+	}
+	if queryCount.Load() < 3 {
+		t.Fatalf("启动扫描未完成，查询次数=%d", queryCount.Load())
+	}
+	baseline := queryCount.Load()
+	time.Sleep(1200 * time.Millisecond)
+	if got := queryCount.Load(); got != baseline {
+		t.Fatalf("空闲调度器仍在高频查询: before=%d after=%d", baseline, got)
+	}
+
+	manager.Notify("", "")
+	deadline = time.Now().Add(time.Second)
+	for queryCount.Load() == baseline && time.Now().Before(deadline) {
+		time.Sleep(10 * time.Millisecond)
+	}
+	if got := queryCount.Load(); got == baseline {
+		t.Fatal("Notify未立即唤醒下载调度查询")
+	}
+	manager.Stop()
+	manager.Stop()
+}
+
+func TestSchedulerWakeDelayUsesEarliestDeadlineAndFallback(t *testing.T) {
+	now := time.Now()
+	due := now.Add(250 * time.Millisecond)
+	if got := schedulerWakeDelay(now, &due); got != 250*time.Millisecond {
+		t.Fatalf("精确到期延迟=%v，期望250ms", got)
+	}
+	far := now.Add(time.Minute)
+	if got := schedulerWakeDelay(now, &far); got != schedulerFallbackInterval {
+		t.Fatalf("远期任务延迟=%v，期望兜底间隔%v", got, schedulerFallbackInterval)
+	}
+	past := now.Add(-time.Second)
+	if got := schedulerWakeDelay(now, &past); got != 0 {
+		t.Fatalf("已到期任务延迟=%v，期望立即唤醒", got)
+	}
 }
 
 func TestQuotaReservationIsAtomic(t *testing.T) {

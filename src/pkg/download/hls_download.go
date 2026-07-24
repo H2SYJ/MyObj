@@ -42,10 +42,12 @@ type HLSDownloadOptions struct {
 	Client           *http.Client
 	ReserveSpace     func(requiredSize int64) (int64, error)
 	ProgressCallback func(downloadedSize, speed int64, progress int)
+	ProgressReporter ProgressReporter
 }
 
 type hlsProgress struct {
 	mu                sync.Mutex
+	ctx               context.Context
 	taskID            string
 	runToken          string
 	repo              *impl.RepositoryFactory
@@ -57,6 +59,8 @@ type hlsProgress struct {
 	reservedSize      int64
 	reserveSpace      func(int64) (int64, error)
 	progressCallback  func(downloadedSize, speed int64, progress int)
+	progressReporter  ProgressReporter
+	persistMu         sync.Mutex
 }
 
 func DownloadHLSWithContext(ctx context.Context, taskID, rawURL, userID, tempDir string, repoFactory *impl.RepositoryFactory, opts *HLSDownloadOptions) (*HTTPDownloadResult, error) {
@@ -106,11 +110,14 @@ func DownloadHLSWithContext(ctx context.Context, taskID, rawURL, userID, tempDir
 		return nil, context.Canceled
 	}
 
-	progress := newHLSProgress(taskID, opts.RunToken, repoFactory, manifest, opts)
+	progress := newHLSProgress(ctx, taskID, opts.RunToken, repoFactory, manifest, opts)
 	if err := progress.syncInitial(); err != nil {
 		return nil, err
 	}
 	if err := downloadHLSManifest(ctx, client, sessionDir, manifest, progress, opts); err != nil {
+		if flushErr := progress.flushCurrent(); flushErr != nil && !errors.Is(flushErr, context.Canceled) {
+			logger.LOG.Warn("刷新HLS任务最终进度失败", "taskID", taskID, "error", flushErr)
+		}
 		return nil, err
 	}
 	if err := progress.markPackaging(); err != nil {
@@ -150,10 +157,11 @@ func DownloadHLSWithContext(ctx context.Context, taskID, rawURL, userID, tempDir
 	return &HTTPDownloadResult{FileID: fileID, FileName: opts.OutputFileName, FileSize: stat.Size()}, nil
 }
 
-func newHLSProgress(taskID, runToken string, repo *impl.RepositoryFactory, manifest *hlsManifest, opts *HLSDownloadOptions) *hlsProgress {
+func newHLSProgress(ctx context.Context, taskID, runToken string, repo *impl.RepositoryFactory, manifest *hlsManifest, opts *HLSDownloadOptions) *hlsProgress {
 	progress := &hlsProgress{
-		taskID: taskID, runToken: runToken, repo: repo, lastUpdate: time.Now(),
-		reservedSize: opts.ReservedSize, reserveSpace: opts.ReserveSpace, progressCallback: opts.ProgressCallback,
+		ctx: ctx, taskID: taskID, runToken: runToken, repo: repo, lastUpdate: time.Now(),
+		reservedSize: opts.ReservedSize, reserveSpace: opts.ReserveSpace,
+		progressCallback: opts.ProgressCallback, progressReporter: opts.ProgressReporter,
 	}
 	for _, rendition := range manifest.Renditions {
 		for _, item := range rendition.Maps {
@@ -175,7 +183,6 @@ func newHLSProgress(taskID, runToken string, repo *impl.RepositoryFactory, manif
 
 func (p *hlsProgress) complete(size int64, duration float64) error {
 	p.mu.Lock()
-	defer p.mu.Unlock()
 	p.downloadedBytes += size
 	p.completedDuration += duration
 	if p.reserveSpace != nil && p.downloadedBytes > p.reservedSize {
@@ -183,12 +190,17 @@ func (p *hlsProgress) complete(size int64, duration float64) error {
 		target := ((p.downloadedBytes + block - 1) / block) * block
 		reserved, err := p.reserveSpace(target)
 		if err != nil {
+			p.mu.Unlock()
 			return err
 		}
 		p.reservedSize = reserved
 	}
 	now := time.Now()
 	elapsed := now.Sub(p.lastUpdate).Seconds()
+	if elapsed < 1 {
+		p.mu.Unlock()
+		return nil
+	}
 	speed := int64(0)
 	if elapsed > 0 {
 		speed = int64(float64(p.downloadedBytes-p.lastBytes) / elapsed)
@@ -197,59 +209,70 @@ func (p *hlsProgress) complete(size int64, duration float64) error {
 	if p.totalDuration > 0 {
 		progressValue = min(95, int(p.completedDuration/p.totalDuration*95))
 	}
-	updated, err := p.repo.DownloadTask().UpdateIfRunToken(context.Background(), p.taskID, p.runToken, map[string]interface{}{
-		"downloaded_size": p.downloadedBytes, "speed": speed, "progress": progressValue,
-	})
-	if err != nil {
-		return err
-	}
-	if !updated {
-		return context.Canceled
-	}
-	if p.progressCallback != nil {
-		p.progressCallback(p.downloadedBytes, speed, progressValue)
-	}
+	downloadedBytes := p.downloadedBytes
 	p.lastBytes = p.downloadedBytes
 	p.lastUpdate = now
-	return nil
+	return p.persistLocked(downloadedBytes, speed, progressValue)
 }
 
 func (p *hlsProgress) syncInitial() error {
 	p.mu.Lock()
-	defer p.mu.Unlock()
 	progressValue := 0
 	if p.totalDuration > 0 {
 		progressValue = min(95, int(p.completedDuration/p.totalDuration*95))
 	}
-	updated, err := p.repo.DownloadTask().UpdateIfRunToken(context.Background(), p.taskID, p.runToken, map[string]interface{}{
-		"downloaded_size": p.downloadedBytes, "speed": 0, "progress": progressValue,
-	})
-	if err != nil {
-		return err
-	}
-	if !updated {
-		return context.Canceled
-	}
-	if p.progressCallback != nil {
-		p.progressCallback(p.downloadedBytes, 0, progressValue)
-	}
-	return nil
+	downloadedBytes := p.downloadedBytes
+	p.lastBytes = downloadedBytes
+	p.lastUpdate = time.Now()
+	return p.persistLocked(downloadedBytes, 0, progressValue)
 }
 
 func (p *hlsProgress) markPackaging() error {
 	p.mu.Lock()
-	defer p.mu.Unlock()
-	updated, err := p.repo.DownloadTask().UpdateIfRunToken(context.Background(), p.taskID, p.runToken, map[string]interface{}{
-		"downloaded_size": p.downloadedBytes, "speed": 0, "progress": 99,
-	})
+	downloadedBytes := p.downloadedBytes
+	p.lastBytes = downloadedBytes
+	p.lastUpdate = time.Now()
+	return p.persistLocked(downloadedBytes, 0, 99)
+}
+
+func (p *hlsProgress) flushCurrent() error {
+	p.mu.Lock()
+	progressValue := 0
+	if p.totalDuration > 0 {
+		progressValue = min(95, int(p.completedDuration/p.totalDuration*95))
+	}
+	downloadedBytes := p.downloadedBytes
+	p.lastBytes = downloadedBytes
+	p.lastUpdate = time.Now()
+	return p.persistLocked(downloadedBytes, 0, progressValue)
+}
+
+// persistLocked 在持有 p.mu 时取得持久化序列锁，确保较早快照不会覆盖终态刷新。
+func (p *hlsProgress) persistLocked(downloadedSize, speed int64, progress int) error {
+	p.persistMu.Lock()
+	p.mu.Unlock()
+	defer p.persistMu.Unlock()
+	var updated bool
+	var err error
+	ctx := p.ctx
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	if p.progressReporter != nil {
+		updated, err = p.progressReporter(ctx, downloadedSize, speed, progress)
+	} else {
+		updated, err = p.repo.DownloadTask().UpdateIfRunToken(ctx, p.taskID, p.runToken, map[string]interface{}{
+			"downloaded_size": downloadedSize, "speed": speed, "progress": progress,
+		})
+		if err == nil && updated && p.progressCallback != nil {
+			p.progressCallback(downloadedSize, speed, progress)
+		}
+	}
 	if err != nil {
 		return err
 	}
 	if !updated {
 		return context.Canceled
-	}
-	if p.progressCallback != nil {
-		p.progressCallback(p.downloadedBytes, 0, 99)
 	}
 	return nil
 }

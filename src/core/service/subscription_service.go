@@ -13,6 +13,7 @@ import (
 	"myobj/src/core/domain/request"
 	"myobj/src/internal/repository/impl"
 	"myobj/src/pkg/download"
+	"myobj/src/pkg/logger"
 	"myobj/src/pkg/models"
 	pluginpkg "myobj/src/pkg/plugin"
 	"myobj/src/pkg/virtualpath"
@@ -31,18 +32,30 @@ type SubscriptionService struct {
 	factory         *impl.RepositoryFactory
 	pluginService   *PluginService
 	downloadService *DownloadService
+	ctx             context.Context
+	cancel          context.CancelFunc
 	stop            chan struct{}
 	wake            chan struct{}
+	thumbnailWake   chan struct{}
 	sem             chan struct{}
+	thumbnailSem    chan struct{}
 	activeMu        sync.Mutex
 	active          map[string]context.CancelFunc
 	pending         map[string]bool
+	stopping        bool
+	startOnce       sync.Once
 	stopOnce        sync.Once
+	loopWG          sync.WaitGroup
+	runWG           sync.WaitGroup
+	thumbnailWG     sync.WaitGroup
 	location        *time.Location
 }
 
 func NewSubscriptionService(factory *impl.RepositoryFactory, plugins *PluginService, downloads *DownloadService) *SubscriptionService {
-	service := &SubscriptionService{factory: factory, pluginService: plugins, downloadService: downloads, stop: make(chan struct{}), wake: make(chan struct{}, 1), sem: make(chan struct{}, 2), active: map[string]context.CancelFunc{}, pending: map[string]bool{}, location: subscriptionLocation()}
+	ctx, cancel := context.WithCancel(context.Background())
+	service := &SubscriptionService{factory: factory, pluginService: plugins, downloadService: downloads, ctx: ctx, cancel: cancel,
+		stop: make(chan struct{}), wake: make(chan struct{}, 1), thumbnailWake: make(chan struct{}, 1), sem: make(chan struct{}, 2), thumbnailSem: make(chan struct{}, 4),
+		active: map[string]context.CancelFunc{}, pending: map[string]bool{}, location: subscriptionLocation()}
 	plugins.SetChangeHook(service.cancelPluginRuns)
 	return service
 }
@@ -54,14 +67,35 @@ func (s *SubscriptionService) AvailablePlugins(ctx context.Context) ([]map[strin
 }
 
 func (s *SubscriptionService) Start() {
-	s.recoverInterruptedRuns()
-	s.recoverInterruptedThumbnails()
-	go s.loop()
-	go s.thumbnailLoop()
-	s.Notify()
+	s.startOnce.Do(func() {
+		s.activeMu.Lock()
+		if s.stopping {
+			s.activeMu.Unlock()
+			return
+		}
+		s.loopWG.Add(2)
+		s.activeMu.Unlock()
+		s.recoverInterruptedRuns()
+		s.recoverInterruptedThumbnails()
+		go func() { defer s.loopWG.Done(); s.loop() }()
+		go func() { defer s.loopWG.Done(); s.thumbnailLoop() }()
+		s.Notify()
+		s.NotifyThumbnailForDownloadTask("")
+	})
 }
 
-func (s *SubscriptionService) Stop() { s.stopOnce.Do(func() { close(s.stop) }) }
+func (s *SubscriptionService) Stop() {
+	s.stopOnce.Do(func() {
+		s.activeMu.Lock()
+		s.stopping = true
+		s.activeMu.Unlock()
+		close(s.stop)
+		s.cancel()
+	})
+	s.loopWG.Wait()
+	s.runWG.Wait()
+	s.thumbnailWG.Wait()
+}
 
 func (s *SubscriptionService) Notify() {
 	select {
@@ -71,63 +105,114 @@ func (s *SubscriptionService) Notify() {
 }
 
 func (s *SubscriptionService) loop() {
-	ticker := time.NewTicker(30 * time.Second)
-	defer ticker.Stop()
+	timer := time.NewTimer(0)
+	defer timer.Stop()
+	runDispatch := func() {
+		next, err := s.dispatchDue()
+		delay := schedulerWakeDelay(time.Now(), next)
+		if err != nil {
+			logger.LOG.Error("查询待执行订阅失败", "error", err)
+			delay = schedulerErrorRetry
+		}
+		resetSchedulerTimer(timer, delay)
+	}
 	for {
 		select {
 		case <-s.stop:
 			return
-		case <-ticker.C:
-			s.dispatchDue()
+		case <-timer.C:
+			runDispatch()
 		case <-s.wake:
-			s.dispatchDue()
+			runDispatch()
 		}
 	}
 }
 
-func (s *SubscriptionService) dispatchDue() {
+func (s *SubscriptionService) dispatchDue() (*time.Time, error) {
 	var subscriptions []models.Subscription
 	now := time.Now()
-	if err := s.factory.DB().Where("enabled = ? AND status = ? AND next_run_at IS NOT NULL AND next_run_at <= ?", true, "ready", now).Order("next_run_at ASC").Limit(20).Find(&subscriptions).Error; err != nil {
-		return
+	if err := s.factory.DB().Select("id", "schedule_time", "next_run_at").Where("enabled = ? AND status = ? AND next_run_at IS NOT NULL", true, "ready").Order("next_run_at ASC").Limit(21).Find(&subscriptions).Error; err != nil {
+		return nil, err
 	}
-	for i := range subscriptions {
+	var nextWake *time.Time
+	limit := len(subscriptions)
+	if limit > 20 {
+		limit = 20
+	}
+	for i := 0; i < limit; i++ {
 		subscription := subscriptions[i]
+		if subscription.NextRunAt == nil || subscription.NextRunAt.After(now) {
+			nextWake = earlierTime(nextWake, subscription.NextRunAt)
+			break
+		}
 		next, err := nextScheduleInLocation(subscription.ScheduleTime, now, s.location)
 		if err != nil {
+			logger.LOG.Warn("计算订阅下次执行时间失败", "subscriptionID", subscription.ID, "error", err)
 			continue
 		}
-		result := s.factory.DB().Model(&models.Subscription{}).Where("id = ? AND next_run_at <= ?", subscription.ID, now).Update("next_run_at", next)
+		result := s.factory.DB().Model(&models.Subscription{}).Where("id = ? AND enabled = ? AND status = ? AND next_run_at <= ?", subscription.ID, true, "ready", now).Update("next_run_at", next)
 		if result.Error == nil && result.RowsAffected == 1 {
 			s.queueRun(subscription.ID, "schedule")
+			nextWake = earlierTime(nextWake, &next)
+		} else if result.Error != nil {
+			return nil, result.Error
 		}
 	}
+	if len(subscriptions) > 20 {
+		candidate := subscriptions[20].NextRunAt
+		if candidate != nil && !candidate.After(now) {
+			immediate := now
+			return &immediate, nil
+		}
+		nextWake = earlierTime(nextWake, candidate)
+	}
+	return nextWake, nil
+}
+
+func earlierTime(current, candidate *time.Time) *time.Time {
+	if candidate == nil {
+		return current
+	}
+	if current == nil || candidate.Before(*current) {
+		value := *candidate
+		return &value
+	}
+	return current
 }
 
 func (s *SubscriptionService) queueRun(subscriptionID, trigger string) string {
 	s.activeMu.Lock()
+	if s.stopping || s.ctx.Err() != nil {
+		s.activeMu.Unlock()
+		return ""
+	}
 	if _, running := s.active[subscriptionID]; running || s.pending[subscriptionID] {
 		s.activeMu.Unlock()
 		return ""
 	}
 	s.pending[subscriptionID] = true
-	s.activeMu.Unlock()
 	runID := uuid.Must(uuid.NewV7()).String()
 	now := time.Now()
 	run := &models.SubscriptionRun{ID: runID, SubscriptionID: subscriptionID, Trigger: trigger, Status: "queued", CreatedAt: now}
 	if err := s.factory.DB().Create(run).Error; err != nil {
-		s.activeMu.Lock()
 		delete(s.pending, subscriptionID)
 		s.activeMu.Unlock()
 		return ""
 	}
+	s.runWG.Add(1)
+	s.activeMu.Unlock()
 	go func() {
+		defer s.runWG.Done()
 		defer func() {
 			s.activeMu.Lock()
 			delete(s.pending, subscriptionID)
 			s.activeMu.Unlock()
 		}()
-		s.sem <- struct{}{}
+		select {
+		case s.sem <- struct{}{}:
+		case <-s.stop:
+			return
+		}
 		defer func() { <-s.sem }()
 		s.executeRun(runID)
 	}()
@@ -195,6 +280,7 @@ func (s *SubscriptionService) Create(ctx context.Context, userID string, req *re
 	if runNow && enabled {
 		runID = s.queueRun(subscription.ID, "create")
 	}
+	s.Notify()
 	return subscription, runID, nil
 }
 
@@ -295,6 +381,7 @@ func (s *SubscriptionService) Update(ctx context.Context, userID string, req *re
 		// 先持久化安全边界变化，再取消运行，避免执行器继续使用旧授权或旧保存目录。
 		s.cancelActive(subscription.ID)
 	}
+	s.Notify()
 	return nil
 }
 
@@ -377,12 +464,13 @@ func (s *SubscriptionService) Toggle(ctx context.Context, userID, id string, ena
 	if !enabled {
 		s.cancelActive(id)
 	}
+	s.Notify()
 	return result.Error
 }
 
 func (s *SubscriptionService) Delete(ctx context.Context, userID, id string) error {
 	s.cancelActive(id)
-	return s.factory.DB().WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+	err := s.factory.DB().WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		var count int64
 		if err := tx.Model(&models.Subscription{}).Where("id = ? AND user_id = ?", id, userID).Count(&count).Error; err != nil || count != 1 {
 			return fmt.Errorf("订阅不存在")
@@ -395,6 +483,10 @@ func (s *SubscriptionService) Delete(ctx context.Context, userID, id string) err
 		}
 		return tx.Where("id = ? AND user_id = ?", id, userID).Delete(&models.Subscription{}).Error
 	})
+	if err == nil {
+		s.Notify()
+	}
+	return err
 }
 
 func (s *SubscriptionService) RunNow(ctx context.Context, userID, id string) (string, error) {
@@ -473,7 +565,10 @@ type subscriptionItemView struct {
 }
 
 func (s *SubscriptionService) executeRun(runID string) {
-	ctx := context.Background()
+	ctx := s.ctx
+	if ctx.Err() != nil {
+		return
+	}
 	var run models.SubscriptionRun
 	if err := s.factory.DB().Where("id = ? AND status = ?", runID, "queued").First(&run).Error; err != nil {
 		return
@@ -553,6 +648,9 @@ func (s *SubscriptionService) executeRun(runID string) {
 	}
 	subscription = latest
 	found, created, skipped, processErr := s.processItems(runCtx, &subscription, manifest, response.Items)
+	if s.ctx.Err() != nil {
+		return
+	}
 	status := "success"
 	errorMsg := ""
 	if processErr != nil {
@@ -980,6 +1078,9 @@ func (s *SubscriptionService) checkUserPermission(ctx context.Context, userID st
 	return nil
 }
 func (s *SubscriptionService) failRun(run *models.SubscriptionRun, err error) {
+	if s.ctx.Err() != nil {
+		return
+	}
 	now := time.Now()
 	query := s.factory.DB().Model(&models.SubscriptionRun{}).Where("id = ?", run.ID)
 	if run.RunToken != "" {
@@ -1029,8 +1130,20 @@ func (s *SubscriptionService) recoverInterruptedRuns() {
 	if err := s.factory.DB().Where("status = ?", "queued").Order("created_at ASC").Find(&queued).Error; err == nil {
 		for _, run := range queued {
 			runID := run.ID
+			s.activeMu.Lock()
+			if s.stopping {
+				s.activeMu.Unlock()
+				return
+			}
+			s.runWG.Add(1)
+			s.activeMu.Unlock()
 			go func() {
-				s.sem <- struct{}{}
+				defer s.runWG.Done()
+				select {
+				case s.sem <- struct{}{}:
+				case <-s.stop:
+					return
+				}
 				defer func() { <-s.sem }()
 				s.executeRun(runID)
 			}()

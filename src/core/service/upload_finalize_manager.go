@@ -11,7 +11,6 @@ import (
 	"os"
 	"path/filepath"
 	"sync"
-	"time"
 )
 
 type uploadFinalizeJob struct {
@@ -23,7 +22,9 @@ type uploadFinalizeJob struct {
 type UploadFinalizeManager struct {
 	service *FileService
 	queue   chan uploadFinalizeJob
-	running sync.Map
+	mu      sync.Mutex
+	running map[string]bool
+	pending map[string]uploadFinalizeJob
 	once    sync.Once
 }
 
@@ -31,6 +32,8 @@ func newUploadFinalizeManager(service *FileService) *UploadFinalizeManager {
 	return &UploadFinalizeManager{
 		service: service,
 		queue:   make(chan uploadFinalizeJob, 128),
+		running: make(map[string]bool),
+		pending: make(map[string]uploadFinalizeJob),
 	}
 }
 
@@ -42,35 +45,46 @@ func (m *UploadFinalizeManager) Start() {
 }
 
 func (m *UploadFinalizeManager) Enqueue(taskID, filePassword string) bool {
-	if _, loaded := m.running.LoadOrStore(taskID, struct{}{}); loaded {
+	job := uploadFinalizeJob{taskID: taskID, filePassword: filePassword}
+	m.mu.Lock()
+	if m.running[taskID] {
+		m.pending[taskID] = job
+		m.mu.Unlock()
 		return false
 	}
-	job := uploadFinalizeJob{taskID: taskID, filePassword: filePassword}
+	m.running[taskID] = true
+	m.mu.Unlock()
+	m.enqueueJob(job)
+	return true
+}
+
+func (m *UploadFinalizeManager) enqueueJob(job uploadFinalizeJob) {
 	select {
 	case m.queue <- job:
 	default:
 		// 队列已满时不阻塞最后一个分片请求；任务状态已持久化，进程重启后也能恢复。
 		go func() { m.queue <- job }()
 	}
-	return true
 }
 
-func (m *UploadFinalizeManager) enqueueAfterCurrent(taskID, filePassword string) {
-	go func() {
-		for {
-			if _, running := m.running.Load(taskID); !running {
-				m.Enqueue(taskID, filePassword)
-				return
-			}
-			time.Sleep(20 * time.Millisecond)
-		}
-	}()
+func (m *UploadFinalizeManager) finishJob(taskID string) {
+	m.mu.Lock()
+	next, ok := m.pending[taskID]
+	if ok {
+		delete(m.pending, taskID)
+	} else {
+		delete(m.running, taskID)
+	}
+	m.mu.Unlock()
+	if ok {
+		m.enqueueJob(next)
+	}
 }
 
 func (m *UploadFinalizeManager) worker() {
 	for job := range m.queue {
 		func() {
-			defer m.running.Delete(job.taskID)
+			defer m.finishJob(job.taskID)
 			defer func() {
 				if recovered := recover(); recovered != nil {
 					cause := fmt.Errorf("后台处理发生异常: %v", recovered)
@@ -263,9 +277,7 @@ func (f *FileService) RetryUploadFinalize(req *request.RetryUploadFinalizeReques
 	if latest, getErr := f.factory.UploadTask().GetByID(ctx, task.ID); getErr == nil {
 		f.publishUploadTask(latest, "updated", false)
 	}
-	if !f.finalizeManager.Enqueue(task.ID, req.FilePassword) {
-		f.finalizeManager.enqueueAfterCurrent(task.ID, req.FilePassword)
-	}
+	f.finalizeManager.Enqueue(task.ID, req.FilePassword)
 	return models.NewJsonResponse(200, "文件已重新进入处理队列", map[string]interface{}{
 		"task_id": task.ID,
 		"status":  "processing",

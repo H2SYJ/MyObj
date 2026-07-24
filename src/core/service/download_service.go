@@ -38,6 +38,14 @@ func (d *DownloadService) SetTaskEventHub(events *TaskEventHub) {
 	d.manager.SetTaskEventHub(events)
 }
 
+func (d *DownloadService) SetTaskFinishedHook(hook func(string)) {
+	d.manager.SetFinishedHook(hook)
+}
+
+func (d *DownloadService) Stop() {
+	d.manager.Stop()
+}
+
 func (d *DownloadService) publishTask(task *models.DownloadTask, action string, coalesce bool) {
 	if d.taskEvents != nil && task != nil {
 		d.taskEvents.Publish(downloadTaskEvent(task, action), coalesce)

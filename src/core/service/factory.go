@@ -36,6 +36,7 @@ func NewServiceFactory(factory *impl.RepositoryFactory, cacheLocal cache.Cache) 
 	}
 	pluginService := NewPluginService(factory, runtime)
 	subscriptionService := NewSubscriptionService(factory, pluginService, downloadService)
+	downloadService.SetTaskFinishedHook(subscriptionService.NotifyThumbnailForDownloadTask)
 	subscriptionService.Start()
 	return &ServerFactory{
 		taskEvents:          taskEvents,
@@ -60,6 +61,7 @@ func (f *ServerFactory) SubscriptionService() *SubscriptionService { return f.su
 
 func (f *ServerFactory) Close(ctx context.Context) error {
 	f.subscriptionService.Stop()
+	f.downloadService.Stop()
 	return f.pluginService.Close(ctx)
 }
 

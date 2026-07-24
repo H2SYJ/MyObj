@@ -2,8 +2,10 @@ package impl
 
 import (
 	"context"
+	"errors"
 	"myobj/src/pkg/models"
 	"myobj/src/pkg/repository"
+	"sort"
 	"time"
 
 	"gorm.io/gorm"
@@ -145,16 +147,67 @@ func (r *downloadTaskRepository) CountByFilters(ctx context.Context, userID stri
 	return count, err
 }
 
-func (r *downloadTaskRepository) ListRunnable(ctx context.Context, now time.Time, limit int) ([]*models.DownloadTask, error) {
-	var tasks []*models.DownloadTask
-	err := r.db.WithContext(ctx).
+func (r *downloadTaskRepository) runnableQuery(ctx context.Context, options repository.RunnableDownloadQueryOptions) *gorm.DB {
+	query := r.db.WithContext(ctx).
 		Where("state = ?", 0).
-		Where("type IN ?", []int{0, 4, 5, 9}).
-		Where("next_retry_at IS NULL OR next_retry_at <= ?", now).
+		Where("type IN ?", []int{0, 4, 5, 9})
+	if !options.AllowTorrent {
+		query = query.Where("type NOT IN ?", []int{4, 5})
+	}
+	if len(options.ExcludedUserIDs) > 0 {
+		query = query.Where("user_id NOT IN ?", options.ExcludedUserIDs)
+	}
+	if len(options.ExcludedBatchIDs) > 0 {
+		query = query.Where("(batch_id IS NULL OR batch_id = '' OR batch_id NOT IN ?)", options.ExcludedBatchIDs)
+	}
+	return query
+}
+
+func (r *downloadTaskRepository) ListRunnable(ctx context.Context, now time.Time, limit int, options repository.RunnableDownloadQueryOptions) ([]*models.DownloadTask, error) {
+	if limit <= 0 {
+		return []*models.DownloadTask{}, nil
+	}
+	var immediate []*models.DownloadTask
+	if err := r.runnableQuery(ctx, options).
+		Where("next_retry_at IS NULL").
 		Order("create_time ASC").
 		Limit(limit).
-		Find(&tasks).Error
-	return tasks, err
+		Find(&immediate).Error; err != nil {
+		return nil, err
+	}
+	var retries []*models.DownloadTask
+	if err := r.runnableQuery(ctx, options).
+		Where("next_retry_at IS NOT NULL AND next_retry_at <= ?", now).
+		Order("create_time ASC").
+		Limit(limit).
+		Find(&retries).Error; err != nil {
+		return nil, err
+	}
+	tasks := append(immediate, retries...)
+	sort.SliceStable(tasks, func(i, j int) bool {
+		return tasks[i].CreateTime.ToTime().Before(tasks[j].CreateTime.ToTime())
+	})
+	if len(tasks) > limit {
+		tasks = tasks[:limit]
+	}
+	return tasks, nil
+}
+
+func (r *downloadTaskRepository) NextRunnableAt(ctx context.Context, now time.Time, options repository.RunnableDownloadQueryOptions) (*time.Time, error) {
+	var task models.DownloadTask
+	err := r.runnableQuery(ctx, options).
+		Select("next_retry_at").
+		Where("next_retry_at IS NOT NULL AND next_retry_at > ?", now).
+		Order("next_retry_at ASC").
+		Limit(1).
+		Take(&task).Error
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, nil
+		}
+		return nil, err
+	}
+	return task.NextRetryAt, nil
 }
 
 func (r *downloadTaskRepository) Claim(ctx context.Context, id, workerID, runToken string, leaseExpiresAt time.Time) (bool, error) {

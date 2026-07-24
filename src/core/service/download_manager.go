@@ -11,6 +11,7 @@ import (
 	"myobj/src/pkg/enum"
 	"myobj/src/pkg/logger"
 	"myobj/src/pkg/models"
+	"myobj/src/pkg/repository"
 	"net"
 	"os"
 	"strings"
@@ -22,6 +23,11 @@ import (
 )
 
 const downloadLeaseDuration = 45 * time.Second
+
+type activeDownloadTask struct {
+	cancel           context.CancelFunc
+	lastLeaseRefresh time.Time
+}
 
 // DownloadManager 使用数据库任务记录驱动单机可靠下载调度。
 type DownloadManager struct {
@@ -35,16 +41,27 @@ type DownloadManager struct {
 	stop   chan struct{}
 
 	mu            sync.Mutex
-	active        map[string]context.CancelFunc
+	active        map[string]*activeDownloadTask
 	activeUsers   map[string]int
 	activeBatches map[string]bool
 	secrets       map[string]string
 	torrentSem    chan struct{}
 	taskEvents    *TaskEventHub
+	finishedHook  func(string)
+	startOnce     sync.Once
+	stopOnce      sync.Once
+	wg            sync.WaitGroup
+	stopping      bool
 }
 
 func (m *DownloadManager) SetTaskEventHub(events *TaskEventHub) {
 	m.taskEvents = events
+}
+
+func (m *DownloadManager) SetFinishedHook(hook func(string)) {
+	m.mu.Lock()
+	m.finishedHook = hook
+	m.mu.Unlock()
 }
 
 func (m *DownloadManager) publishTaskByID(taskID string, coalesce bool) {
@@ -56,10 +73,25 @@ func (m *DownloadManager) publishTaskByID(taskID string, coalesce bool) {
 	}
 }
 
-func (m *DownloadManager) progressPublisher(task *models.DownloadTask) func(int64, int64, int) {
-	return func(downloadedSize, speed int64, progress int) {
+func (m *DownloadManager) progressReporter(task *models.DownloadTask) download.ProgressReporter {
+	return func(ctx context.Context, downloadedSize, speed int64, progress int) (bool, error) {
+		now := time.Now()
+		updated, err := m.factory.DownloadTask().UpdateIfRunToken(ctx, task.ID, task.RunToken, map[string]interface{}{
+			"downloaded_size":  downloadedSize,
+			"speed":            speed,
+			"progress":         progress,
+			"lease_expires_at": now.Add(downloadLeaseDuration),
+		})
+		if err != nil || !updated {
+			return updated, err
+		}
+		m.mu.Lock()
+		if active := m.active[task.ID]; active != nil {
+			active.lastLeaseRefresh = now
+		}
+		m.mu.Unlock()
 		if m.taskEvents == nil {
-			return
+			return true, nil
 		}
 		snapshot := *task
 		snapshot.State = enum.DownloadTaskStateDownloading.Value()
@@ -68,6 +100,7 @@ func (m *DownloadManager) progressPublisher(task *models.DownloadTask) func(int6
 		snapshot.DownloadedSize = downloadedSize
 		snapshot.UpdateTime = custom_type.Now()
 		m.taskEvents.Publish(downloadTaskEvent(&snapshot, "updated"), true)
+		return true, nil
 	}
 }
 
@@ -96,7 +129,7 @@ func NewDownloadManager(factory *impl.RepositoryFactory, tempDir string, policie
 		networkPolicy: networkPolicy,
 		notify:        make(chan struct{}, 1),
 		stop:          make(chan struct{}),
-		active:        make(map[string]context.CancelFunc),
+		active:        make(map[string]*activeDownloadTask),
 		activeUsers:   make(map[string]int),
 		activeBatches: make(map[string]bool),
 		secrets:       make(map[string]string),
@@ -105,25 +138,63 @@ func NewDownloadManager(factory *impl.RepositoryFactory, tempDir string, policie
 }
 
 func (m *DownloadManager) Start() {
-	if err := m.recoverInterruptedTasks(); err != nil {
-		logger.LOG.Error("恢复离线下载任务失败", "error", err)
-	}
-	go m.loop()
+	m.startOnce.Do(func() {
+		m.mu.Lock()
+		if m.stopping {
+			m.mu.Unlock()
+			return
+		}
+		if err := m.recoverInterruptedTasks(); err != nil {
+			logger.LOG.Error("恢复离线下载任务失败", "error", err)
+		}
+		m.wg.Add(1)
+		m.mu.Unlock()
+		go func() {
+			defer m.wg.Done()
+			m.loop()
+		}()
+	})
 }
 
 func (m *DownloadManager) loop() {
-	ticker := time.NewTicker(time.Second)
-	defer ticker.Stop()
+	timer := time.NewTimer(0)
+	defer timer.Stop()
+	runDispatch := func() {
+		next, err := m.dispatch()
+		delay := schedulerWakeDelay(time.Now(), next)
+		if err != nil {
+			logger.LOG.Error("查询待执行下载任务失败", "error", err)
+			delay = schedulerErrorRetry
+		}
+		resetSchedulerTimer(timer, delay)
+	}
 	for {
 		select {
 		case <-m.stop:
 			return
 		case <-m.notify:
-			m.dispatch()
-		case <-ticker.C:
-			m.dispatch()
+			runDispatch()
+		case <-timer.C:
+			runDispatch()
 		}
 	}
+}
+
+func (m *DownloadManager) Stop() {
+	m.stopOnce.Do(func() {
+		m.mu.Lock()
+		m.stopping = true
+		cancels := make([]context.CancelFunc, 0, len(m.active))
+		for _, active := range m.active {
+			cancels = append(cancels, active.cancel)
+		}
+		m.mu.Unlock()
+		close(m.stop)
+		for _, cancel := range cancels {
+			cancel()
+		}
+	})
+	m.wg.Wait()
 }
 
 func (m *DownloadManager) Notify(taskID, filePassword string) {
@@ -132,33 +203,81 @@ func (m *DownloadManager) Notify(taskID, filePassword string) {
 		m.secrets[taskID] = filePassword
 		m.mu.Unlock()
 	}
+	m.mu.Lock()
+	stopping := m.stopping
+	m.mu.Unlock()
+	if stopping {
+		return
+	}
 	select {
 	case m.notify <- struct{}{}:
 	default:
 	}
 }
 
-func (m *DownloadManager) dispatch() {
+func (m *DownloadManager) runnableQueryOptionsLocked() repository.RunnableDownloadQueryOptions {
+	excludedUsers := make([]string, 0)
+	for userID, count := range m.activeUsers {
+		if count >= m.config.MaxActiveTasksPerUser {
+			excludedUsers = append(excludedUsers, userID)
+		}
+	}
+	excludedBatches := make([]string, 0, len(m.activeBatches))
+	for batchID := range m.activeBatches {
+		excludedBatches = append(excludedBatches, batchID)
+	}
+	return repository.RunnableDownloadQueryOptions{
+		ExcludedUserIDs:  excludedUsers,
+		ExcludedBatchIDs: excludedBatches,
+		AllowTorrent:     len(m.torrentSem) < cap(m.torrentSem),
+	}
+}
+
+func (m *DownloadManager) dispatch() (*time.Time, error) {
 	m.mu.Lock()
+	if m.stopping {
+		m.mu.Unlock()
+		return nil, nil
+	}
 	available := m.config.MaxActiveTasks - len(m.active)
 	m.mu.Unlock()
 	if available <= 0 {
-		return
+		return nil, nil
 	}
-	tasks, err := m.factory.DownloadTask().ListRunnable(context.Background(), time.Now(), available*4)
-	if err != nil {
-		logger.LOG.Error("查询待执行下载任务失败", "error", err)
-		return
-	}
-	for _, task := range tasks {
-		if !m.startTask(task) {
-			continue
+	for available > 0 {
+		m.mu.Lock()
+		options := m.runnableQueryOptionsLocked()
+		m.mu.Unlock()
+		limit := available * 2
+		if limit < 8 {
+			limit = 8
 		}
-		available--
-		if available == 0 {
-			return
+		if limit > 32 {
+			limit = 32
+		}
+		tasks, err := m.factory.DownloadTask().ListRunnable(context.Background(), time.Now(), limit, options)
+		if err != nil {
+			return nil, err
+		}
+		started := 0
+		for _, task := range tasks {
+			if !m.startTask(task) {
+				continue
+			}
+			started++
+			available--
+			if available == 0 {
+				return nil, nil
+			}
+		}
+		if len(tasks) == 0 || started == 0 {
+			break
 		}
 	}
+	m.mu.Lock()
+	options := m.runnableQueryOptionsLocked()
+	m.mu.Unlock()
+	return m.factory.DownloadTask().NextRunnableAt(context.Background(), time.Now(), options)
 }
 
 func (m *DownloadManager) startTask(task *models.DownloadTask) bool {
@@ -180,7 +299,7 @@ func (m *DownloadManager) startTask(task *models.DownloadTask) bool {
 	}
 
 	m.mu.Lock()
-	if (task.BatchID != "" && m.activeBatches[task.BatchID]) || len(m.active) >= m.config.MaxActiveTasks || m.activeUsers[task.UserID] >= m.config.MaxActiveTasksPerUser {
+	if m.stopping || (task.BatchID != "" && m.activeBatches[task.BatchID]) || len(m.active) >= m.config.MaxActiveTasks || m.activeUsers[task.UserID] >= m.config.MaxActiveTasksPerUser {
 		m.mu.Unlock()
 		if isTorrent {
 			<-m.torrentSem
@@ -200,17 +319,21 @@ func (m *DownloadManager) startTask(task *models.DownloadTask) bool {
 		return false
 	}
 	ctx, cancel := context.WithCancel(context.Background())
-	m.active[task.ID] = cancel
+	m.active[task.ID] = &activeDownloadTask{cancel: cancel, lastLeaseRefresh: time.Now()}
 	m.activeUsers[task.UserID]++
 	if task.BatchID != "" {
 		m.activeBatches[task.BatchID] = true
 	}
 	filePassword := m.secrets[task.ID]
+	m.wg.Add(1)
 	m.mu.Unlock()
 
 	task.RunToken = runToken
 	m.publishTaskByID(task.ID, false)
-	go m.runTask(ctx, task, filePassword, isTorrent)
+	go func() {
+		defer m.wg.Done()
+		m.runTask(ctx, task, filePassword, isTorrent)
+	}()
 	return true
 }
 
@@ -265,7 +388,7 @@ func (m *DownloadManager) runTask(ctx context.Context, task *models.DownloadTask
 			SessionID:          task.BatchID,
 			DownloadLimiter:    m.networkPolicy.DownloadLimiter(),
 			UploadLimiter:      m.networkPolicy.BTUploadLimiter(),
-			ProgressCallback:   m.progressPublisher(task),
+			ProgressReporter:   m.progressReporter(task),
 		}
 		fileID, err = download.DownloadTorrentSingleFile(ctx, task.ID, task.URL, task.FileIndex, task.UserID, m.tempDir, m.factory, opts)
 	} else if task.Type == enum.DownloadTaskTypeHLS.Value() {
@@ -282,7 +405,7 @@ func (m *DownloadManager) runTask(ctx context.Context, task *models.DownloadTask
 			RequestHeaders:   requestHeaders,
 			HeaderHosts:      headerHosts,
 			OutputFileName:   task.FileName,
-			ProgressCallback: m.progressPublisher(task),
+			ProgressReporter: m.progressReporter(task),
 			ReserveSpace: func(size int64) (int64, error) {
 				reserved, reserveErr := m.ensureReservation(task, size)
 				if reserveErr == nil {
@@ -315,7 +438,7 @@ func (m *DownloadManager) runTask(ctx context.Context, task *models.DownloadTask
 			RequestHeaders:   requestHeaders,
 			HeaderHosts:      headerHosts,
 			OutputFileName:   task.FileName,
-			ProgressCallback: m.progressPublisher(task),
+			ProgressReporter: m.progressReporter(task),
 			ReserveSpace: func(size int64) (int64, error) {
 				reserved, reserveErr := m.ensureReservation(task, size)
 				if reserveErr == nil {
@@ -345,12 +468,29 @@ func (m *DownloadManager) heartbeat(ctx context.Context, taskID, runToken string
 		case <-done:
 			return
 		case <-ticker.C:
-			_, err := m.factory.DownloadTask().Heartbeat(context.Background(), taskID, runToken, time.Now().Add(downloadLeaseDuration))
+			now := time.Now()
+			if !m.shouldHeartbeat(taskID, now) {
+				continue
+			}
+			updated, err := m.factory.DownloadTask().Heartbeat(context.Background(), taskID, runToken, now.Add(downloadLeaseDuration))
 			if err != nil {
 				logger.LOG.Warn("更新下载任务心跳失败", "taskID", taskID, "error", err)
+			} else if updated {
+				m.mu.Lock()
+				if active := m.active[taskID]; active != nil {
+					active.lastLeaseRefresh = now
+				}
+				m.mu.Unlock()
 			}
 		}
 	}
+}
+
+func (m *DownloadManager) shouldHeartbeat(taskID string, now time.Time) bool {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	active := m.active[taskID]
+	return active != nil && now.Sub(active.lastLeaseRefresh) >= 15*time.Second
 }
 
 func (m *DownloadManager) finishTask(task *models.DownloadTask, fileID string, runErr error) {
@@ -388,6 +528,12 @@ func (m *DownloadManager) finishTask(task *models.DownloadTask, fileID string, r
 		}
 		if updated {
 			m.publishTaskByID(task.ID, false)
+			m.mu.Lock()
+			hook := m.finishedHook
+			m.mu.Unlock()
+			if hook != nil {
+				hook(task.ID)
+			}
 		}
 		m.deleteSecret(task.ID)
 		return
@@ -417,6 +563,7 @@ func (m *DownloadManager) finishTask(task *models.DownloadTask, fileID string, r
 		}
 		if updated {
 			m.publishTaskByID(task.ID, false)
+			m.Notify("", "")
 		}
 		m.deleteSecret(task.ID)
 		return
@@ -629,10 +776,10 @@ func (m *DownloadManager) Cancel(taskID string) error {
 
 func (m *DownloadManager) cancelActive(taskID string) {
 	m.mu.Lock()
-	cancel := m.active[taskID]
+	active := m.active[taskID]
 	m.mu.Unlock()
-	if cancel != nil {
-		cancel()
+	if active != nil {
+		active.cancel()
 	}
 }
 

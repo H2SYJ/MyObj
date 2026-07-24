@@ -135,6 +135,8 @@ result = client.upload_file(
 )
 ```
 
+等待期间从 `finalize_poll_interval` 开始按 1.5 倍退避，最大间隔由 `finalize_max_poll_interval` 控制，默认 5 秒；未设置 `finalize_timeout` 时仍会持续等待。
+
 不需要终端进度条时可以关闭：
 
 ```python
@@ -187,7 +189,7 @@ client.download_thumbnail(
 )
 ```
 
-`download_file` 会先创建异步准备任务，等待文件合并或解密完成，再流式写入目标文件。下载期间先写入同目录下的 `.part` 文件，成功后再替换为最终文件。
+`download_file` 会先创建异步准备任务，通过任务状态接口等待文件合并或解密完成，再请求一次文件并流式写入目标路径。轮询从 `poll_interval` 开始按 1.5 倍退避，最大间隔由 `max_poll_interval` 控制，默认 5 秒。下载期间先写入同目录下的 `.part` 文件，成功后再替换为最终文件。
 
 ## 修改缩略图
 
@@ -214,6 +216,8 @@ client.download_package(
     "D:/下载/项目资料.zip",
 )
 ```
+
+打包状态轮询同样从 `poll_interval` 开始按 1.5 倍退避，`max_poll_interval` 默认限制为 5 秒，`wait_timeout` 的既有超时语义不变。
 
 ## 异常处理
 
