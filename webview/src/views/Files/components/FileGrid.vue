@@ -175,7 +175,7 @@
   }
   .file-preview {
     width: 100%;
-    aspect-ratio: 16 / 9;
+    aspect-ratio: 4 / 3;
     display: grid;
     place-items: center;
     overflow: hidden;

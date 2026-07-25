@@ -24,7 +24,7 @@ describe('FileGrid 宫格缩略图布局', () => {
 
     expect(result.errors).toEqual([])
     expect(result.code).toContain('minmax(260px, 1fr)')
-    expect(result.code).toContain('aspect-ratio: 16 / 9')
+    expect(result.code).toContain('aspect-ratio: 4 / 3')
     expect(result.code).toContain('object-fit: contain')
     expect(result.code).toContain('@media (max-width: 767px)')
     expect(result.code).toContain('minmax(160px, 1fr)')
