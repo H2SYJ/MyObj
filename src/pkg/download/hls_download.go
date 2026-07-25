@@ -40,6 +40,7 @@ type HLSDownloadOptions struct {
 	RequestHeaders   map[string]string
 	HeaderHosts      []string
 	OutputFileName   string
+	ServerSecret     string
 	Client           *http.Client
 	ReserveSpace     func(requiredSize int64) (int64, error)
 	ProgressCallback func(downloadedSize, speed int64, progress int)
@@ -81,26 +82,21 @@ func DownloadHLSWithContext(ctx context.Context, taskID, rawURL, userID, tempDir
 	if opts.OutputFileName == "" {
 		return nil, fmt.Errorf("HLS输出文件名不能为空")
 	}
+	sessionDir := filepath.Join(tempDir, fmt.Sprintf("hls_%s", taskID))
+	manifest, err := loadPreparedHLSManifest(sessionDir, rawURL, opts.OutputFileName)
+	if err != nil {
+		return nil, err
+	}
+	keys, err := loadHLSKeyCache(sessionDir, opts.ServerSecret, taskID, userID, manifest)
+	if err != nil {
+		return nil, err
+	}
 	client := opts.Client
 	if client == nil {
-		var err error
 		client, err = newHLSHTTPClient(opts.ProxyURL, opts.DownloadLimiter, opts.RequestHeaders, opts.HeaderHosts)
 		if err != nil {
 			return nil, err
 		}
-	}
-
-	sessionDir := filepath.Join(tempDir, fmt.Sprintf("hls_%s", taskID))
-	if err := os.MkdirAll(sessionDir, 0755); err != nil {
-		return nil, fmt.Errorf("创建HLS临时目录失败: %w", err)
-	}
-	freshManifest, err := buildHLSManifest(ctx, client, rawURL, opts.OutputFileName)
-	if err != nil {
-		return nil, err
-	}
-	manifest, err := loadOrInitializeHLSManifest(sessionDir, freshManifest)
-	if err != nil {
-		return nil, err
 	}
 	updated, err := repoFactory.DownloadTask().UpdateIfRunToken(ctx, taskID, opts.RunToken, map[string]interface{}{
 		"file_name": opts.OutputFileName, "file_size": 0, "support_range": true,
@@ -119,7 +115,7 @@ func DownloadHLSWithContext(ctx context.Context, taskID, rawURL, userID, tempDir
 		return nil, err
 	}
 	progress.startSampler(cancelDownload)
-	downloadErr := downloadHLSManifest(downloadCtx, client, sessionDir, manifest, progress, opts)
+	downloadErr := downloadHLSManifest(downloadCtx, client, sessionDir, manifest, keys, progress, opts)
 	samplerErr := progress.stopSampler()
 	if samplerErr != nil && (downloadErr == nil || errors.Is(downloadErr, context.Canceled)) {
 		downloadErr = samplerErr
@@ -292,11 +288,8 @@ func (p *hlsProgress) persist(downloadedSize, speed int64, progress int) error {
 	return nil
 }
 
-func downloadHLSManifest(ctx context.Context, client *http.Client, sessionDir string, manifest *hlsManifest, progress *hlsProgress, opts *HLSDownloadOptions) error {
-	keys, err := fetchHLSKeys(ctx, client, manifest, opts.MaxRetries)
-	if err != nil {
-		return err
-	}
+func downloadHLSManifest(ctx context.Context, client *http.Client, sessionDir string, manifest *hlsManifest, keys map[string][]byte,
+	progress *hlsProgress, opts *HLSDownloadOptions) error {
 	manifestPath := filepath.Join(sessionDir, hlsManifestFileName)
 	var manifestMu sync.Mutex
 	for renditionIndex := range manifest.Renditions {

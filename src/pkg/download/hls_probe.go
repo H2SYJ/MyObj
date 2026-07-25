@@ -1,7 +1,6 @@
 package download
 
 import (
-	"bytes"
 	"context"
 	"fmt"
 	"io"
@@ -73,23 +72,6 @@ func DetectHLSContentType(ctx context.Context, rawURL, proxyAddress string, limi
 	contentType = strings.ToLower(strings.TrimSpace(strings.Split(getResp.Header.Get("Content-Type"), ";")[0]))
 	_, ok := hlsContentTypes[contentType]
 	return ok, nil
-}
-
-// ProbeHLSPlaylist 对播放列表做有界预检，网络失败不会创建任何临时文件。
-func ProbeHLSPlaylist(ctx context.Context, rawURL, proxyAddress string, limiter *rate.Limiter, headers map[string]string, allowedHosts []string) error {
-	client, err := newHLSHTTPClient(proxyAddress, limiter, headers, allowedHosts)
-	if err != nil {
-		return err
-	}
-	data, err := fetchHLSBytes(ctx, client, rawURL, 0, 0, hlsMaxPlaylistSize)
-	if err != nil {
-		return err
-	}
-	data = bytes.TrimPrefix(data, []byte{0xEF, 0xBB, 0xBF})
-	if !strings.HasPrefix(strings.TrimSpace(string(data)), "#EXTM3U") {
-		return fmt.Errorf("目标内容不是有效的m3u8播放列表")
-	}
-	return nil
 }
 
 // NormalizeHLSOutputFileName 校验并生成MP4输出文件名。

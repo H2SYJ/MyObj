@@ -792,6 +792,13 @@ func (s *SubscriptionService) processItems(ctx context.Context, subscription *mo
 		}
 		_, err = s.downloadService.CreateSubscriptionItemAndDownload(ctx, record, subscriptionDownloadInput(subscription.UserID, record))
 		if err != nil {
+			record.DownloadTaskID = ""
+			record.Status = "submit_failed"
+			record.ErrorMsg = err.Error()
+			record.UpdatedAt = time.Now()
+			if createErr := s.factory.DB().Create(record).Error; createErr != nil {
+				errorsFound = append(errorsFound, createErr.Error())
+			}
 			errorsFound = append(errorsFound, err.Error())
 			continue
 		}
@@ -816,7 +823,14 @@ func subscriptionDownloadInput(userID string, item *models.SubscriptionItem) Sub
 }
 
 func (s *SubscriptionService) refreshExistingItem(ctx context.Context, subscription *models.Subscription, manifest *pluginpkg.Manifest, existing *models.SubscriptionItem, item pluginpkg.DownloadableItem, permissions map[string]bool) error {
+	if err := download.ValidatePublicHTTPURL(item.URL); err != nil {
+		return err
+	}
 	updates := map[string]interface{}{"updated_at": time.Now()}
+	sourceChanged := item.URL != existing.URL
+	if sourceChanged {
+		updates["url"] = item.URL
+	}
 	if existing.Status == "deferred" || existing.Status == "submit_failed" {
 		path, err := virtualpath.JoinSavePath(subscription.SavePath, item.RelativeSavePath)
 		if err != nil {
@@ -846,20 +860,33 @@ func (s *SubscriptionService) refreshExistingItem(ctx context.Context, subscript
 			return err
 		}
 		digest := headersDigest(headers, hosts)
+		itemEncrypted := existing.RequestHeadersEncrypted
+		hostsJSON := existing.HeaderHostsJSON
 		if digest != existing.HeadersDigest {
 			encrypted, encryptErr := download.EncryptRequestHeaders(config.CONFIG.Auth.Secret, existing.ID, subscription.UserID, headers)
 			if encryptErr != nil {
 				return encryptErr
 			}
-			hostsJSON, encodeErr := download.EncodeHeaderHosts(hosts)
+			encodedHosts, encodeErr := download.EncodeHeaderHosts(hosts)
 			if encodeErr != nil {
 				return encodeErr
 			}
 			updates["request_headers_encrypted"] = encrypted
-			updates["header_hosts_json"] = hostsJSON
+			updates["header_hosts_json"] = encodedHosts
 			updates["headers_digest"] = digest
-			if existing.DownloadTaskID != "" {
-				if err := s.downloadService.RefreshTaskHeaders(ctx, existing.DownloadTaskID, existing.ID, subscription.UserID, encrypted, hostsJSON); err != nil {
+			itemEncrypted = encrypted
+			hostsJSON = encodedHosts
+		}
+		if existing.DownloadTaskID != "" {
+			if existing.DownloadType == "hls" {
+				if err := s.downloadService.RefreshSubscriptionTaskSource(ctx, existing.DownloadTaskID, existing.ID,
+					subscription.UserID, item.URL, itemEncrypted, hostsJSON); err != nil {
+					return err
+				}
+			}
+			if digest != existing.HeadersDigest && !sourceChanged {
+				if err := s.downloadService.RefreshTaskHeaders(ctx, existing.DownloadTaskID, existing.ID,
+					subscription.UserID, itemEncrypted, hostsJSON); err != nil {
 					return err
 				}
 			}

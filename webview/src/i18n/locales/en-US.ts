@@ -477,6 +477,10 @@ export default {
     outputFileName: 'Output Name',
     outputFileNamePlaceholder: 'Optional; the result is saved as MP4',
     requestHeaders: 'Request Headers',
+    newHLSURL: 'New m3u8 URL',
+    newHLSURLOptional: 'Optional; leave blank when a snapshot is available',
+    newHLSURLTip:
+      'When provided, all child playlists and keys are captured first. A new URL is needed if a failed or canceled task no longer has a snapshot.',
     headerName: 'Header name',
     headerValue: 'Header value',
     addHeader: 'Add header',

@@ -119,6 +119,16 @@ func (d *DownloadService) EnqueueSubscriptionDownload(ctx context.Context, input
 	if err != nil {
 		return "", err
 	}
+	prepared, err := d.prepareHLSSnapshotForTask(ctx, task)
+	if err != nil {
+		return "", err
+	}
+	if prepared != nil {
+		defer prepared.Discard()
+		if err := prepared.Activate(); err != nil {
+			return "", err
+		}
+	}
 	err = d.factory.DB().WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		if err := tx.Create(task).Error; err != nil {
 			return err
@@ -134,7 +144,12 @@ func (d *DownloadService) EnqueueSubscriptionDownload(ctx context.Context, input
 		return nil
 	})
 	if err != nil {
-		return "", err
+		return "", errors.Join(err, rollbackPreparedHLSSnapshot(prepared))
+	}
+	if prepared != nil {
+		if err := prepared.Finalize(); err != nil {
+			logger.LOG.Warn("清理旧HLS快照失败", "taskID", task.ID, "error", err)
+		}
 	}
 	d.publishTask(task, "created", false)
 	d.manager.Notify(task.ID, "")
@@ -147,6 +162,16 @@ func (d *DownloadService) CreateSubscriptionItemAndDownload(ctx context.Context,
 	if err != nil {
 		return "", err
 	}
+	prepared, err := d.prepareHLSSnapshotForTask(ctx, task)
+	if err != nil {
+		return "", err
+	}
+	if prepared != nil {
+		defer prepared.Discard()
+		if err := prepared.Activate(); err != nil {
+			return "", err
+		}
+	}
 	item.DownloadTaskID = task.ID
 	item.Status = "submitted"
 	err = d.factory.DB().WithContext(ctx).Transaction(func(tx *gorm.DB) error {
@@ -156,7 +181,12 @@ func (d *DownloadService) CreateSubscriptionItemAndDownload(ctx context.Context,
 		return tx.Create(task).Error
 	})
 	if err != nil {
-		return "", err
+		return "", errors.Join(err, rollbackPreparedHLSSnapshot(prepared))
+	}
+	if prepared != nil {
+		if err := prepared.Finalize(); err != nil {
+			logger.LOG.Warn("清理旧HLS快照失败", "taskID", task.ID, "error", err)
+		}
 	}
 	d.publishTask(task, "created", false)
 	d.manager.Notify(task.ID, "")
@@ -204,6 +234,48 @@ func (d *DownloadService) buildSubscriptionDownload(input SubscriptionDownloadIn
 		RequestHeadersEncrypted: taskHeaders, HeaderHostsJSON: input.HeaderHostsJSON, CreateTime: now, UpdateTime: now}, nil
 }
 
+func (d *DownloadService) prepareHLSSnapshotForTask(ctx context.Context, task *models.DownloadTask) (*download.PreparedHLSSnapshot, error) {
+	if task.Type != enum.DownloadTaskTypeHLS.Value() {
+		return nil, nil
+	}
+	secret := d.serverSecret()
+	headers, err := download.DecryptRequestHeaders(secret, task.ID, task.UserID, task.RequestHeadersEncrypted)
+	if err != nil {
+		return nil, err
+	}
+	hosts, err := download.DecodeHeaderHosts(task.HeaderHostsJSON)
+	if err != nil {
+		return nil, err
+	}
+	return d.prepareHLSSnapshot(ctx, task, headers, hosts)
+}
+
+func (d *DownloadService) prepareHLSSnapshot(ctx context.Context, task *models.DownloadTask, headers map[string]string,
+	hosts []string) (*download.PreparedHLSSnapshot, error) {
+	return download.PrepareHLSSnapshot(ctx, task.ID, task.URL, task.UserID, task.FileName, d.tempDir, d.serverSecret(),
+		&download.HLSPrepareOptions{
+			ProxyURL: d.networkPolicy.ProxyURL(), DownloadLimiter: d.networkPolicy.DownloadLimiter(),
+			RequestHeaders: headers, HeaderHosts: hosts, MaxRetries: d.manager.config.MaxRetries,
+		})
+}
+
+func (d *DownloadService) serverSecret() string {
+	if config.CONFIG == nil {
+		return ""
+	}
+	return config.CONFIG.Auth.Secret
+}
+
+func rollbackPreparedHLSSnapshot(prepared *download.PreparedHLSSnapshot) error {
+	if prepared == nil {
+		return nil
+	}
+	if err := prepared.Rollback(); err != nil {
+		return fmt.Errorf("回滚HLS快照失败: %w", err)
+	}
+	return nil
+}
+
 func (d *DownloadService) RefreshTaskHeaders(ctx context.Context, taskID, itemID, userID, encrypted, hostsJSON string) error {
 	task, err := d.factory.DownloadTask().GetByID(ctx, taskID)
 	if err != nil || task.UserID != userID {
@@ -243,6 +315,122 @@ func (d *DownloadService) RefreshTaskHeaders(ctx context.Context, taskID, itemID
 		return d.factory.DB().WithContext(ctx).Model(&models.DownloadTask{}).
 			Where("id = ? AND user_id = ? AND state = ?", task.ID, userID, task.State).
 			Updates(updates).Error
+	}
+	return nil
+}
+
+// RefreshSubscriptionTaskSource 使用订阅条目的最新限时地址重建尚未执行或已停止任务的HLS快照。
+func (d *DownloadService) RefreshSubscriptionTaskSource(ctx context.Context, taskID, itemID, userID, sourceURL,
+	encrypted, hostsJSON string) error {
+	task, err := d.factory.DownloadTask().GetByID(ctx, taskID)
+	if err != nil || task.UserID != userID {
+		return fmt.Errorf("下载任务不存在")
+	}
+	if task.Type != enum.DownloadTaskTypeHLS.Value() {
+		return d.RefreshTaskHeaders(ctx, taskID, itemID, userID, encrypted, hostsJSON)
+	}
+	if task.State == enum.DownloadTaskStateDownloading.Value() || task.State == enum.DownloadTaskStateFinished.Value() ||
+		task.State == enum.DownloadTaskStateCanceled.Value() {
+		return nil
+	}
+	if task.URL == sourceURL && task.State != enum.DownloadTaskStateFailed.Value() {
+		return nil
+	}
+	if err := download.ValidatePublicHTTPURL(sourceURL); err != nil {
+		return err
+	}
+	headers, err := download.DecryptRequestHeaders(d.serverSecret(), itemID, userID, encrypted)
+	if err != nil {
+		return err
+	}
+	hosts, err := download.DecodeHeaderHosts(hostsJSON)
+	if err != nil {
+		return err
+	}
+	headers, hosts, err = download.NormalizeRequestConfig(sourceURL, headers, hosts)
+	if err != nil {
+		return err
+	}
+	taskEncrypted, err := download.EncryptRequestHeaders(d.serverSecret(), task.ID, userID, headers)
+	if err != nil {
+		return err
+	}
+	taskHostsJSON, err := download.EncodeHeaderHosts(hosts)
+	if err != nil {
+		return err
+	}
+	updates := map[string]interface{}{
+		"url": sourceURL, "request_headers_encrypted": taskEncrypted,
+		"header_hosts_json": taskHostsJSON, "requires_headers": false,
+	}
+
+	frozen := false
+	if task.State == enum.DownloadTaskStateInit.Value() {
+		frozen, err = d.manager.FreezeQueued(task.ID)
+		if err != nil {
+			return err
+		}
+		if !frozen {
+			// 调度器已经认领任务时不打断当前下载，最新地址仍会保存到订阅条目。
+			return nil
+		}
+	}
+	restoreFrozen := func() error {
+		if !frozen {
+			return nil
+		}
+		if err := d.manager.RestoreQueued(task.ID, nil); err != nil {
+			return fmt.Errorf("恢复排队任务失败: %w", err)
+		}
+		frozen = false
+		return nil
+	}
+	candidate := *task
+	candidate.URL = sourceURL
+	prepared, err := d.prepareHLSSnapshot(ctx, &candidate, headers, hosts)
+	if err != nil {
+		return fmt.Errorf("刷新订阅HLS快照失败: %w", errors.Join(err, restoreFrozen()))
+	}
+	defer prepared.Discard()
+	if err := prepared.Activate(); err != nil {
+		return errors.Join(err, restoreFrozen())
+	}
+
+	var updateErr error
+	switch task.State {
+	case enum.DownloadTaskStateInit.Value():
+		updateErr = d.manager.RestoreQueued(task.ID, updates)
+		if updateErr == nil {
+			frozen = false
+		}
+	case enum.DownloadTaskStatePaused.Value():
+		result := d.factory.DB().WithContext(ctx).Model(&models.DownloadTask{}).
+			Where("id = ? AND user_id = ? AND state = ?", task.ID, userID, enum.DownloadTaskStatePaused.Value()).Updates(updates)
+		if result.Error != nil {
+			updateErr = result.Error
+		} else if result.RowsAffected != 1 {
+			updateErr = fmt.Errorf("暂停任务状态已变化")
+		}
+	case enum.DownloadTaskStateFailed.Value():
+		if task.EnableEncryption {
+			result := d.factory.DB().WithContext(ctx).Model(&models.DownloadTask{}).
+				Where("id = ? AND user_id = ? AND state = ?", task.ID, userID, enum.DownloadTaskStateFailed.Value()).Updates(updates)
+			if result.Error != nil {
+				updateErr = result.Error
+			} else if result.RowsAffected != 1 {
+				updateErr = fmt.Errorf("失败任务状态已变化")
+			}
+		} else {
+			updateErr = d.manager.Retry(task, "", updates, true)
+		}
+	default:
+		updateErr = fmt.Errorf("任务状态不允许刷新HLS地址")
+	}
+	if updateErr != nil {
+		return errors.Join(updateErr, rollbackPreparedHLSSnapshot(prepared), restoreFrozen())
+	}
+	if err := prepared.Finalize(); err != nil {
+		logger.LOG.Warn("清理旧HLS快照失败", "taskID", task.ID, "error", err)
 	}
 	return nil
 }
@@ -329,11 +517,6 @@ func (d *DownloadService) CreateOfflineDownload(req *request.CreateOfflineDownlo
 		}
 	} else {
 		supportRange = true
-		if probeErr := download.ProbeHLSPlaylist(ctx, req.URL, d.networkPolicy.ProxyURL(),
-			d.networkPolicy.DownloadLimiter(), headers, headerHosts); probeErr != nil {
-			// 网络临时错误交由持久任务重试；确定性格式错误也会在执行器中给出完整错误。
-			logger.LOG.Warn("创建HLS任务时预检播放列表失败", "url", download.RedactURLForLog(req.URL), "error", probeErr)
-		}
 	}
 	if fileInfo != nil && fileInfo.Size > 0 {
 		// 检查用户可用空间（只对非无限空间用户）
@@ -397,10 +580,27 @@ func (d *DownloadService) CreateOfflineDownload(req *request.CreateOfflineDownlo
 		task.FileSize = fileInfo.FileSize
 		task.SupportRange = supportRange
 	}
+	var prepared *download.PreparedHLSSnapshot
+	if isHLS {
+		prepared, err = d.prepareHLSSnapshot(ctx, task, headers, headerHosts)
+		if err != nil {
+			return nil, fmt.Errorf("准备HLS快照失败: %w", err)
+		}
+		defer prepared.Discard()
+		if err := prepared.Activate(); err != nil {
+			return nil, err
+		}
+	}
 
 	if err := d.factory.DownloadTask().Create(ctx, task); err != nil {
+		rollbackErr := rollbackPreparedHLSSnapshot(prepared)
 		logger.LOG.Error("创建下载任务失败", "error", err, "userID", userID, "url", download.RedactURLForLog(req.URL))
-		return nil, fmt.Errorf("创建任务失败: %w", err)
+		return nil, fmt.Errorf("创建任务失败: %w", errors.Join(err, rollbackErr))
+	}
+	if prepared != nil {
+		if err := prepared.Finalize(); err != nil {
+			logger.LOG.Warn("清理旧HLS快照失败", "taskID", task.ID, "error", err)
+		}
 	}
 	d.publishTask(task, "created", false)
 
@@ -591,13 +791,25 @@ func (d *DownloadService) ResumeTask(req *request.TaskOperationRequest, userID s
 	if !isManagedOfflineType(task.Type) {
 		return nil, fmt.Errorf("该任务类型不支持恢复")
 	}
-	resumeUpdates, err := d.buildTaskRequestUpdates(task, req)
+	resumeUpdates, prepared, err := d.buildTaskOperation(ctx, task, req)
 	if err != nil {
 		return nil, err
 	}
+	if prepared != nil {
+		defer prepared.Discard()
+		if err := prepared.Activate(); err != nil {
+			return nil, err
+		}
+	}
 	if err := d.manager.Resume(task, req.FilePassword, resumeUpdates); err != nil {
+		rollbackErr := rollbackPreparedHLSSnapshot(prepared)
 		logger.LOG.Error("恢复下载任务失败", "error", err, "taskID", req.TaskID)
-		return nil, fmt.Errorf("恢复任务失败: %w", err)
+		return nil, fmt.Errorf("恢复任务失败: %w", errors.Join(err, rollbackErr))
+	}
+	if prepared != nil {
+		if err := prepared.Finalize(); err != nil {
+			logger.LOG.Warn("清理旧HLS快照失败", "taskID", task.ID, "error", err)
+		}
 	}
 	d.publishTaskByID(req.TaskID, "updated", false)
 
@@ -623,13 +835,26 @@ func (d *DownloadService) RetryTask(req *request.TaskOperationRequest, userID st
 	if task.State != enum.DownloadTaskStateFailed.Value() && task.State != enum.DownloadTaskStateCanceled.Value() {
 		return nil, fmt.Errorf("只有失败或已取消任务可以重试")
 	}
-	retryUpdates, err := d.buildTaskRequestUpdates(task, req)
+	retryUpdates, prepared, err := d.buildTaskOperation(ctx, task, req)
 	if err != nil {
 		return nil, err
 	}
-	if err := d.manager.Retry(task, req.FilePassword, retryUpdates); err != nil {
+	if prepared != nil {
+		defer prepared.Discard()
+		if err := prepared.Activate(); err != nil {
+			return nil, err
+		}
+	}
+	preserveSnapshot := prepared != nil || (task.Type == enum.DownloadTaskTypeHLS.Value() && download.HasHLSSnapshot(d.tempDir, task.ID))
+	if err := d.manager.Retry(task, req.FilePassword, retryUpdates, preserveSnapshot); err != nil {
+		rollbackErr := rollbackPreparedHLSSnapshot(prepared)
 		logger.LOG.Error("重试下载任务失败", "error", err, "taskID", req.TaskID)
-		return nil, fmt.Errorf("重试任务失败: %w", err)
+		return nil, fmt.Errorf("重试任务失败: %w", errors.Join(err, rollbackErr))
+	}
+	if prepared != nil {
+		if err := prepared.Finalize(); err != nil {
+			logger.LOG.Warn("清理旧HLS快照失败", "taskID", task.ID, "error", err)
+		}
 	}
 	d.publishTaskByID(req.TaskID, "updated", false)
 
@@ -637,25 +862,37 @@ func (d *DownloadService) RetryTask(req *request.TaskOperationRequest, userID st
 	return models.NewJsonResponse(200, "任务已重新排队", nil), nil
 }
 
-func (d *DownloadService) buildTaskRequestUpdates(task *models.DownloadTask, req *request.TaskOperationRequest) (map[string]interface{}, error) {
+func (d *DownloadService) buildTaskOperation(ctx context.Context, task *models.DownloadTask,
+	req *request.TaskOperationRequest) (map[string]interface{}, *download.PreparedHLSSnapshot, error) {
 	updates := map[string]interface{}{}
+	sourceURL := task.URL
+	replaceURL := req.URL != nil
+	if replaceURL {
+		if task.Type != enum.DownloadTaskTypeHLS.Value() {
+			return nil, nil, fmt.Errorf("只有HLS任务支持替换下载地址")
+		}
+		sourceURL = strings.TrimSpace(*req.URL)
+		if sourceURL == "" {
+			return nil, nil, fmt.Errorf("新的m3u8地址不能为空")
+		}
+		if err := download.ValidatePublicHTTPURL(sourceURL); err != nil {
+			return nil, nil, err
+		}
+	}
 	if task.Type == enum.DownloadTaskTypeHLS.Value() || task.Type == enum.DownloadTaskTypeHttp.Value() {
 		if task.RequiresHeaders && req.RequestHeaders == nil {
-			return nil, fmt.Errorf("该任务需要更新请求头后才能继续")
+			return nil, nil, fmt.Errorf("该任务需要更新请求头后才能继续")
 		}
-		if req.RequestHeaders != nil || req.HeaderHosts != nil {
-			secret := ""
+		if req.RequestHeaders != nil || req.HeaderHosts != nil || replaceURL {
+			secret := d.serverSecret()
 			var err error
-			if config.CONFIG != nil {
-				secret = config.CONFIG.Auth.Secret
-			}
 			headers := map[string]string{}
 			if req.RequestHeaders != nil {
 				headers = *req.RequestHeaders
 			} else {
 				headers, err = download.DecryptRequestHeaders(secret, task.ID, task.UserID, task.RequestHeadersEncrypted)
 				if err != nil {
-					return nil, fmt.Errorf("读取原请求头失败，请重新提交请求头: %w", err)
+					return nil, nil, fmt.Errorf("读取原请求头失败，请重新提交请求头: %w", err)
 				}
 			}
 			hosts := []string{}
@@ -664,27 +901,40 @@ func (d *DownloadService) buildTaskRequestUpdates(task *models.DownloadTask, req
 			} else {
 				hosts, err = download.DecodeHeaderHosts(task.HeaderHostsJSON)
 				if err != nil {
-					return nil, err
+					return nil, nil, err
 				}
 			}
-			headers, hosts, err = download.NormalizeRequestConfig(task.URL, headers, hosts)
+			headers, hosts, err = download.NormalizeRequestConfig(sourceURL, headers, hosts)
 			if err != nil {
-				return nil, err
+				return nil, nil, err
 			}
 			encrypted, encryptErr := download.EncryptRequestHeaders(secret, task.ID, task.UserID, headers)
 			if encryptErr != nil {
-				return nil, encryptErr
+				return nil, nil, encryptErr
 			}
 			hostsJSON, encodeErr := download.EncodeHeaderHosts(hosts)
 			if encodeErr != nil {
-				return nil, encodeErr
+				return nil, nil, encodeErr
 			}
 			updates["request_headers_encrypted"] = encrypted
 			updates["header_hosts_json"] = hostsJSON
 			updates["requires_headers"] = false
+			if replaceURL {
+				candidate := *task
+				candidate.URL = sourceURL
+				prepared, prepareErr := d.prepareHLSSnapshot(ctx, &candidate, headers, hosts)
+				if prepareErr != nil {
+					return nil, nil, fmt.Errorf("准备新的HLS快照失败: %w", prepareErr)
+				}
+				updates["url"] = sourceURL
+				return updates, prepared, nil
+			}
 		}
 	}
-	return updates, nil
+	if task.Type == enum.DownloadTaskTypeHLS.Value() && !download.HasHLSSnapshot(d.tempDir, task.ID) {
+		return nil, nil, fmt.Errorf("任务缺少HLS快照，请重新创建")
+	}
+	return updates, nil, nil
 }
 
 // CancelTask 取消下载任务

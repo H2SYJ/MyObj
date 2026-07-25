@@ -613,6 +613,10 @@
         width="680px"
       >
         <el-form label-width="110px">
+          <el-form-item v-if="resumeTargetTask?.type === 9" :label="t('offline.newHLSURL')">
+            <el-input v-model="resumeURL" :placeholder="t('offline.newHLSURLOptional')" />
+            <div class="input-tip">{{ t('offline.newHLSURLTip') }}</div>
+          </el-form-item>
           <el-form-item :label="t('offline.requestHeaders')">
             <div class="hls-header-editor">
               <div v-for="(header, index) in resumeHeaderRows" :key="header.id" class="hls-header-row">
@@ -725,6 +729,7 @@
   const resumeTargetTask = ref<OfflineDownloadTask | null>(null)
   const resumeHeaderHosts = ref<string[]>([])
   const resumeFilePassword = ref('')
+  const resumeURL = ref('')
   const resumingWithHeaders = ref(false)
   const headerDialogMode = ref<'resume' | 'retry'>('resume')
 
@@ -1212,7 +1217,7 @@
   // 恢复任务
   const resumeTask = async (task: OfflineDownloadTask) => {
     try {
-      if (task.requires_headers) {
+      if (task.requires_headers || task.type === 9) {
         openHeadersDialog(task, 'resume')
         return
       }
@@ -1236,7 +1241,7 @@
   // 重试失败或已取消任务
   const retryTask = async (task: OfflineDownloadTask) => {
     try {
-      if (task.requires_headers) {
+      if (task.requires_headers || task.type === 9) {
         openHeadersDialog(task, 'retry')
         return
       }
@@ -1263,6 +1268,7 @@
     resumeHeaderRows.value = [createHeaderRow()]
     resumeHeaderHosts.value = []
     resumeFilePassword.value = ''
+    resumeURL.value = ''
     headerDialogMode.value = mode
     showResumeHeadersDialog.value = true
   }
@@ -1274,13 +1280,21 @@
       return
     }
     try {
-      const headers = validateHeaderRows(resumeHeaderRows.value)
+      const hasHeaderInput =
+        resumeHeaderRows.value.some(row => row.name.trim() || row.value.trim()) || resumeHeaderHosts.value.length > 0
+      const headers =
+        resumeTargetTask.value.requires_headers || hasHeaderInput
+          ? validateHeaderRows(resumeHeaderRows.value)
+          : undefined
+      const headerHosts =
+        resumeTargetTask.value.requires_headers || hasHeaderInput ? resumeHeaderHosts.value : undefined
+      const newURL = resumeURL.value.trim() || undefined
       resumingWithHeaders.value = true
       const filePassword = resumeTargetTask.value.requires_password ? resumeFilePassword.value : undefined
       if (headerDialogMode.value === 'retry') {
-        await retryDownload(resumeTargetTask.value.id, filePassword, headers, resumeHeaderHosts.value)
+        await retryDownload(resumeTargetTask.value.id, filePassword, headers, headerHosts, newURL)
       } else {
-        await resumeDownload(resumeTargetTask.value.id, filePassword, headers, resumeHeaderHosts.value)
+        await resumeDownload(resumeTargetTask.value.id, filePassword, headers, headerHosts, newURL)
       }
       showResumeHeadersDialog.value = false
       proxy?.$modal.msgSuccess(headerDialogMode.value === 'retry' ? t('tasks.retrySuccess') : t('tasks.resumeSuccess'))

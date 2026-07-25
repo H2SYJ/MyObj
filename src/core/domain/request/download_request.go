@@ -93,6 +93,8 @@ type TaskOperationRequest struct {
 	RequestHeaders *UniqueHTTPHeaders `json:"request_headers"`
 	// 更新允许携带自定义请求头的额外主机
 	HeaderHosts *[]string `json:"header_hosts"`
+	// HLS恢复或重试时替换的限时m3u8地址；未传递时继续使用现有快照
+	URL *string `json:"url"`
 }
 
 // DeleteTaskRequest 删除任务请求

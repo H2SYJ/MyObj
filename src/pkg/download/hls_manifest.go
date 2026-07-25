@@ -16,14 +16,17 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/Eyevinn/hls-m3u8/m3u8"
 )
 
 const (
-	hlsManifestVersion  = 1
+	hlsManifestVersion  = 2
 	hlsMaxVariants      = 256
 	hlsMaxSegments      = 50000
+	hlsMaxPlaylistDepth = 8
+	hlsMaxPlaylistCount = 32
 	hlsManifestFileName = "manifest.json"
 	hlsVideoRendition   = "video"
 	hlsAudioRendition   = "audio"
@@ -34,7 +37,14 @@ type hlsManifest struct {
 	Version    int            `json:"version"`
 	SourceURL  string         `json:"source_url"`
 	OutputName string         `json:"output_name"`
+	CapturedAt time.Time      `json:"captured_at"`
 	Renditions []hlsRendition `json:"renditions"`
+}
+
+type hlsPlaylistTraversal struct {
+	count         int
+	totalSegments int
+	path          map[string]struct{}
 }
 
 type hlsRendition struct {
@@ -82,84 +92,103 @@ type hlsKeySpec struct {
 }
 
 func buildHLSManifest(ctx context.Context, client *http.Client, sourceURL, outputName string) (*hlsManifest, error) {
-	data, err := fetchHLSBytes(ctx, client, sourceURL, 0, 0, hlsMaxPlaylistSize)
+	traversal := &hlsPlaylistTraversal{path: make(map[string]struct{})}
+	video, audio, err := loadHLSRenditionChain(ctx, client, sourceURL, hlsVideoRendition, true, 0, traversal)
 	if err != nil {
 		return nil, err
 	}
-	playlist, listType, err := m3u8.DecodeFrom(bytes.NewReader(data), true)
-	if err != nil {
-		return nil, fmt.Errorf("解析m3u8播放列表失败: %w", err)
+	manifest := &hlsManifest{
+		Version: hlsManifestVersion, SourceURL: sourceURL, OutputName: outputName, CapturedAt: time.Now().UTC(),
+		Renditions: []hlsRendition{*video},
 	}
-	manifest := &hlsManifest{Version: hlsManifestVersion, SourceURL: sourceURL, OutputName: outputName}
-	switch listType {
-	case m3u8.MEDIA:
-		media, ok := playlist.(*m3u8.MediaPlaylist)
-		if !ok {
-			return nil, fmt.Errorf("m3u8媒体播放列表类型无效")
-		}
-		if rangeErr := applyImplicitHLSByteRanges(media, data); rangeErr != nil {
-			return nil, rangeErr
-		}
-		rendition, renditionErr := buildHLSRendition(sourceURL, hlsVideoRendition, media)
-		if renditionErr != nil {
-			return nil, renditionErr
-		}
-		manifest.Renditions = append(manifest.Renditions, *rendition)
-	case m3u8.MASTER:
-		master, ok := playlist.(*m3u8.MasterPlaylist)
-		if !ok {
-			return nil, fmt.Errorf("m3u8主播放列表类型无效")
-		}
-		variant, selectErr := selectHighestHLSVariant(master)
-		if selectErr != nil {
-			return nil, selectErr
-		}
-		variantURL, resolveErr := resolveHLSURL(sourceURL, variant.URI)
-		if resolveErr != nil {
-			return nil, resolveErr
-		}
-		video, loadErr := loadHLSMediaRendition(ctx, client, variantURL, hlsVideoRendition)
-		if loadErr != nil {
-			return nil, loadErr
-		}
-		manifest.Renditions = append(manifest.Renditions, *video)
-		if audioAlternative := selectDefaultHLSAudio(variant); audioAlternative != nil && audioAlternative.URI != "" {
-			audioURL, audioResolveErr := resolveHLSURL(sourceURL, audioAlternative.URI)
-			if audioResolveErr != nil {
-				return nil, audioResolveErr
-			}
-			audio, audioErr := loadHLSMediaRendition(ctx, client, audioURL, hlsAudioRendition)
-			if audioErr != nil {
-				return nil, audioErr
-			}
-			manifest.Renditions = append(manifest.Renditions, *audio)
-		}
-	default:
-		return nil, fmt.Errorf("无法识别m3u8播放列表类型")
+	if audio != nil {
+		manifest.Renditions = append(manifest.Renditions, *audio)
 	}
 	return manifest, nil
 }
 
-func loadHLSMediaRendition(ctx context.Context, client *http.Client, playlistURL, kind string) (*hlsRendition, error) {
+func loadHLSRenditionChain(ctx context.Context, client *http.Client, playlistURL, kind string, allowAudio bool, depth int,
+	traversal *hlsPlaylistTraversal) (*hlsRendition, *hlsRendition, error) {
+	if depth > hlsMaxPlaylistDepth {
+		return nil, nil, fmt.Errorf("HLS子级播放列表嵌套不能超过%d层", hlsMaxPlaylistDepth)
+	}
+	playlistIdentity := stableHLSURLIdentity(playlistURL)
+	if _, exists := traversal.path[playlistIdentity]; exists {
+		return nil, nil, fmt.Errorf("HLS播放列表存在循环引用")
+	}
+	traversal.count++
+	if traversal.count > hlsMaxPlaylistCount {
+		return nil, nil, fmt.Errorf("HLS播放列表总数不能超过%d个", hlsMaxPlaylistCount)
+	}
+	traversal.path[playlistIdentity] = struct{}{}
+	defer delete(traversal.path, playlistIdentity)
+
 	data, err := fetchHLSBytes(ctx, client, playlistURL, 0, 0, hlsMaxPlaylistSize)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	playlist, listType, err := m3u8.DecodeFrom(bytes.NewReader(data), true)
 	if err != nil {
-		return nil, fmt.Errorf("解析%s播放列表失败: %w", kind, err)
+		return nil, nil, fmt.Errorf("解析%s播放列表失败: %w", kind, err)
 	}
-	if listType != m3u8.MEDIA {
-		return nil, fmt.Errorf("%s播放列表不是Media Playlist", kind)
+	switch listType {
+	case m3u8.MEDIA:
+		media, ok := playlist.(*m3u8.MediaPlaylist)
+		if !ok {
+			return nil, nil, fmt.Errorf("%s播放列表类型无效", kind)
+		}
+		if rangeErr := applyImplicitHLSByteRanges(media, data); rangeErr != nil {
+			return nil, nil, rangeErr
+		}
+		rendition, renditionErr := buildHLSRendition(playlistURL, kind, media)
+		if renditionErr != nil {
+			return nil, nil, renditionErr
+		}
+		traversal.totalSegments += len(rendition.Segments)
+		if traversal.totalSegments > hlsMaxSegments {
+			return nil, nil, fmt.Errorf("HLS视频和音轨分片总数不能超过%d个", hlsMaxSegments)
+		}
+		return rendition, nil, nil
+	case m3u8.MASTER:
+		master, ok := playlist.(*m3u8.MasterPlaylist)
+		if !ok {
+			return nil, nil, fmt.Errorf("%s主播放列表类型无效", kind)
+		}
+		variant, selectErr := selectHighestHLSVariant(master)
+		if selectErr != nil {
+			return nil, nil, selectErr
+		}
+		variantURL, resolveErr := resolveHLSURL(playlistURL, variant.URI)
+		if resolveErr != nil {
+			return nil, nil, resolveErr
+		}
+		var audioAlternative *m3u8.Alternative
+		if kind == hlsVideoRendition && allowAudio {
+			audioAlternative = selectDefaultHLSAudio(variant)
+		}
+		primary, nestedAudio, loadErr := loadHLSRenditionChain(ctx, client, variantURL, kind,
+			allowAudio && audioAlternative == nil, depth+1, traversal)
+		if loadErr != nil {
+			return nil, nil, loadErr
+		}
+		if kind != hlsVideoRendition {
+			return primary, nil, nil
+		}
+		if audioAlternative != nil && audioAlternative.URI != "" {
+			audioURL, audioResolveErr := resolveHLSURL(playlistURL, audioAlternative.URI)
+			if audioResolveErr != nil {
+				return nil, nil, audioResolveErr
+			}
+			audio, _, audioErr := loadHLSRenditionChain(ctx, client, audioURL, hlsAudioRendition, false, depth+1, traversal)
+			if audioErr != nil {
+				return nil, nil, audioErr
+			}
+			return primary, audio, nil
+		}
+		return primary, nestedAudio, nil
+	default:
+		return nil, nil, fmt.Errorf("无法识别%s播放列表类型", kind)
 	}
-	media, ok := playlist.(*m3u8.MediaPlaylist)
-	if !ok {
-		return nil, fmt.Errorf("%s播放列表类型无效", kind)
-	}
-	if rangeErr := applyImplicitHLSByteRanges(media, data); rangeErr != nil {
-		return nil, rangeErr
-	}
-	return buildHLSRendition(playlistURL, kind, media)
 }
 
 func buildHLSRendition(playlistURL, kind string, media *m3u8.MediaPlaylist) (*hlsRendition, error) {
@@ -170,8 +199,8 @@ func buildHLSRendition(playlistURL, kind string, media *m3u8.MediaPlaylist) (*hl
 		return nil, fmt.Errorf("不支持#EXT-X-I-FRAMES-ONLY播放列表")
 	}
 	segments := media.GetAllSegments()
-	if len(segments) == 0 || len(segments) > hlsMaxSegments {
-		return nil, fmt.Errorf("HLS分片数量必须在1到%d之间", hlsMaxSegments)
+	if len(segments) == 0 {
+		return nil, fmt.Errorf("HLS播放列表没有可下载分片")
 	}
 	rendition := &hlsRendition{Kind: kind, PlaylistURL: playlistURL, Sequence: media.SeqNo, TargetDuration: media.TargetDuration}
 	mapIndexes := make(map[string]int)
@@ -388,7 +417,7 @@ func stableHLSURLIdentity(rawURL string) string {
 	if err != nil {
 		return rawURL
 	}
-	return parsed.EscapedPath()
+	return strings.ToLower(parsed.Scheme+"://"+parsed.Host) + parsed.EscapedPath()
 }
 
 func hlsResolutionPixels(resolution string) int64 {
@@ -399,29 +428,6 @@ func hlsResolutionPixels(resolution string) int64 {
 	width, _ := strconv.ParseInt(parts[0], 10, 64)
 	height, _ := strconv.ParseInt(parts[1], 10, 64)
 	return width * height
-}
-
-func loadOrInitializeHLSManifest(sessionDir string, fresh *hlsManifest) (*hlsManifest, error) {
-	manifestPath := filepath.Join(sessionDir, hlsManifestFileName)
-	old, err := loadHLSManifest(manifestPath)
-	if err == nil && hlsManifestStructureMatches(old, fresh) {
-		copyHLSCompletion(old, fresh)
-		validateHLSCompletedFiles(sessionDir, fresh)
-		if err := saveHLSManifest(manifestPath, fresh); err != nil {
-			return nil, err
-		}
-		return fresh, nil
-	}
-	if removeErr := os.RemoveAll(sessionDir); removeErr != nil {
-		return nil, fmt.Errorf("重置HLS临时目录失败: %w", removeErr)
-	}
-	if mkdirErr := os.MkdirAll(sessionDir, 0755); mkdirErr != nil {
-		return nil, fmt.Errorf("创建HLS临时目录失败: %w", mkdirErr)
-	}
-	if err := saveHLSManifest(manifestPath, fresh); err != nil {
-		return nil, err
-	}
-	return fresh, nil
 }
 
 func loadHLSManifest(path string) (*hlsManifest, error) {
@@ -441,11 +447,11 @@ func saveHLSManifest(path string, manifest *hlsManifest) error {
 	if err != nil {
 		return fmt.Errorf("编码HLS下载清单失败: %w", err)
 	}
-	if err := os.MkdirAll(filepath.Dir(path), 0755); err != nil {
+	if err := os.MkdirAll(filepath.Dir(path), 0700); err != nil {
 		return fmt.Errorf("创建HLS下载清单目录失败: %w", err)
 	}
 	tempPath := path + ".tmp"
-	if err := os.WriteFile(tempPath, data, 0644); err != nil {
+	if err := os.WriteFile(tempPath, data, 0600); err != nil {
 		return fmt.Errorf("写入HLS下载清单失败: %w", err)
 	}
 	if err := os.Rename(tempPath, path); err != nil {
@@ -456,7 +462,8 @@ func saveHLSManifest(path string, manifest *hlsManifest) error {
 }
 
 func hlsManifestStructureMatches(old, fresh *hlsManifest) bool {
-	if old == nil || old.Version != hlsManifestVersion || old.SourceURL != fresh.SourceURL || old.OutputName != fresh.OutputName || len(old.Renditions) != len(fresh.Renditions) {
+	if old == nil || old.Version != hlsManifestVersion || stableHLSURLIdentity(old.SourceURL) != stableHLSURLIdentity(fresh.SourceURL) ||
+		old.OutputName != fresh.OutputName || len(old.Renditions) != len(fresh.Renditions) {
 		return false
 	}
 	for renditionIndex := range fresh.Renditions {

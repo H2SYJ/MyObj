@@ -87,13 +87,15 @@ export const resumeDownload = (
   taskId: string,
   filePassword?: string,
   requestHeaders?: Record<string, string>,
-  headerHosts?: string[]
+  headerHosts?: string[],
+  url?: string
 ) => {
   return post<ApiResponse>(API_ENDPOINTS.DOWNLOAD.RESUME, {
     task_id: taskId,
     file_password: filePassword,
     request_headers: requestHeaders,
-    header_hosts: headerHosts
+    header_hosts: headerHosts,
+    url
   })
 }
 
@@ -104,13 +106,15 @@ export const retryDownload = (
   taskId: string,
   filePassword?: string,
   requestHeaders?: Record<string, string>,
-  headerHosts?: string[]
+  headerHosts?: string[],
+  url?: string
 ) => {
   return post<ApiResponse>(API_ENDPOINTS.DOWNLOAD.RETRY, {
     task_id: taskId,
     file_password: filePassword,
     request_headers: requestHeaders,
-    header_hosts: headerHosts
+    header_hosts: headerHosts,
+    url
   })
 }
 

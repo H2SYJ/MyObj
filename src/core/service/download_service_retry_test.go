@@ -10,7 +10,12 @@ import (
 	"myobj/src/pkg/enum"
 	"myobj/src/pkg/logger"
 	"myobj/src/pkg/models"
+	"net/http"
+	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"testing"
+	"time"
 )
 
 func newRetryTestService(t *testing.T) *DownloadService {
@@ -85,6 +90,15 @@ func TestRetryTaskRequiresAndUpdatesExpiredHeaders(t *testing.T) {
 	if err := service.factory.DownloadTask().Create(context.Background(), task); err != nil {
 		t.Fatal(err)
 	}
+	snapshotDir := filepath.Join(service.tempDir, "hls_"+task.ID)
+	if err := os.MkdirAll(snapshotDir, 0700); err != nil {
+		t.Fatal(err)
+	}
+	manifest := `{"version":2,"source_url":"https://example.com/video.m3u8","output_name":"video.mp4","captured_at":"` +
+		time.Now().UTC().Format(time.RFC3339Nano) + `","renditions":[]}`
+	if err := os.WriteFile(filepath.Join(snapshotDir, "manifest.json"), []byte(manifest), 0600); err != nil {
+		t.Fatal(err)
+	}
 	if _, err := service.RetryTask(&request.TaskOperationRequest{TaskID: task.ID}, task.UserID); err == nil {
 		t.Fatal("凭据失效任务缺少新请求头时不应允许重试")
 	}
@@ -99,6 +113,59 @@ func TestRetryTaskRequiresAndUpdatesExpiredHeaders(t *testing.T) {
 	latest, _ := service.factory.DownloadTask().GetByID(context.Background(), task.ID)
 	if latest.State != enum.DownloadTaskStateInit.Value() || latest.RequiresHeaders || latest.RequestHeadersEncrypted == "" {
 		t.Fatalf("更新请求头后的任务状态错误: %#v", latest)
+	}
+}
+
+func TestRetryTaskReplacesHLSSnapshotBeforeQueueing(t *testing.T) {
+	previousConfig := config.CONFIG
+	config.CONFIG = &config.MyObjConfig{Auth: config.Auth{Secret: "retry-snapshot-test-secret"}}
+	t.Cleanup(func() { config.CONFIG = previousConfig })
+	service := newRetryTestService(t)
+	proxy := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, req *http.Request) {
+		if req.URL.Query().Get("token") == "bad" {
+			http.NotFound(writer, req)
+			return
+		}
+		writer.Header().Set("Content-Type", "application/vnd.apple.mpegurl")
+		_, _ = writer.Write([]byte("#EXTM3U\n#EXT-X-TARGETDURATION:4\n#EXTINF:4,\nsegment.ts\n#EXT-X-ENDLIST\n"))
+	}))
+	t.Cleanup(proxy.Close)
+	if err := service.networkPolicy.Apply(download.NetworkSettings{ProxyURL: proxy.URL}); err != nil {
+		t.Fatal(err)
+	}
+
+	task := &models.DownloadTask{ID: "replace", UserID: "user", Type: enum.DownloadTaskTypeHLS.Value(),
+		State: enum.DownloadTaskStateFailed.Value(), URL: "http://example.com/video.m3u8?token=old", FileName: "video.mp4"}
+	if err := service.factory.DownloadTask().Create(context.Background(), task); err != nil {
+		t.Fatal(err)
+	}
+	newURL := "http://example.com/video.m3u8?token=new"
+	if _, err := service.RetryTask(&request.TaskOperationRequest{TaskID: task.ID, URL: &newURL}, task.UserID); err != nil {
+		t.Fatal(err)
+	}
+	latest, err := service.factory.DownloadTask().GetByID(context.Background(), task.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if latest.State != enum.DownloadTaskStateInit.Value() || latest.URL != newURL || !download.HasHLSSnapshot(service.tempDir, task.ID) {
+		t.Fatalf("HLS新快照未在任务重新排队前提交: %#v", latest)
+	}
+
+	failed := &models.DownloadTask{ID: "replace-failed", UserID: "user", Type: enum.DownloadTaskTypeHLS.Value(),
+		State: enum.DownloadTaskStateFailed.Value(), URL: "http://example.com/video.m3u8?token=old", FileName: "video.mp4"}
+	if err := service.factory.DownloadTask().Create(context.Background(), failed); err != nil {
+		t.Fatal(err)
+	}
+	badURL := "http://example.com/video.m3u8?token=bad"
+	if _, err := service.RetryTask(&request.TaskOperationRequest{TaskID: failed.ID, URL: &badURL}, failed.UserID); err == nil {
+		t.Fatal("新HLS快照抓取失败时不应重新排队")
+	}
+	unchanged, err := service.factory.DownloadTask().GetByID(context.Background(), failed.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if unchanged.State != enum.DownloadTaskStateFailed.Value() || unchanged.URL != failed.URL || download.HasHLSSnapshot(service.tempDir, failed.ID) {
+		t.Fatalf("HLS快照失败后任务或快照被提前替换: %#v", unchanged)
 	}
 }
 

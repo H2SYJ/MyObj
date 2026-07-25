@@ -405,6 +405,7 @@ func (m *DownloadManager) runTask(ctx context.Context, task *models.DownloadTask
 			RequestHeaders:   requestHeaders,
 			HeaderHosts:      headerHosts,
 			OutputFileName:   task.FileName,
+			ServerSecret:     secret,
 			ProgressReporter: m.progressReporter(task),
 			ReserveSpace: func(size int64) (int64, error) {
 				reserved, reserveErr := m.ensureReservation(task, size)
@@ -643,6 +644,34 @@ func (m *DownloadManager) Pause(taskID string) error {
 	return nil
 }
 
+// FreezeQueued 仅冻结尚未认领的排队任务，用于原子替换HLS快照，不影响内存中的加密文件密码。
+func (m *DownloadManager) FreezeQueued(taskID string) (bool, error) {
+	return m.factory.DownloadTask().Transition(context.Background(), taskID,
+		[]int{enum.DownloadTaskStateInit.Value()}, enum.DownloadTaskStatePaused.Value(), map[string]interface{}{
+			"run_token": "", "worker_id": "", "lease_expires_at": nil, "next_retry_at": nil, "speed": 0,
+		})
+}
+
+func (m *DownloadManager) RestoreQueued(taskID string, updates map[string]interface{}) error {
+	values := map[string]interface{}{
+		"error_msg": "", "retry_count": 0, "next_retry_at": nil,
+		"run_token": "", "worker_id": "", "lease_expires_at": nil,
+	}
+	for key, value := range updates {
+		values[key] = value
+	}
+	transitioned, err := m.factory.DownloadTask().Transition(context.Background(), taskID,
+		[]int{enum.DownloadTaskStatePaused.Value()}, enum.DownloadTaskStateInit.Value(), values)
+	if err != nil {
+		return err
+	}
+	if !transitioned {
+		return fmt.Errorf("冻结的任务状态已变化")
+	}
+	m.Notify("", "")
+	return nil
+}
+
 func (m *DownloadManager) Resume(task *models.DownloadTask, filePassword string, taskUpdates map[string]interface{}) error {
 	if task.EnableEncryption && filePassword == "" {
 		return fmt.Errorf("加密任务恢复时必须输入文件密码")
@@ -677,7 +706,7 @@ func (m *DownloadManager) Resume(task *models.DownloadTask, filePassword string,
 }
 
 // Retry 将失败或已取消任务清零后重新排队。
-func (m *DownloadManager) Retry(task *models.DownloadTask, filePassword string, taskUpdates map[string]interface{}) error {
+func (m *DownloadManager) Retry(task *models.DownloadTask, filePassword string, taskUpdates map[string]interface{}, preserveTemp ...bool) error {
 	if task.EnableEncryption && filePassword == "" {
 		return fmt.Errorf("加密任务重试时必须输入文件密码")
 	}
@@ -705,7 +734,9 @@ func (m *DownloadManager) Retry(task *models.DownloadTask, filePassword string, 
 		m.mu.Unlock()
 		return fmt.Errorf("释放任务预留空间失败: %w", err)
 	}
-	m.cleanupTaskTemp(latest)
+	if len(preserveTemp) == 0 || !preserveTemp[0] {
+		m.cleanupTaskTemp(latest)
+	}
 	updates := map[string]interface{}{
 		"file_id":          "",
 		"downloaded_size":  0,
