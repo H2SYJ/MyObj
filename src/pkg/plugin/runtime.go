@@ -19,6 +19,7 @@ import (
 	"github.com/tetratelabs/wazero"
 	"github.com/tetratelabs/wazero/api"
 	"github.com/tetratelabs/wazero/imports/wasi_snapshot_preview1"
+	"golang.org/x/sync/singleflight"
 )
 
 const (
@@ -42,8 +43,9 @@ type InvocationHost struct {
 type hostContextKey struct{}
 
 type Runtime struct {
-	runtime  wazero.Runtime
-	compiled sync.Map
+	runtime      wazero.Runtime
+	compiled     sync.Map
+	compileGroup singleflight.Group
 }
 
 func NewRuntime(ctx context.Context) (*Runtime, error) {
@@ -112,16 +114,21 @@ func (r *Runtime) compiledModule(ctx context.Context, key string, wasm []byte) (
 	if cached, ok := r.compiled.Load(key); ok {
 		return cached.(wazero.CompiledModule), nil
 	}
-	compiled, err := r.runtime.CompileModule(ctx, wasm)
+	value, err, _ := r.compileGroup.Do(key, func() (interface{}, error) {
+		if cached, ok := r.compiled.Load(key); ok {
+			return cached.(wazero.CompiledModule), nil
+		}
+		compiled, err := r.runtime.CompileModule(ctx, wasm)
+		if err != nil {
+			return nil, fmt.Errorf("编译WASM插件失败: %w", err)
+		}
+		r.compiled.Store(key, compiled)
+		return compiled, nil
+	})
 	if err != nil {
-		return nil, fmt.Errorf("编译WASM插件失败: %w", err)
+		return nil, err
 	}
-	actual, loaded := r.compiled.LoadOrStore(key, compiled)
-	if loaded {
-		_ = compiled.Close(ctx)
-		return actual.(wazero.CompiledModule), nil
-	}
-	return compiled, nil
+	return value.(wazero.CompiledModule), nil
 }
 
 func (r *Runtime) hostHTTPRequest(ctx context.Context, module api.Module, requestPtr, requestLen, outputPtr, outputCap uint32) int32 {
