@@ -75,7 +75,7 @@ html.dark .desktop-shell {
   box-shadow: var(--desktop-shadow-md);
 }
 .desktop-shell .el-table {
-  --el-table-header-bg-color: var(--desktop-surface-muted);
+  --el-table-header-bg-color: var(--desktop-surface);
   --el-table-row-hover-bg-color: var(--desktop-primary-soft);
 }
 .desktop-shell .el-table th.el-table__cell {

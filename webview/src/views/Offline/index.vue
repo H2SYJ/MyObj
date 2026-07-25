@@ -7,40 +7,37 @@
     </template>
     <template #meta>{{ t('offline.taskCount', { count: taskTotal }) }}</template>
     <template #actions>
-      <el-button type="primary" icon="Plus" @click="showDownloadDialog = true">{{
-        t('offline.newDownload')
-      }}</el-button>
-      <el-button icon="Refresh" @click="refreshTaskList">{{ t('common.refresh') }}</el-button>
-    </template>
-
-    <template v-if="selectedTaskIds.length > 0" #toolbar>
-      <div v-if="selectedTaskIds.length > 0" class="batch-toolbar">
-        <el-tag type="info" size="small">
-          {{ t('offline.selectedTasks', { count: selectedTaskIds.length }) }}
-        </el-tag>
-        <div class="batch-actions">
-          <el-button
-            type="warning"
-            icon="Close"
-            size="small"
-            :loading="batchCanceling"
-            :disabled="selectedCancelableTaskIds.length === 0 || batchDeleting"
-            @click="batchCancelTasks"
-          >
-            {{ t('offline.batchCancel', { count: selectedCancelableTaskIds.length }) }}
-          </el-button>
-          <el-button
-            type="danger"
-            icon="Delete"
-            size="small"
-            :loading="batchDeleting"
-            :disabled="selectedDeletableTaskIds.length === 0 || batchCanceling"
-            @click="batchDeleteTasks"
-          >
-            {{ t('offline.batchDelete', { count: selectedDeletableTaskIds.length }) }}
-          </el-button>
-        </div>
-      </div>
+      <TableSelectionActions
+        v-if="!isMobile && selectedTaskIds.length > 0"
+        :selected-text="t('offline.selectedTasks', { count: selectedTaskIds.length })"
+        :clear-text="t('common.clearSelection')"
+        @clear="clearTaskSelection"
+      >
+        <el-button
+          type="warning"
+          icon="Close"
+          :loading="batchCanceling"
+          :disabled="selectedCancelableTaskIds.length === 0 || batchDeleting"
+          @click="batchCancelTasks"
+        >
+          {{ t('offline.batchCancel', { count: selectedCancelableTaskIds.length }) }}
+        </el-button>
+        <el-button
+          type="danger"
+          icon="Delete"
+          :loading="batchDeleting"
+          :disabled="selectedDeletableTaskIds.length === 0 || batchCanceling"
+          @click="batchDeleteTasks"
+        >
+          {{ t('offline.batchDelete', { count: selectedDeletableTaskIds.length }) }}
+        </el-button>
+      </TableSelectionActions>
+      <template v-else>
+        <el-button type="primary" icon="Plus" @click="showDownloadDialog = true">{{
+          t('offline.newDownload')
+        }}</el-button>
+        <el-button icon="Refresh" @click="refreshTaskList">{{ t('common.refresh') }}</el-button>
+      </template>
     </template>
 
     <!-- PC端：表格布局 -->
@@ -279,6 +276,37 @@
         @current-change="handleTaskPageChange"
         @size-change="handleTaskPageSizeChange"
       />
+    </template>
+
+    <template #floating>
+      <TableSelectionActions
+        v-if="isMobile && selectedTaskIds.length > 0"
+        mode="floating"
+        :selected-text="t('offline.selectedTasks', { count: selectedTaskIds.length })"
+        :clear-text="t('common.clearSelection')"
+        @clear="clearTaskSelection"
+      >
+        <el-button
+          link
+          type="warning"
+          icon="Close"
+          :loading="batchCanceling"
+          :disabled="selectedCancelableTaskIds.length === 0 || batchDeleting"
+          @click="batchCancelTasks"
+        >
+          {{ t('tasks.cancel') }}
+        </el-button>
+        <el-button
+          link
+          type="danger"
+          icon="Delete"
+          :loading="batchDeleting"
+          :disabled="selectedDeletableTaskIds.length === 0 || batchCanceling"
+          @click="batchDeleteTasks"
+        >
+          {{ t('tasks.delete') }}
+        </el-button>
+      </TableSelectionActions>
     </template>
 
     <template #overlays>
@@ -650,6 +678,7 @@
   import { useResponsive, useI18n, useMobileLayerHistory } from '@/composables'
   import { useLatestRequest } from '@/composables/core/useLatestRequest'
   import { MobileInfiniteList } from '@/components/mobile'
+  import TableSelectionActions from '@/components/TableSelectionActions/index.vue'
   import WorkspacePage from '@/components/WorkspacePage/index.vue'
   import { taskEventClient, type TaskEvent } from '@/utils/taskEvents'
 
@@ -1566,20 +1595,6 @@
     margin-bottom: 8px;
   }
 
-  .batch-toolbar {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 12px;
-    margin-bottom: 12px;
-  }
-
-  .batch-actions {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-  }
-
   .file-name-cell {
     display: flex;
     align-items: center;
@@ -1819,20 +1834,6 @@
   }
 
   @media (max-width: 480px) {
-    .batch-toolbar {
-      align-items: flex-start;
-      flex-direction: column;
-    }
-
-    .batch-actions {
-      width: 100%;
-    }
-
-    .batch-actions .el-button {
-      flex: 1;
-      margin-left: 0;
-    }
-
     .mobile-task-item {
       padding: 12px;
     }

@@ -322,11 +322,9 @@
   .task-table :deep(.el-table) {
     background: transparent !important;
     --el-table-tr-bg-color: transparent;
-    --el-table-header-bg-color: transparent;
   }
 
   .task-table :deep(.el-table th.el-table__cell) {
-    background: transparent !important;
     color: var(--el-text-color-primary);
     font-weight: 600;
     font-size: 13px;

@@ -184,6 +184,18 @@ html.dark .el-select-dropdown__item.selected::after {
 }
 
 /* ============================================
+   浅色模式：表格表头统一为白色
+   ============================================ */
+
+html:not(.dark) .el-table {
+  --el-table-header-bg-color: #ffffff;
+}
+
+html:not(.dark) .el-table th.el-table__cell {
+  background: #ffffff !important;
+}
+
+/* ============================================
    深色模式：表格样式（集中配置）
    ============================================ */
 
@@ -232,6 +244,58 @@ html.dark .el-table__fixed-right::before {
 
 html.dark .el-table__fixed::before {
   background-color: var(--el-border-color);
+}
+
+/* ============================================
+   深色模式：标签配色（集中配置）
+   ============================================ */
+
+html.dark .el-tag {
+  --myobj-tag-rgb: 59, 130, 246;
+  --myobj-tag-border-rgb: 96, 165, 250;
+  --myobj-tag-text: #93c5fd;
+  --myobj-tag-bg-alpha: 0.16;
+  --myobj-tag-border-alpha: 0.32;
+  --el-tag-bg-color: rgba(var(--myobj-tag-rgb), var(--myobj-tag-bg-alpha));
+  --el-tag-border-color: rgba(var(--myobj-tag-border-rgb), var(--myobj-tag-border-alpha));
+  --el-tag-text-color: var(--myobj-tag-text);
+  --el-tag-hover-color: var(--myobj-tag-text);
+}
+
+html.dark .el-tag.el-tag--success {
+  --myobj-tag-rgb: 16, 185, 129;
+  --myobj-tag-border-rgb: 52, 211, 153;
+  --myobj-tag-text: #6ee7b7;
+}
+
+html.dark .el-tag.el-tag--warning {
+  --myobj-tag-rgb: 245, 158, 11;
+  --myobj-tag-border-rgb: 251, 191, 36;
+  --myobj-tag-text: #fcd34d;
+}
+
+html.dark .el-tag.el-tag--danger,
+html.dark .el-tag.el-tag--error {
+  --myobj-tag-rgb: 239, 68, 68;
+  --myobj-tag-border-rgb: 248, 113, 113;
+  --myobj-tag-text: #fca5a5;
+}
+
+html.dark .el-tag.el-tag--info {
+  --myobj-tag-rgb: 148, 163, 184;
+  --myobj-tag-border-rgb: 148, 163, 184;
+  --myobj-tag-text: #cbd5e1;
+  --myobj-tag-bg-alpha: 0.14;
+  --myobj-tag-border-alpha: 0.28;
+}
+
+html.dark .el-tag.el-tag--plain {
+  --myobj-tag-bg-alpha: 0.08;
+}
+
+html.dark .el-tag.el-tag--dark {
+  --myobj-tag-bg-alpha: 0.32;
+  --myobj-tag-border-alpha: 0.42;
 }
 
 /* ============================================

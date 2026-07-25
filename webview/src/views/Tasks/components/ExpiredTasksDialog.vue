@@ -9,30 +9,24 @@
   >
     <div class="dialog-header">
       <span>{{ t('tasks.expiredTaskCount', { count: expiredTasks.length }) }}</span>
-      <div class="header-actions">
-        <el-button
-          type="primary"
-          size="small"
-          :disabled="selectedTasks.length === 0"
-          @click="handleBatchRenew"
-          :loading="batchRenewLoading"
-        >
+      <TableSelectionActions
+        v-if="!isHandheld && selectedTasks.length > 0"
+        :selected-text="t('common.selectedCount', { count: selectedTasks.length })"
+        :clear-text="t('common.clearSelection')"
+        @clear="clearExpiredTaskSelection"
+      >
+        <el-button type="primary" size="small" @click="handleBatchRenew" :loading="batchRenewLoading">
           {{ t('tasks.batchRenewWithCount', { count: selectedTasks.length }) }}
         </el-button>
-        <el-button
-          type="danger"
-          size="small"
-          :disabled="selectedTasks.length === 0"
-          @click="handleBatchDelete"
-          :loading="batchDeleteLoading"
-        >
+        <el-button type="danger" size="small" @click="handleBatchDelete" :loading="batchDeleteLoading">
           {{ t('tasks.batchDeleteWithCount', { count: selectedTasks.length }) }}
         </el-button>
-      </div>
+      </TableSelectionActions>
     </div>
 
     <!-- PC端：表格布局 -->
     <el-table
+      ref="tableRef"
       :data="expiredTasks"
       v-loading="loading"
       @selection-change="handleSelectionChange"
@@ -157,6 +151,21 @@
       </div>
     </div>
 
+    <TableSelectionActions
+      v-if="isHandheld && selectedTasks.length > 0"
+      mode="floating"
+      :selected-text="t('common.selectedCount', { count: selectedTasks.length })"
+      :clear-text="t('common.clearSelection')"
+      @clear="clearExpiredTaskSelection"
+    >
+      <el-button link type="primary" icon="Refresh" :loading="batchRenewLoading" @click="handleBatchRenew">
+        {{ t('tasks.renew') }}
+      </el-button>
+      <el-button link type="danger" icon="Delete" :loading="batchDeleteLoading" @click="handleBatchDelete">
+        {{ t('tasks.delete') }}
+      </el-button>
+    </TableSelectionActions>
+
     <el-empty v-if="expiredTasks.length === 0 && !loading" :description="t('tasks.noExpiredTasks')" />
 
     <template #footer>
@@ -169,12 +178,14 @@
 
 <script setup lang="ts">
   import { formatSize, formatDate, getUploadStatusType, getUploadStatusText } from '@/utils'
-  import { useI18n } from '@/composables'
+  import { useI18n, useResponsive } from '@/composables'
+  import TableSelectionActions from '@/components/TableSelectionActions/index.vue'
   import { listExpiredUploads, renewExpiredTask, deleteUploadTask } from '@/api/file'
   import type { UncompletedUploadTask } from '@/api/file'
 
   const { proxy } = getCurrentInstance() as ComponentInternalInstance
   const { t } = useI18n()
+  const { isHandheld } = useResponsive()
 
   const props = defineProps<{
     modelValue: boolean
@@ -193,6 +204,7 @@
   const loading = ref(false)
   const expiredTasks = ref<UncompletedUploadTask[]>([])
   const selectedTasks = ref<UncompletedUploadTask[]>([])
+  const tableRef = ref()
   const renewingTasks = ref(new Set<string>())
   const deletingTasks = ref(new Set<string>())
   const batchRenewLoading = ref(false)
@@ -227,6 +239,11 @@
   // 选择变化（PC端表格）
   const handleSelectionChange = (selection: UncompletedUploadTask[]) => {
     selectedTasks.value = selection
+  }
+
+  const clearExpiredTaskSelection = () => {
+    selectedTasks.value = []
+    tableRef.value?.clearSelection()
   }
 
   // 移动端单个选择
@@ -348,7 +365,7 @@
   // 关闭弹窗
   const handleClose = () => {
     visible.value = false
-    selectedTasks.value = []
+    clearExpiredTaskSelection()
   }
 </script>
 
@@ -360,11 +377,6 @@
     margin-bottom: 16px;
     padding-bottom: 12px;
     border-bottom: 1px solid var(--el-border-color-lighter);
-  }
-
-  .header-actions {
-    display: flex;
-    gap: 8px;
   }
 
   .file-name-cell {
@@ -529,16 +541,6 @@
       gap: 12px;
       padding: 12px 0;
       margin-bottom: 12px;
-    }
-
-    .header-actions {
-      width: 100%;
-      justify-content: flex-end;
-    }
-
-    .header-actions .el-button {
-      font-size: 12px;
-      padding: 6px 12px;
     }
   }
 

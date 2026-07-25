@@ -12,11 +12,45 @@ const userInfo = {
   state: 0
 }
 
+const offlineTask = {
+  id: 'offline-task-1',
+  url: 'https://example.com/video.mp4',
+  file_name: '离线下载示例.mp4',
+  file_size: 1048576,
+  downloaded_size: 524288,
+  progress: 50,
+  speed: 1024,
+  type: 0,
+  type_text: 'HTTP',
+  state: 1,
+  state_text: '下载中',
+  save_path: '/',
+  support_range: true,
+  enable_encryption: false,
+  requires_password: false,
+  has_request_headers: false,
+  requires_headers: false,
+  error_msg: '',
+  file_id: '',
+  create_time: '2026-07-25 10:00:00',
+  update_time: '2026-07-25 10:01:00',
+  finish_time: ''
+}
+
 const mockApi = async (page: Page) => {
   await page.route('**/dev-api/**', async route => {
     const url = new URL(route.request().url())
     const path = url.pathname.replace(/^\/dev-api/, '')
     let data: unknown = {}
+
+    if (path.startsWith('/file/thumbnail/')) {
+      await route.fulfill({
+        status: 200,
+        contentType: 'image/svg+xml',
+        body: '<svg xmlns="http://www.w3.org/2000/svg" width="160" height="90"><rect width="160" height="90" fill="#2563eb"/><path d="M0 72l42-34 30 24 28-20 60 48H0z" fill="#93c5fd"/></svg>'
+      })
+      return
+    }
 
     if (path === '/user/info') {
       data = userInfo
@@ -34,7 +68,7 @@ const mockApi = async (page: Page) => {
             file_size: 2048,
             mime_type: 'application/pdf',
             is_enc: false,
-            has_thumbnail: false,
+            has_thumbnail: true,
             public: false,
             created_at: '2026-07-23T00:00:00Z'
           }
@@ -64,15 +98,75 @@ const mockApi = async (page: Page) => {
     } else if (path === '/admin/plugin/audit') {
       data = { items: [], total: 0 }
     } else if (path === '/download/list') {
-      data = { tasks: [], total: 0, page: 1, page_size: 20 }
+      const tasks = url.searchParams.has('types') ? [offlineTask] : []
+      data = { tasks, total: tasks.length, page: 1, page_size: 20 }
     } else if (path === '/file/upload/taskList' || path === '/file/upload/uncompleted') {
       data = []
     } else if (path === '/file/upload/expired') {
-      data = []
+      data = [
+        {
+          id: 'expired-task-1',
+          file_name: '过期上传任务.zip',
+          file_size: 2048,
+          chunk_size: 1024,
+          total_chunks: 2,
+          uploaded_chunks: 1,
+          progress: 50,
+          status: 'expired',
+          is_enc: false,
+          directory_id: 0,
+          create_time: '2026-07-20 10:00:00',
+          update_time: '2026-07-20 10:01:00',
+          expire_time: '2026-07-21 10:00:00'
+        }
+      ]
     } else if (path === '/share/list') {
-      data = []
+      data = [
+        {
+          id: 1,
+          file_id: 'shared-file-1',
+          file_name: '分享验收文件.pdf',
+          token: 'desktop-share-token',
+          password_hash: '',
+          download_count: 3,
+          expires_at: '2026-12-31 23:59:59',
+          created_at: '2026-07-25 10:00:00'
+        }
+      ]
     } else if (path === '/recycled/list') {
-      data = { items: [], total: 0 }
+      data = {
+        items: [
+          {
+            recycled_id: 'recycled-1',
+            item_type: 'file',
+            item_name: '回收站验收文件.txt',
+            item_count: 0,
+            file_id: 'recycled-file-1',
+            file_name: '回收站验收文件.txt',
+            file_size: 1024,
+            mime_type: 'text/plain',
+            is_enc: false,
+            has_thumbnail: false,
+            deleted_at: '2026-07-24 10:00:00'
+          }
+        ],
+        total: 1,
+        page: 1,
+        pageSize: 20
+      }
+    } else if (path === '/admin/power/list') {
+      data = {
+        powers: [
+          {
+            id: 1,
+            name: '验收权限',
+            description: '用于验证批量操作栏',
+            characteristic: 'acceptance.read',
+            created_at: '2026-07-25 10:00:00'
+          }
+        ],
+        total: 1
+      }
     } else if (path === '/subscription/list') {
       data = { subscriptions: [], total: 0 }
     } else if (path === '/subscription/plugins') {
@@ -196,4 +290,81 @@ test('登录与公开分享使用独立品牌壳层', async ({ page, context }, 
   await expect(loginPage.getByText('MyObj')).toBeVisible()
   await expect(loginPage).toHaveScreenshot('desktop-login.png', { fullPage: true })
   await loginPage.close()
+})
+
+test('表格选择操作立即切换并保持主题样式', async ({ page }, testInfo) => {
+  const verifySelectionActions = async (path: string, checkboxSelector: string) => {
+    await page.goto(path)
+    const checkbox = page.locator(checkboxSelector).first()
+    await expect(checkbox).toBeVisible()
+    await checkbox.click()
+
+    const actions = page.locator('.table-selection-actions--inline').first()
+    await expect(actions).toBeVisible()
+    await actions.locator('[data-test="selection-clear"]').click()
+    await expect(page.locator('.table-selection-actions--inline')).toHaveCount(0)
+  }
+
+  await page.goto('/shares')
+  const headerCell = page.locator('.shares-table th.el-table__cell').first()
+  await expect(headerCell).toBeVisible()
+  const headerBackground = await headerCell.evaluate(element => getComputedStyle(element).backgroundColor)
+  expect(headerBackground).toBe(
+    testInfo.project.name === 'chromium-desktop-1440' ? 'rgb(255, 255, 255)' : 'rgba(0, 0, 0, 0)'
+  )
+
+  await verifySelectionActions('/shares', '.shares-table .el-table__body-wrapper .el-checkbox')
+  await verifySelectionActions('/trash', '.trash-table .el-table__body-wrapper .el-checkbox')
+  await verifySelectionActions(
+    '/offline',
+    '.offline-table .el-table__body-wrapper .el-checkbox:visible, .mobile-task-list .task-checkbox:visible'
+  )
+  if (testInfo.project.name !== 'chromium-desktop-1440') {
+    const statusTag = page.locator('.el-tag--primary:visible').first()
+    await expect(statusTag).toBeVisible()
+    const tagColors = await statusTag.evaluate(element => {
+      const style = getComputedStyle(element)
+      return { background: style.backgroundColor, border: style.borderColor, color: style.color }
+    })
+    expect(tagColors).toEqual({
+      background: 'rgba(59, 130, 246, 0.08)',
+      border: 'rgba(96, 165, 250, 0.32)',
+      color: 'rgb(147, 197, 253)'
+    })
+  }
+  await verifySelectionActions('/admin/permissions', '.admin-table .el-table__body-wrapper .el-checkbox')
+
+  await page.goto('/tasks?tab=upload')
+  await page.getByRole('button', { name: /过期|Expired/i }).click()
+  const expiredCheckbox = page.locator(
+    '.expired-tasks-table .el-table__body-wrapper .el-checkbox:visible, .expired-tasks-dialog .mobile-task-list .task-checkbox:visible'
+  )
+  await expect(expiredCheckbox.first()).toBeVisible()
+  await expiredCheckbox.first().click()
+  await expect(page.locator('.expired-tasks-dialog .table-selection-actions--inline')).toBeVisible()
+})
+
+test('文件宫格使用 260px 卡片和完整 16:9 缩略图', async ({ page }) => {
+  await page.goto('/files')
+
+  const card = page.locator('.file-card').filter({ hasText: '桌面验收报告.pdf' })
+  const preview = card.locator('.file-preview')
+  const thumbnail = preview.locator('.thumbnail-image')
+  await expect(thumbnail).toBeVisible()
+
+  const metrics = await card.evaluate(element => {
+    const previewElement = element.querySelector<HTMLElement>('.file-preview')!
+    const image = element.querySelector<HTMLImageElement>('.thumbnail-image')!
+    const cardRect = element.getBoundingClientRect()
+    const previewRect = previewElement.getBoundingClientRect()
+    return {
+      cardWidth: cardRect.width,
+      previewRatio: previewRect.width / previewRect.height,
+      objectFit: getComputedStyle(image).objectFit
+    }
+  })
+
+  expect(metrics.cardWidth).toBeGreaterThanOrEqual(260)
+  expect(metrics.previewRatio).toBeCloseTo(16 / 9, 1)
+  expect(metrics.objectFit).toBe('contain')
 })

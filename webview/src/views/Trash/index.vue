@@ -7,25 +7,25 @@
     </template>
     <template #meta>{{ t('trash.fileCount', { count: total }) }}</template>
     <template #actions>
-      <el-button v-if="!isHandheld" icon="RefreshRight" :disabled="selectedIds.length === 0" @click="handleRestore">
-        {{ t('trash.restore') }}
-      </el-button>
-      <el-button
-        v-if="!isHandheld"
-        icon="Delete"
-        type="danger"
-        :disabled="selectedIds.length === 0"
-        @click="handleDeletePermanently"
+      <TableSelectionActions
+        v-if="!isHandheld && selectedIds.length > 0"
+        :selected-text="t('common.selectedCount', { count: selectedIds.length })"
+        :clear-text="t('common.clearSelection')"
+        @clear="clearTrashSelection"
       >
-        {{ t('trash.permanentDelete') }}
-      </el-button>
-      <el-button icon="Delete" type="danger" @click="handleEmptyTrash">
+        <el-button icon="RefreshRight" @click="handleRestore">{{ t('trash.restore') }}</el-button>
+        <el-button icon="Delete" type="danger" @click="handleDeletePermanently">
+          {{ t('trash.permanentDelete') }}
+        </el-button>
+      </TableSelectionActions>
+      <el-button v-else icon="Delete" type="danger" @click="handleEmptyTrash">
         {{ t('trash.empty') }}
       </el-button>
     </template>
 
     <!-- PC端：表格布局 -->
     <el-table
+      ref="tableRef"
       v-loading="loading"
       :data="fileList"
       @selection-change="handleSelectionChange"
@@ -217,16 +217,20 @@
     </template>
 
     <template #floating>
-      <div v-if="isHandheld && selectedIds.length > 0" class="mobile-trash-batch-bar">
-        <span>{{ t('common.selected', { count: selectedIds.length }) }}</span>
+      <TableSelectionActions
+        v-if="isHandheld && selectedIds.length > 0"
+        mode="floating"
+        :selected-text="t('common.selectedCount', { count: selectedIds.length })"
+        :clear-text="t('common.clearSelection')"
+        @clear="clearTrashSelection"
+      >
         <el-button link type="primary" @click="handleRestore"
           ><el-icon><RefreshRight /></el-icon>{{ t('trash.restore') }}</el-button
         >
         <el-button link type="danger" @click="handleDeletePermanently"
           ><el-icon><Delete /></el-icon>{{ t('trash.permanentDelete') }}</el-button
         >
-        <el-button link @click="selectedIds = []">{{ t('common.cancel') }}</el-button>
-      </div>
+      </TableSelectionActions>
     </template>
   </WorkspacePage>
 </template>
@@ -247,6 +251,7 @@
   import { MobileInfiniteList } from '@/components/mobile'
   import { useUserStore } from '@/stores'
   import EmptyState from '@/components/EmptyState/index.vue'
+  import TableSelectionActions from '@/components/TableSelectionActions/index.vue'
   import { retainBatchFailures } from '@/utils/desktop/batch'
   import WorkspacePage from '@/components/WorkspacePage/index.vue'
 
@@ -262,6 +267,7 @@
   const currentPage = ref(1)
   const pageSize = ref(20)
   const selectedIds = ref<string[]>([])
+  const tableRef = ref()
   let longPressTimer: number | undefined
   let didLongPress = false
 
@@ -370,6 +376,11 @@
   // 选择变化
   const handleSelectionChange = (selection: RecycledItem[]) => {
     selectedIds.value = selection.map(item => item.recycled_id)
+  }
+
+  const clearTrashSelection = () => {
+    selectedIds.value = []
+    tableRef.value?.clearSelection()
   }
 
   // 移动端切换选择
@@ -663,11 +674,9 @@
   .trash-table :deep(.el-table) {
     background: transparent !important;
     --el-table-tr-bg-color: transparent;
-    --el-table-header-bg-color: transparent;
   }
 
   .trash-table :deep(.el-table th.el-table__cell) {
-    background: transparent !important;
     color: var(--el-text-color-primary);
     font-weight: 600;
     font-size: 13px;
@@ -715,35 +724,6 @@
     transition: background-color 0.2s;
     border-radius: 8px;
     margin-bottom: 12px;
-  }
-
-  .mobile-trash-batch-bar {
-    position: fixed;
-    left: 12px;
-    right: 12px;
-    bottom: calc(12px + env(safe-area-inset-bottom));
-    z-index: 1200;
-    min-height: 64px;
-    display: flex;
-    align-items: center;
-    justify-content: space-around;
-    gap: 4px;
-    padding: 8px 10px;
-    border: 1px solid var(--border-color);
-    border-radius: 20px;
-    background: color-mix(in srgb, var(--card-bg) 94%, transparent);
-    box-shadow: 0 14px 38px rgba(15, 23, 42, 0.2);
-    backdrop-filter: blur(18px);
-  }
-
-  .mobile-trash-batch-bar > span {
-    color: var(--text-secondary);
-    font-size: 12px;
-  }
-
-  .mobile-trash-batch-bar .el-button {
-    min-height: 44px;
-    margin: 0;
   }
 
   .mobile-trash-item:last-child {

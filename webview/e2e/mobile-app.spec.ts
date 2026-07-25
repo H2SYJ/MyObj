@@ -34,14 +34,34 @@ const mockApi = async (page: Page) => {
           created_at: '2026-07-23T00:00:00Z'
         }
       })
-      data = { breadcrumbs: [], current_directory_id: 0, folders: [], files, total: 25, page: pageNumber, page_size: 20 }
+      data = {
+        breadcrumbs: [],
+        current_directory_id: 0,
+        folders: [],
+        files,
+        total: 25,
+        page: pageNumber,
+        page_size: 20
+      }
     } else if (path === '/file/search/public') data = { files: [], total: 0 }
     else if (path === '/file/public/list') data = { files: [], total: 0 }
     else if (path === '/download/list') data = { tasks: [], total: 0, page: 1, page_size: 20 }
     else if (path === '/file/upload/taskList' || path === '/file/upload/uncompleted') data = []
     else if (path === '/file/upload/expired') data = []
-    else if (path === '/share/list') data = { items: [], total: 0 }
-    else if (path === '/recycled/list') data = { items: [], total: 0 }
+    else if (path === '/share/list') {
+      data = [
+        {
+          id: 1,
+          file_id: 'mobile-share-file',
+          file_name: '移动端分享文件.pdf',
+          token: 'mobile-share-token',
+          password_hash: '',
+          download_count: 1,
+          expires_at: '2026-12-31 23:59:59',
+          created_at: '2026-07-25 10:00:00'
+        }
+      ]
+    } else if (path === '/recycled/list') data = { items: [], total: 0 }
     else if (path === '/subscription/list') data = { subscriptions: [], total: 0 }
     else if (path === '/subscription/plugins') data = []
     else if (path === '/admin/plugin/list') data = []
@@ -59,7 +79,11 @@ const mockApi = async (page: Page) => {
       }
     }
 
-    await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ code: 200, message: 'ok', data }) })
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({ code: 200, message: 'ok', data })
+    })
   })
 }
 
@@ -125,5 +149,26 @@ test('公开分享页适配手机安全区', async ({ page }) => {
   await page.goto('/share/public-token')
   await expect(page.getByText('公开资料.pdf')).toBeVisible()
   await expect(page.getByRole('button', { name: /下载/ })).toBeVisible()
-  await expect(page.locator('.share-download-page')).toHaveCSS('min-height', `${await page.evaluate(() => window.innerHeight)}px`)
+  await expect(page.locator('.share-download-page')).toHaveCSS(
+    'min-height',
+    `${await page.evaluate(() => window.innerHeight)}px`
+  )
+})
+
+test('表格卡片选择后立即显示底部批量操作栏', async ({ page }) => {
+  await page.goto('/shares')
+  const checkbox = page.locator('.mobile-share-item .mobile-checkbox').first()
+  await expect(checkbox).toBeVisible()
+  await checkbox.click()
+
+  const actions = page.locator('.table-selection-actions--floating')
+  await expect(actions).toBeVisible()
+  const position = await actions.boundingBox()
+  const viewport = page.viewportSize()
+  expect(position).not.toBeNull()
+  expect(viewport).not.toBeNull()
+  expect(position!.y + position!.height).toBeLessThanOrEqual(viewport!.height - 70)
+
+  await actions.locator('[data-test="selection-clear"]').click()
+  await expect(actions).toHaveCount(0)
 })

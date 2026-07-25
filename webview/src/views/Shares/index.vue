@@ -6,19 +6,18 @@
       </el-icon>
     </template>
     <template #meta>{{ t('share.shareCount', { count: shareList.length }) }}</template>
-    <template v-if="selectedShares.length > 0" #header-extra>
-      <div class="batch-selection-info">
-        <span class="selected-count">{{ t('share.selectedCount', { count: selectedShares.length }) }}</span>
+    <template #actions>
+      <TableSelectionActions
+        v-if="!isMobile && selectedShares.length > 0"
+        :selected-text="t('share.selectedCount', { count: selectedShares.length })"
+        :clear-text="t('share.cancelSelect')"
+        @clear="clearSelection"
+      >
         <el-button type="danger" icon="Delete" size="small" @click="handleBatchDelete" :loading="batchDeleting">
           {{ t('share.batchDelete') }}
         </el-button>
-        <el-button link size="small" @click="clearSelection">
-          {{ t('share.cancelSelect') }}
-        </el-button>
-      </div>
-    </template>
-    <template #actions>
-      <el-button type="primary" icon="Refresh" @click="loadShareList" :loading="loading">{{
+      </TableSelectionActions>
+      <el-button v-else type="primary" icon="Refresh" @click="loadShareList" :loading="loading">{{
         t('common.refresh')
       }}</el-button>
     </template>
@@ -184,6 +183,20 @@
     <!-- 空状态显示 -->
     <el-empty v-if="shareList.length === 0 && !loading" :description="t('share.noShareRecords')" />
 
+    <template #floating>
+      <TableSelectionActions
+        v-if="isMobile && selectedShares.length > 0"
+        mode="floating"
+        :selected-text="t('share.selectedCount', { count: selectedShares.length })"
+        :clear-text="t('share.cancelSelect')"
+        @clear="clearSelection"
+      >
+        <el-button link type="danger" icon="Delete" :loading="batchDeleting" @click="handleBatchDelete">
+          {{ t('share.batchDelete') }}
+        </el-button>
+      </TableSelectionActions>
+    </template>
+
     <template #overlays>
       <!-- 修改密码对话框 -->
       <el-dialog
@@ -234,6 +247,7 @@
 <script setup lang="ts">
   import { useResponsive, useI18n, useMobileLayerHistory } from '@/composables'
   import { MobileActionSheet } from '@/components/mobile'
+  import TableSelectionActions from '@/components/TableSelectionActions/index.vue'
   import WorkspacePage from '@/components/WorkspacePage/index.vue'
   import type { MobileSheetAction } from '@/components/mobile/types'
   import { getShareList, deleteShare, batchDeleteShares, updateSharePassword } from '@/api/share'
@@ -450,26 +464,6 @@
 </script>
 
 <style scoped>
-  .batch-selection-info {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    padding: 8px 12px;
-    background: var(--el-fill-color-light);
-    border-radius: 8px;
-    flex-wrap: wrap;
-  }
-
-  html.dark .batch-selection-info {
-    background: rgba(99, 102, 241, 0.15);
-  }
-
-  .selected-count {
-    font-size: 14px;
-    color: var(--primary-color);
-    font-weight: 500;
-  }
-
   /* PC端表格样式 */
   .desktop-table {
     display: block;
@@ -480,11 +474,9 @@
   :deep(.el-table) {
     background: transparent !important;
     --el-table-tr-bg-color: transparent;
-    --el-table-header-bg-color: transparent;
   }
 
   :deep(.el-table th.el-table__cell) {
-    background: transparent !important;
     color: var(--text-secondary);
     font-weight: 600;
     font-size: 13px;
@@ -827,15 +819,6 @@
       display: block;
     }
 
-    .batch-selection-info {
-      gap: 6px;
-      padding: 6px 10px;
-    }
-
-    .selected-count {
-      font-size: 13px;
-    }
-
     .password-dialog :deep(.el-dialog) {
       width: 95% !important;
       margin: 0 auto;
@@ -847,20 +830,6 @@
   }
 
   @media (max-width: 480px) {
-    .batch-selection-info {
-      gap: 4px;
-      padding: 6px 8px;
-    }
-
-    .selected-count {
-      font-size: 12px;
-    }
-
-    .batch-selection-info .el-button {
-      font-size: 12px;
-      padding: 4px 8px;
-    }
-
     .mobile-share-item {
       padding: 12px;
     }

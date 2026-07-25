@@ -108,7 +108,7 @@
 <style scoped>
   .file-grid {
     display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+    grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
     gap: 16px;
     padding: 6px;
   }
@@ -175,7 +175,7 @@
   }
   .file-preview {
     width: 100%;
-    aspect-ratio: 4 / 3;
+    aspect-ratio: 16 / 9;
     display: grid;
     place-items: center;
     overflow: hidden;
@@ -187,6 +187,7 @@
   .file-preview :deep(.thumbnail-image) {
     border: 0;
     border-radius: 10px;
+    object-fit: contain;
   }
   .file-preview :deep(.thumbnail-image:hover) {
     transform: none;
@@ -209,7 +210,7 @@
     color: var(--el-color-primary);
     font-weight: 600;
   }
-  @media (max-width: 1024px) {
+  @media (max-width: 767px) {
     .file-grid {
       grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
       gap: 12px;

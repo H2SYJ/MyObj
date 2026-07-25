@@ -2,17 +2,27 @@
   <div class="admin-permissions">
     <div class="toolbar">
       <div class="toolbar-left">
-        <el-button type="primary" icon="Plus" @click="handleCreate">{{
-          t('admin.permissions.newPermission')
-        }}</el-button>
-        <el-button type="danger" icon="Delete" :disabled="selectedRows.length === 0" @click="handleBatchDelete">
-          {{ t('admin.permissions.batchDeleteWithCount', { count: selectedRows.length }) }}
-        </el-button>
-        <el-button icon="Refresh" @click="loadPowerList">{{ t('common.refresh') }}</el-button>
+        <TableSelectionActions
+          v-if="!isHandheld && selectedRows.length > 0"
+          :selected-text="t('common.selectedCount', { count: selectedRows.length })"
+          :clear-text="t('common.clearSelection')"
+          @clear="clearPermissionSelection"
+        >
+          <el-button type="danger" icon="Delete" @click="handleBatchDelete">
+            {{ t('admin.permissions.batchDeleteWithCount', { count: selectedRows.length }) }}
+          </el-button>
+        </TableSelectionActions>
+        <template v-else>
+          <el-button type="primary" icon="Plus" @click="handleCreate">{{
+            t('admin.permissions.newPermission')
+          }}</el-button>
+          <el-button icon="Refresh" @click="loadPowerList">{{ t('common.refresh') }}</el-button>
+        </template>
       </div>
     </div>
 
     <el-table
+      ref="tableRef"
       v-if="!isHandheld"
       :data="powerList"
       v-loading="loading"
@@ -56,8 +66,12 @@
           <el-checkbox :model-value="isPowerSelected(row)" @change="value => togglePowerSelection(row, !!value)" />
           <div class="mobile-admin-card__title">{{ getPermissionName(row.characteristic, row.name) }}</div>
         </div>
-        <div class="mobile-admin-card__subtitle">{{ getPermissionDescription(row.characteristic, row.description) }}</div>
-        <div class="mobile-admin-card__meta"><code>{{ row.characteristic }}</code></div>
+        <div class="mobile-admin-card__subtitle">
+          {{ getPermissionDescription(row.characteristic, row.description) }}
+        </div>
+        <div class="mobile-admin-card__meta">
+          <code>{{ row.characteristic }}</code>
+        </div>
         <div class="mobile-admin-card__footer">
           <el-button link type="primary" @click="handleEdit(row)">{{ t('admin.users.edit') }}</el-button>
           <el-button link type="danger" @click="handleDelete(row)">{{ t('admin.users.delete') }}</el-button>
@@ -65,6 +79,18 @@
       </article>
       <el-empty v-if="!loading && powerList.length === 0" :description="t('admin.permissions.noPermissions')" />
     </div>
+
+    <TableSelectionActions
+      v-if="isHandheld && selectedRows.length > 0"
+      mode="floating"
+      :selected-text="t('common.selectedCount', { count: selectedRows.length })"
+      :clear-text="t('common.clearSelection')"
+      @clear="clearPermissionSelection"
+    >
+      <el-button link type="danger" icon="Delete" @click="handleBatchDelete">
+        {{ t('common.batchDelete') }}
+      </el-button>
+    </TableSelectionActions>
 
     <!-- 分页组件 -->
     <Pagination
@@ -75,7 +101,13 @@
     />
 
     <!-- 创建/编辑权限对话框 -->
-    <el-dialog v-model="showDialog" :title="dialogTitle" :width="dialogWidth" :fullscreen="isHandheld" @close="handleDialogClose">
+    <el-dialog
+      v-model="showDialog"
+      :title="dialogTitle"
+      :width="dialogWidth"
+      :fullscreen="isHandheld"
+      @close="handleDialogClose"
+    >
       <el-form :model="formData" :rules="formRules" ref="formRef" label-width="100px">
         <el-form-item :label="t('admin.permissions.permissionName')" prop="name">
           <el-input v-model="formData.name" :placeholder="t('admin.permissions.permissionNamePlaceholder')" />
@@ -114,6 +146,7 @@
   } from '@/api/admin'
   import type { FormRules, FormInstance } from 'element-plus'
   import { useResponsive, useI18n, useMobileLayerHistory } from '@/composables'
+  import TableSelectionActions from '@/components/TableSelectionActions/index.vue'
   import { getPermissionName, getPermissionDescription } from '@/utils/business/permission'
 
   const { proxy } = getCurrentInstance() as ComponentInternalInstance
@@ -123,6 +156,7 @@
   const loading = ref(false)
   const powerList = ref<AdminPower[]>([])
   const selectedRows = ref<AdminPower[]>([])
+  const tableRef = ref()
   const showDialog = ref(false)
   useMobileLayerHistory(showDialog, 'admin-permission-editor', isHandheld)
   const dialogTitle = ref('')
@@ -230,6 +264,11 @@
     selectedRows.value = selection
   }
 
+  const clearPermissionSelection = () => {
+    selectedRows.value = []
+    tableRef.value?.clearSelection()
+  }
+
   // 删除权限
   const handleDelete = (row: AdminPower) => {
     proxy?.$modal
@@ -267,7 +306,7 @@
           const res = await batchDeleteAdminPower({ ids })
           if (res.code === 200) {
             proxy?.$modal.msgSuccess(res.message || t('admin.permissions.batchDeleteSuccess'))
-            selectedRows.value = []
+            clearPermissionSelection()
             loadPowerList()
           } else {
             proxy?.$modal.msgError(res.message || t('admin.permissions.batchDeleteFailed'))
