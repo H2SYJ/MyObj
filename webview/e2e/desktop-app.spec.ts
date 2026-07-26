@@ -344,7 +344,7 @@ test('表格选择操作立即切换并保持主题样式', async ({ page }, tes
   await expect(page.locator('.expired-tasks-dialog .table-selection-actions--inline')).toBeVisible()
 })
 
-test('文件宫格使用 260px 卡片和完整 16:9 缩略图', async ({ page }) => {
+test('文件宫格使用 300px 卡片和完整 16:9 缩略图', async ({ page }) => {
   await page.goto('/files')
 
   const card = page.locator('.file-card').filter({ hasText: '桌面验收报告.pdf' })
@@ -364,7 +364,7 @@ test('文件宫格使用 260px 卡片和完整 16:9 缩略图', async ({ page })
     }
   })
 
-  expect(metrics.cardWidth).toBeGreaterThanOrEqual(260)
+  expect(metrics.cardWidth).toBeGreaterThanOrEqual(300)
   expect(metrics.previewRatio).toBeCloseTo(16 / 9, 1)
   expect(metrics.objectFit).toBe('contain')
 })

@@ -108,7 +108,7 @@
 <style scoped>
   .file-grid {
     display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+    grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
     gap: 16px;
     padding: 6px;
   }
@@ -175,7 +175,7 @@
   }
   .file-preview {
     width: 100%;
-    aspect-ratio: 4 / 3;
+    aspect-ratio: 16 / 9;
     display: grid;
     place-items: center;
     overflow: hidden;
