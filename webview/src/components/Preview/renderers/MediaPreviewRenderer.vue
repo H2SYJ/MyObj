@@ -1,11 +1,11 @@
 <template>
   <div v-if="type === 'video'" class="preview-video-container">
-    <plyr-player
+    <xg-player
       v-if="url"
       :src="url"
       :autoplay="autoplay"
       :loop="loop"
-      class="preview-video-plyr"
+      class="preview-video-xgplayer"
       @ready="$emit('ready')"
       @error="$emit('error', $event)"
     />
@@ -70,7 +70,7 @@
     flex-direction: column;
     overflow: hidden;
   }
-  .preview-video-plyr {
+  .preview-video-xgplayer {
     width: 100%;
     min-height: 400px;
     flex: 1;
@@ -78,14 +78,7 @@
     border-radius: 8px;
     background: var(--el-bg-color-page, #000);
   }
-  .preview-video-plyr :deep(.plyr),
-  .preview-video-plyr :deep(.plyr__video-wrapper) {
-    width: 100%;
-    height: 100%;
-    max-width: 100%;
-    max-height: 100%;
-  }
-  .preview-video-plyr :deep(video) {
+  .preview-video-xgplayer :deep(video) {
     width: 100%;
     height: 100%;
     object-fit: contain;
