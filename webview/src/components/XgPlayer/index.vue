@@ -125,7 +125,7 @@
 </script>
 
 <style scoped>
-  .xg-player-wrapper {
+  .xg-player-wrapper:not(.xgplayer-rotate-fullscreen):not(.xgplayer-is-fullscreen):not(.xgplayer-is-cssfullscreen) {
     position: relative;
     width: 100%;
     height: 100%;

@@ -1,6 +1,7 @@
 <template>
   <el-dialog
     v-model="visible"
+    append-to-body
     :title="currentFile?.file_name || t('preview.title')"
     width="90%"
     :close-on-click-modal="false"
@@ -789,25 +790,6 @@
 
   .unsupported-icon {
     color: var(--el-text-color-placeholder);
-  }
-
-  .preview-video-xgplayer {
-    width: 100%;
-    flex: 1;
-    min-height: 0;
-    /* 根据浏览器视口高度自适应，而不是根据视频比例 */
-    height: 100%;
-    border-radius: 8px;
-    overflow: hidden;
-    background: var(--el-bg-color-page, #000);
-    /* 最小高度确保在小屏幕上也能正常显示 */
-    min-height: 400px;
-  }
-
-  .preview-video-xgplayer :deep(video) {
-    width: 100%;
-    height: 100%;
-    object-fit: contain; /* 视频适应容器，保持原始比例 */
   }
 
   /* 视频预览容器：使用 flexbox 自适应高度，避免滚动条 */

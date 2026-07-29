@@ -70,7 +70,9 @@
     flex-direction: column;
     overflow: hidden;
   }
-  .preview-video-xgplayer {
+  .preview-video-xgplayer:not(.xgplayer-rotate-fullscreen):not(.xgplayer-is-fullscreen):not(
+      .xgplayer-is-cssfullscreen
+    ) {
     width: 100%;
     min-height: 400px;
     flex: 1;
