@@ -169,6 +169,8 @@ type FileQuery struct {
 	CreatedBefore *time.Time `json:"created_before,omitempty"`
 	UpdatedAfter  *time.Time `json:"updated_after,omitempty"`
 	UpdatedBefore *time.Time `json:"updated_before,omitempty"`
+	TagsAll       []string   `json:"tags_all,omitempty"`
+	TagsAny       []string   `json:"tags_any,omitempty"`
 	Cursor        string     `json:"cursor,omitempty"`
 	Limit         int        `json:"limit,omitempty"`
 	// MaxResponseBytes 控制 WASM 内为本次查询预留的响应缓冲区，不会传给宿主。
@@ -186,6 +188,7 @@ type SafeFileInfo struct {
 	IsEncrypted  bool      `json:"is_encrypted"`
 	IsPublic     bool      `json:"is_public"`
 	HasThumbnail bool      `json:"has_thumbnail"`
+	Tags         []string  `json:"tags,omitempty"`
 }
 
 type FileQueryResponse struct {

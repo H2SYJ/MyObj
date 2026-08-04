@@ -68,6 +68,10 @@ func InitDataBase() {
 		logger.LOG.Error("迁移回收站目录结构失败", "error", err)
 		panic(fmt.Sprintf("迁移回收站目录结构失败: %v", err))
 	}
+	if err := migrateTaggingSchema(databasePool); err != nil {
+		logger.LOG.Error("迁移文件标签结构失败", "error", err)
+		panic(fmt.Sprintf("迁移文件标签结构失败: %v", err))
+	}
 
 	logger.LOG.Info("[数据库] 数据库连接池初始化成功 ✓")
 }

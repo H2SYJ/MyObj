@@ -24,13 +24,984 @@ const docTemplate = `{
     "host": "{{.Host}}",
     "basePath": "{{.BasePath}}",
     "paths": {
-        "/download/local/create": {
-            "post": {
+        "/admin/tag/categories": {
+            "get": {
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "标签与词典管理"
+                ],
+                "summary": "获取全部标签分类",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/models.JsonResponse"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "type": "array",
+                                            "items": {
+                                                "$ref": "#/definitions/models.TagCategory"
+                                            }
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    }
+                },
                 "security": [
                     {
                         "BearerAuth": []
                     }
+                ]
+            },
+            "post": {
+                "consumes": [
+                    "application/json"
                 ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "标签与词典管理"
+                ],
+                "summary": "新增或更新标签分类",
+                "parameters": [
+                    {
+                        "description": "标签分类",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/request.AdminTagCategoryRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/models.JsonResponse"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "$ref": "#/definitions/models.TagCategory"
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/models.JsonResponse"
+                        }
+                    }
+                },
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ]
+            }
+        },
+        "/admin/tag/categories/{id}": {
+            "delete": {
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "标签与词典管理"
+                ],
+                "summary": "删除自定义标签分类",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "分类ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/models.JsonResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/models.JsonResponse"
+                        }
+                    }
+                },
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ]
+            }
+        },
+        "/admin/tag/drafts": {
+            "post": {
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "标签与词典管理"
+                ],
+                "summary": "创建或获取全局标签规则草稿",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/models.JsonResponse"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "$ref": "#/definitions/models.TagRuleSet"
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    }
+                },
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ]
+            }
+        },
+        "/admin/tag/drafts/{id}": {
+            "put": {
+                "description": "revision 不一致时返回 HTTP 409",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "标签与词典管理"
+                ],
+                "summary": "整体保存全局标签规则草稿",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "草稿ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "草稿规则与revision",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/request.AdminSaveTagDraftRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/models.JsonResponse"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "$ref": "#/definitions/models.TagRuleSet"
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    },
+                    "409": {
+                        "description": "Conflict",
+                        "schema": {
+                            "$ref": "#/definitions/models.JsonResponse"
+                        }
+                    }
+                },
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ]
+            }
+        },
+        "/admin/tag/drafts/{id}/import": {
+            "post": {
+                "description": "仅接受 UTF-8 无 BOM 的 JSON 或 CSV，不会自动发布",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "标签与词典管理"
+                ],
+                "summary": "导入全局标签规则到草稿",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "草稿ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "integer",
+                        "description": "草稿revision",
+                        "name": "revision",
+                        "in": "query",
+                        "required": true
+                    },
+                    {
+                        "enum": [
+                            "json",
+                            "csv"
+                        ],
+                        "type": "string",
+                        "default": "json",
+                        "description": "导入格式",
+                        "name": "format",
+                        "in": "query"
+                    },
+                    {
+                        "description": "JSON或CSV内容",
+                        "name": "file",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/models.JsonResponse"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "$ref": "#/definitions/models.TagRuleSet"
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/models.JsonResponse"
+                        }
+                    },
+                    "409": {
+                        "description": "Conflict",
+                        "schema": {
+                            "$ref": "#/definitions/models.JsonResponse"
+                        }
+                    }
+                },
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ]
+            }
+        },
+        "/admin/tag/drafts/{id}/preview": {
+            "post": {
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "标签与词典管理"
+                ],
+                "summary": "预览全局标签规则草稿",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "草稿ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "文件名与元数据样例",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/request.TagPreviewRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/models.JsonResponse"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "type": "array",
+                                            "items": {
+                                                "$ref": "#/definitions/response.TagPreviewItem"
+                                            }
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/models.JsonResponse"
+                        }
+                    }
+                },
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ]
+            }
+        },
+        "/admin/tag/drafts/{id}/publish": {
+            "post": {
+                "description": "完整编译后原子热替换，并创建全量重建任务",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "标签与词典管理"
+                ],
+                "summary": "发布全局标签规则草稿",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "草稿ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/models.JsonResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/models.JsonResponse"
+                        }
+                    }
+                },
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ]
+            }
+        },
+        "/admin/tag/rebuild-jobs": {
+            "get": {
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "标签与词典管理"
+                ],
+                "summary": "获取标签重建任务列表",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "default": 20,
+                        "description": "返回数量，1到100",
+                        "name": "limit",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/models.JsonResponse"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "type": "array",
+                                            "items": {
+                                                "$ref": "#/definitions/models.TagRebuildJob"
+                                            }
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    }
+                },
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ]
+            }
+        },
+        "/admin/tag/rebuild-jobs/{id}": {
+            "get": {
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "标签与词典管理"
+                ],
+                "summary": "获取标签重建任务详情",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "任务ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/models.JsonResponse"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "$ref": "#/definitions/models.TagRebuildJob"
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/models.JsonResponse"
+                        }
+                    }
+                },
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ]
+            }
+        },
+        "/admin/tag/rebuild-jobs/{id}/cancel": {
+            "post": {
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "标签与词典管理"
+                ],
+                "summary": "取消标签重建任务",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "任务ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/models.JsonResponse"
+                        }
+                    }
+                },
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ]
+            }
+        },
+        "/admin/tag/rebuild-jobs/{id}/failures": {
+            "get": {
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "标签与词典管理"
+                ],
+                "summary": "获取标签重建逐文件失败明细",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "任务ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "enum": [
+                            "failed",
+                            "retrying",
+                            "resolved"
+                        ],
+                        "type": "string",
+                        "description": "明细状态",
+                        "name": "status",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "default": 50,
+                        "description": "返回数量，1到100",
+                        "name": "limit",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/models.JsonResponse"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "type": "array",
+                                            "items": {
+                                                "$ref": "#/definitions/models.TagRebuildFailure"
+                                            }
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    }
+                },
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ]
+            }
+        },
+        "/admin/tag/rebuild-jobs/{id}/failures/{uf_id}/retry": {
+            "post": {
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "标签与词典管理"
+                ],
+                "summary": "重试单个标签重建失败文件",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "任务ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "用户文件ID",
+                        "name": "uf_id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/models.JsonResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/models.JsonResponse"
+                        }
+                    }
+                },
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ]
+            }
+        },
+        "/admin/tag/rebuild-jobs/{id}/retry": {
+            "post": {
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "标签与词典管理"
+                ],
+                "summary": "重试整个标签重建任务",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "任务ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/models.JsonResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/models.JsonResponse"
+                        }
+                    }
+                },
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ]
+            }
+        },
+        "/admin/tag/rule-sets": {
+            "get": {
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "标签与词典管理"
+                ],
+                "summary": "获取全局标签规则版本",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/models.JsonResponse"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "type": "array",
+                                            "items": {
+                                                "$ref": "#/definitions/models.TagRuleSet"
+                                            }
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    }
+                },
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ]
+            }
+        },
+        "/admin/tag/rule-sets/{id}": {
+            "get": {
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "标签与词典管理"
+                ],
+                "summary": "获取标签规则集详情",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "规则集ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/models.JsonResponse"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "$ref": "#/definitions/models.TagRuleSet"
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/models.JsonResponse"
+                        }
+                    }
+                },
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ]
+            }
+        },
+        "/admin/tag/rule-sets/{id}/diff": {
+            "get": {
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "标签与词典管理"
+                ],
+                "summary": "对比标签规则版本",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "规则集ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/models.JsonResponse"
+                        }
+                    }
+                },
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ]
+            }
+        },
+        "/admin/tag/rule-sets/{id}/export": {
+            "get": {
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "标签与词典管理"
+                ],
+                "summary": "导出标签规则集",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "规则集ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "enum": [
+                            "json",
+                            "csv"
+                        ],
+                        "type": "string",
+                        "default": "json",
+                        "description": "导出格式",
+                        "name": "format",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "UTF-8 无 BOM 的 JSON 或 CSV",
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                },
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ]
+            }
+        },
+        "/admin/tag/rule-sets/{id}/rollback": {
+            "post": {
+                "description": "复制旧内容生成单调递增的新版本并发布",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "标签与词典管理"
+                ],
+                "summary": "回滚到指定标签规则内容",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "来源规则集ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/models.JsonResponse"
+                        }
+                    }
+                },
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ]
+            }
+        },
+        "/admin/tag/settings": {
+            "get": {
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "标签与词典管理"
+                ],
+                "summary": "获取自动标签设置与 Provider 状态",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/models.JsonResponse"
+                        }
+                    }
+                },
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ]
+            },
+            "put": {
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "标签与词典管理"
+                ],
+                "summary": "更新自动标签开关和数量上限",
+                "parameters": [
+                    {
+                        "description": "自动标签设置",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/request.AdminTagSettingsRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/models.JsonResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/models.JsonResponse"
+                        }
+                    }
+                },
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ]
+            }
+        },
+        "/download/local/create": {
+            "post": {
                 "description": "创建网盘文件下载任务，支持加密文件和分片文件",
                 "consumes": [
                     "application/json"
@@ -85,16 +1056,16 @@ const docTemplate = `{
                             "$ref": "#/definitions/models.JsonResponse"
                         }
                     }
-                }
-            }
-        },
-        "/download/local/file/{taskID}": {
-            "get": {
+                },
                 "security": [
                     {
                         "BearerAuth": []
                     }
-                ],
+                ]
+            }
+        },
+        "/download/local/file/{taskID}": {
+            "get": {
                 "description": "下载已准备完成的网盘文件，支持HTTP Range断点续传",
                 "produces": [
                     "application/octet-stream"
@@ -143,16 +1114,16 @@ const docTemplate = `{
                             "$ref": "#/definitions/models.JsonResponse"
                         }
                     }
-                }
-            }
-        },
-        "/download/preview": {
-            "get": {
+                },
                 "security": [
                     {
                         "BearerAuth": []
                     }
-                ],
+                ]
+            }
+        },
+        "/download/preview": {
+            "get": {
                 "description": "直接预览文件（用于图片、视频、PDF等预览场景），支持HTTP Range断点续传，不创建下载任务",
                 "produces": [
                     "application/octet-stream"
@@ -213,16 +1184,16 @@ const docTemplate = `{
                             "$ref": "#/definitions/models.JsonResponse"
                         }
                     }
-                }
-            }
-        },
-        "/download/torrent/parse": {
-            "post": {
+                },
                 "security": [
                     {
                         "BearerAuth": []
                     }
-                ],
+                ]
+            }
+        },
+        "/download/torrent/parse": {
+            "post": {
                 "description": "解析种子文件或磁力链接，返回文件列表供用户选择 种子文件内容（Base64编码）或磁力链接（magnet:开头）",
                 "consumes": [
                     "application/json"
@@ -276,16 +1247,16 @@ const docTemplate = `{
                             "$ref": "#/definitions/models.JsonResponse"
                         }
                     }
-                }
-            }
-        },
-        "/download/torrent/start": {
-            "post": {
+                },
                 "security": [
                     {
                         "BearerAuth": []
                     }
-                ],
+                ]
+            }
+        },
+        "/download/torrent/start": {
+            "post": {
                 "description": "根据用户选择的文件索引，创建下载任务并开始下载 种子文件内容（Base64编码）或磁力链接（magnet:开头）",
                 "consumes": [
                     "application/json"
@@ -339,16 +1310,16 @@ const docTemplate = `{
                             "$ref": "#/definitions/models.JsonResponse"
                         }
                     }
-                }
-            }
-        },
-        "/file/delete": {
-            "post": {
+                },
                 "security": [
                     {
                         "BearerAuth": []
                     }
-                ],
+                ]
+            }
+        },
+        "/file/delete": {
+            "post": {
                 "description": "将文件移动到回收站（软删除）",
                 "consumes": [
                     "application/json"
@@ -396,16 +1367,16 @@ const docTemplate = `{
                             "$ref": "#/definitions/models.JsonResponse"
                         }
                     }
-                }
-            }
-        },
-        "/file/deleteDir": {
-            "post": {
+                },
                 "security": [
                     {
                         "BearerAuth": []
                     }
-                ],
+                ]
+            }
+        },
+        "/file/deleteDir": {
+            "post": {
                 "description": "删除目录及其下的所有文件和子目录（文件会移动到回收站）",
                 "consumes": [
                     "application/json"
@@ -465,16 +1436,16 @@ const docTemplate = `{
                             "$ref": "#/definitions/models.JsonResponse"
                         }
                     }
-                }
-            }
-        },
-        "/file/directories": {
-            "get": {
+                },
                 "security": [
                     {
                         "BearerAuth": []
                     }
-                ],
+                ]
+            }
+        },
+        "/file/directories": {
+            "get": {
                 "produces": [
                     "application/json"
                 ],
@@ -504,16 +1475,16 @@ const docTemplate = `{
                             ]
                         }
                     }
-                }
-            }
-        },
-        "/file/list": {
-            "get": {
+                },
                 "security": [
                     {
                         "BearerAuth": []
                     }
-                ],
+                ]
+            }
+        },
+        "/file/list": {
+            "get": {
                 "description": "获取当前用户指定目录下的文件列表",
                 "consumes": [
                     "application/json"
@@ -530,6 +1501,23 @@ const docTemplate = `{
                         "type": "integer",
                         "description": "目录ID，0表示用户根目录",
                         "name": "directory_id",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "逗号分隔的标签ID",
+                        "name": "tag_ids",
+                        "in": "query"
+                    },
+                    {
+                        "enum": [
+                            "all",
+                            "any"
+                        ],
+                        "type": "string",
+                        "default": "all",
+                        "description": "标签匹配模式",
+                        "name": "tag_mode",
                         "in": "query"
                     },
                     {
@@ -575,16 +1563,16 @@ const docTemplate = `{
                             "$ref": "#/definitions/models.JsonResponse"
                         }
                     }
-                }
-            }
-        },
-        "/file/makeDir": {
-            "post": {
+                },
                 "security": [
                     {
                         "BearerAuth": []
                     }
-                ],
+                ]
+            }
+        },
+        "/file/makeDir": {
+            "post": {
                 "consumes": [
                     "application/json"
                 ],
@@ -625,16 +1613,16 @@ const docTemplate = `{
                             ]
                         }
                     }
-                }
-            }
-        },
-        "/file/move": {
-            "post": {
+                },
                 "security": [
                     {
                         "BearerAuth": []
                     }
-                ],
+                ]
+            }
+        },
+        "/file/move": {
+            "post": {
                 "consumes": [
                     "application/json"
                 ],
@@ -663,16 +1651,16 @@ const docTemplate = `{
                             "$ref": "#/definitions/models.JsonResponse"
                         }
                     }
-                }
-            }
-        },
-        "/file/moveBatch": {
-            "post": {
+                },
                 "security": [
                     {
                         "BearerAuth": []
                     }
-                ],
+                ]
+            }
+        },
+        "/file/moveBatch": {
+            "post": {
                 "consumes": [
                     "application/json"
                 ],
@@ -701,15 +1689,17 @@ const docTemplate = `{
                             "$ref": "#/definitions/models.JsonResponse"
                         }
                     }
-                }
+                },
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ]
             }
         },
         "/file/public/list": {
             "get": {
                 "description": "获取广场公开文件列表",
-                "consumes": [
-                    "application/json"
-                ],
                 "produces": [
                     "application/json"
                 ],
@@ -719,13 +1709,41 @@ const docTemplate = `{
                 "summary": "获取广场公开文件列表",
                 "parameters": [
                     {
-                        "description": "请求参数",
-                        "name": "request",
-                        "in": "body",
-                        "required": true,
-                        "schema": {
-                            "$ref": "#/definitions/request.PublicFileListRequest"
-                        }
+                        "type": "string",
+                        "description": "文件类型",
+                        "name": "type",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "逗号分隔的标签ID",
+                        "name": "tag_ids",
+                        "in": "query"
+                    },
+                    {
+                        "enum": [
+                            "all",
+                            "any"
+                        ],
+                        "type": "string",
+                        "default": "all",
+                        "description": "标签匹配模式",
+                        "name": "tag_mode",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "default": 1,
+                        "description": "页码",
+                        "name": "page",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "default": 20,
+                        "description": "每页数量",
+                        "name": "pageSize",
+                        "in": "query"
                     }
                 ],
                 "responses": {
@@ -758,11 +1776,6 @@ const docTemplate = `{
         },
         "/file/rename": {
             "post": {
-                "security": [
-                    {
-                        "BearerAuth": []
-                    }
-                ],
                 "description": "重命名用户文件",
                 "consumes": [
                     "application/json"
@@ -816,16 +1829,16 @@ const docTemplate = `{
                             "$ref": "#/definitions/models.JsonResponse"
                         }
                     }
-                }
-            }
-        },
-        "/file/renameDir": {
-            "post": {
+                },
                 "security": [
                     {
                         "BearerAuth": []
                     }
-                ],
+                ]
+            }
+        },
+        "/file/renameDir": {
+            "post": {
                 "description": "重命名用户目录，并自动更新子目录和文件的路径",
                 "consumes": [
                     "application/json"
@@ -885,17 +1898,99 @@ const docTemplate = `{
                             "$ref": "#/definitions/models.JsonResponse"
                         }
                     }
-                }
-            }
-        },
-        "/file/search/user": {
-            "get": {
+                },
                 "security": [
                     {
                         "BearerAuth": []
                     }
+                ]
+            }
+        },
+        "/file/search/public": {
+            "get": {
+                "description": "关键词和标签筛选至少提供一项；私有手工标签不参与搜索",
+                "produces": [
+                    "application/json"
                 ],
-                "description": "根据关键词搜索当前用户的文件",
+                "tags": [
+                    "文件管理"
+                ],
+                "summary": "搜索公开文件",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "搜索关键词",
+                        "name": "keyword",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "逗号分隔的标签ID",
+                        "name": "tag_ids",
+                        "in": "query"
+                    },
+                    {
+                        "enum": [
+                            "all",
+                            "any"
+                        ],
+                        "type": "string",
+                        "default": "all",
+                        "description": "标签匹配模式",
+                        "name": "tag_mode",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "default": 1,
+                        "description": "页码",
+                        "name": "page",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "default": 20,
+                        "description": "每页数量",
+                        "name": "pageSize",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/models.JsonResponse"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "type": "object"
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/models.JsonResponse"
+                        }
+                    }
+                },
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ]
+            }
+        },
+        "/file/search/user": {
+            "get": {
+                "description": "关键词和标签筛选至少提供一项；每个关键词可由文件名或标签命中",
                 "consumes": [
                     "application/json"
                 ],
@@ -911,8 +2006,30 @@ const docTemplate = `{
                         "type": "string",
                         "description": "搜索关键词",
                         "name": "keyword",
-                        "in": "query",
-                        "required": true
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "限制在当前目录",
+                        "name": "directory_id",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "逗号分隔的标签ID",
+                        "name": "tag_ids",
+                        "in": "query"
+                    },
+                    {
+                        "enum": [
+                            "all",
+                            "any"
+                        ],
+                        "type": "string",
+                        "default": "all",
+                        "description": "标签匹配模式",
+                        "name": "tag_mode",
+                        "in": "query"
                     },
                     {
                         "type": "integer",
@@ -954,16 +2071,16 @@ const docTemplate = `{
                             "$ref": "#/definitions/models.JsonResponse"
                         }
                     }
-                }
-            }
-        },
-        "/file/setPublic": {
-            "post": {
+                },
                 "security": [
                     {
                         "BearerAuth": []
                     }
-                ],
+                ]
+            }
+        },
+        "/file/setPublic": {
+            "post": {
                 "description": "设置文件是否公开（加密文件不能设置为公开）",
                 "consumes": [
                     "application/json"
@@ -1017,16 +2134,511 @@ const docTemplate = `{
                             "$ref": "#/definitions/models.JsonResponse"
                         }
                     }
-                }
-            }
-        },
-        "/file/thumbnail/{fileId}": {
-            "put": {
+                },
                 "security": [
                     {
                         "BearerAuth": []
                     }
+                ]
+            }
+        },
+        "/file/tag-categories": {
+            "get": {
+                "produces": [
+                    "application/json"
                 ],
+                "tags": [
+                    "文件标签"
+                ],
+                "summary": "获取可用标签分类",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/models.JsonResponse"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "type": "array",
+                                            "items": {
+                                                "$ref": "#/definitions/models.TagCategory"
+                                            }
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    }
+                },
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ]
+            }
+        },
+        "/file/tag-dictionary": {
+            "get": {
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "文件标签"
+                ],
+                "summary": "获取个人分词词典",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/models.JsonResponse"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "$ref": "#/definitions/models.TagRuleSet"
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    }
+                },
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ]
+            },
+            "put": {
+                "description": "保存个人词语、停用词和别名，并创建用户范围历史重建任务",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "文件标签"
+                ],
+                "summary": "热更新个人分词词典",
+                "parameters": [
+                    {
+                        "description": "个人词典",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/request.UpdatePersonalDictionaryRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/models.JsonResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/models.JsonResponse"
+                        }
+                    }
+                },
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ]
+            }
+        },
+        "/file/tag-dictionary/preview": {
+            "post": {
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "文件标签"
+                ],
+                "summary": "预览个人分词词典",
+                "parameters": [
+                    {
+                        "description": "文件名样例和候选规则",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/request.TagPreviewRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/models.JsonResponse"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "type": "array",
+                                            "items": {
+                                                "$ref": "#/definitions/response.TagPreviewItem"
+                                            }
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/models.JsonResponse"
+                        }
+                    }
+                },
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ]
+            }
+        },
+        "/file/tags/batch": {
+            "post": {
+                "description": "先校验全部文件归属，再对最多100个文件原子更新",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "文件标签"
+                ],
+                "summary": "批量更新手工标签",
+                "parameters": [
+                    {
+                        "description": "批量标签变更",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/request.BatchUpdateTagsRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/models.JsonResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/models.JsonResponse"
+                        }
+                    }
+                },
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ]
+            }
+        },
+        "/file/tags/suggestions": {
+            "get": {
+                "description": "仅返回当前用户使用过的标签和允许公开的全局建议",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "文件标签"
+                ],
+                "summary": "获取标签建议",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "标签关键词",
+                        "name": "keyword",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "default": 20,
+                        "description": "返回数量，1到50",
+                        "name": "limit",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/models.JsonResponse"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "type": "array",
+                                            "items": {
+                                                "$ref": "#/definitions/response.CompactTagView"
+                                            }
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    }
+                },
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ]
+            }
+        },
+        "/file/tags/{uf_id}": {
+            "get": {
+                "description": "获取当前用户文件的有效标签、已屏蔽自动标签及生成状态",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "文件标签"
+                ],
+                "summary": "获取文件标签",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "用户文件ID",
+                        "name": "uf_id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/models.JsonResponse"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "$ref": "#/definitions/response.FileTagsResponse"
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/models.JsonResponse"
+                        }
+                    }
+                },
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ]
+            }
+        },
+        "/file/tags/{uf_id}/exclusions": {
+            "put": {
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "文件标签"
+                ],
+                "summary": "屏蔽或恢复自动标签",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "用户文件ID",
+                        "name": "uf_id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "屏蔽项变更",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/request.UpdateTagExclusionsRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/models.JsonResponse"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "$ref": "#/definitions/response.FileTagsResponse"
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/models.JsonResponse"
+                        }
+                    }
+                },
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ]
+            }
+        },
+        "/file/tags/{uf_id}/manual": {
+            "put": {
+                "description": "原子增加或删除手工标签，并设置公开性",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "文件标签"
+                ],
+                "summary": "更新文件手工标签",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "用户文件ID",
+                        "name": "uf_id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "手工标签变更",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/request.UpdateManualTagsRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/models.JsonResponse"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "$ref": "#/definitions/response.FileTagsResponse"
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/models.JsonResponse"
+                        }
+                    }
+                },
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ]
+            }
+        },
+        "/file/tags/{uf_id}/retry": {
+            "post": {
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "文件标签"
+                ],
+                "summary": "重试单文件自动标签",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "用户文件ID",
+                        "name": "uf_id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/models.JsonResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/models.JsonResponse"
+                        }
+                    }
+                },
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ]
+            }
+        },
+        "/file/thumbnail/{fileId}": {
+            "put": {
                 "description": "修改当前用户文件的缩略图，仅支持 JPEG，最大1MB，宽高不超过1000像素",
                 "consumes": [
                     "multipart/form-data"
@@ -1097,16 +2709,16 @@ const docTemplate = `{
                             "$ref": "#/definitions/models.JsonResponse"
                         }
                     }
-                }
-            }
-        },
-        "/file/upload": {
-            "post": {
+                },
                 "security": [
                     {
                         "BearerAuth": []
                     }
-                ],
+                ]
+            }
+        },
+        "/file/upload": {
+            "post": {
                 "description": "支持小文件直传和大文件分片上传",
                 "consumes": [
                     "multipart/form-data"
@@ -1195,16 +2807,16 @@ const docTemplate = `{
                             "$ref": "#/definitions/models.JsonResponse"
                         }
                     }
-                }
-            }
-        },
-        "/file/upload/clean-expired": {
-            "post": {
+                },
                 "security": [
                     {
                         "BearerAuth": []
                     }
-                ],
+                ]
+            }
+        },
+        "/file/upload/clean-expired": {
+            "post": {
                 "description": "清理过期的未完成上传任务。如果提供 userID 参数，则只清理该用户的过期任务；如果不提供，则清理所有用户的过期任务（系统自动清理）",
                 "consumes": [
                     "application/json"
@@ -1249,16 +2861,16 @@ const docTemplate = `{
                             "$ref": "#/definitions/models.JsonResponse"
                         }
                     }
-                }
-            }
-        },
-        "/file/upload/delete": {
-            "post": {
+                },
                 "security": [
                     {
                         "BearerAuth": []
                     }
-                ],
+                ]
+            }
+        },
+        "/file/upload/delete": {
+            "post": {
                 "description": "删除指定的上传任务（从数据库中删除记录）",
                 "consumes": [
                     "application/json"
@@ -1300,16 +2912,16 @@ const docTemplate = `{
                             "$ref": "#/definitions/models.JsonResponse"
                         }
                     }
-                }
-            }
-        },
-        "/file/upload/expired": {
-            "get": {
+                },
                 "security": [
                     {
                         "BearerAuth": []
                     }
-                ],
+                ]
+            }
+        },
+        "/file/upload/expired": {
+            "get": {
                 "description": "查询当前用户所有过期的上传任务",
                 "consumes": [
                     "application/json"
@@ -1349,16 +2961,16 @@ const docTemplate = `{
                             "$ref": "#/definitions/models.JsonResponse"
                         }
                     }
-                }
-            }
-        },
-        "/file/upload/precheck": {
-            "post": {
+                },
                 "security": [
                     {
                         "BearerAuth": []
                     }
-                ],
+                ]
+            }
+        },
+        "/file/upload/precheck": {
+            "post": {
                 "description": "上传前的预检查，检查空间、秒传可能性，返回预检ID",
                 "consumes": [
                     "application/json"
@@ -1406,16 +3018,16 @@ const docTemplate = `{
                             "$ref": "#/definitions/models.JsonResponse"
                         }
                     }
-                }
-            }
-        },
-        "/file/upload/progress": {
-            "get": {
+                },
                 "security": [
                     {
                         "BearerAuth": []
                     }
-                ],
+                ]
+            }
+        },
+        "/file/upload/progress": {
+            "get": {
                 "description": "根据预检ID查询文件上传进度",
                 "consumes": [
                     "application/json"
@@ -1467,16 +3079,16 @@ const docTemplate = `{
                             "$ref": "#/definitions/models.JsonResponse"
                         }
                     }
-                }
-            }
-        },
-        "/file/upload/renew": {
-            "post": {
+                },
                 "security": [
                     {
                         "BearerAuth": []
                     }
-                ],
+                ]
+            }
+        },
+        "/file/upload/renew": {
+            "post": {
                 "description": "延期过期的上传任务，延长过期时间使其可以继续上传",
                 "consumes": [
                     "application/json"
@@ -1542,16 +3154,16 @@ const docTemplate = `{
                             "$ref": "#/definitions/models.JsonResponse"
                         }
                     }
-                }
-            }
-        },
-        "/file/upload/taskList": {
-            "get": {
+                },
                 "security": [
                     {
                         "BearerAuth": []
                     }
-                ],
+                ]
+            }
+        },
+        "/file/upload/taskList": {
+            "get": {
                 "description": "分页获取用户上传任务列表，不返回敏感信息（如临时目录路径）",
                 "consumes": [
                     "application/json"
@@ -1613,16 +3225,16 @@ const docTemplate = `{
                             "$ref": "#/definitions/models.JsonResponse"
                         }
                     }
-                }
-            }
-        },
-        "/file/upload/uncompleted": {
-            "get": {
+                },
                 "security": [
                     {
                         "BearerAuth": []
                     }
-                ],
+                ]
+            }
+        },
+        "/file/upload/uncompleted": {
+            "get": {
                 "description": "查询当前用户所有未完成的上传任务（用于断点续传）",
                 "consumes": [
                     "application/json"
@@ -1662,16 +3274,16 @@ const docTemplate = `{
                             "$ref": "#/definitions/models.JsonResponse"
                         }
                     }
-                }
-            }
-        },
-        "/recycled/delete": {
-            "post": {
+                },
                 "security": [
                     {
                         "BearerAuth": []
                     }
-                ],
+                ]
+            }
+        },
+        "/recycled/delete": {
+            "post": {
                 "description": "从回收站永久删除文件，不可恢复",
                 "consumes": [
                     "application/json"
@@ -1707,16 +3319,16 @@ const docTemplate = `{
                             "$ref": "#/definitions/models.JsonResponse"
                         }
                     }
-                }
-            }
-        },
-        "/recycled/empty": {
-            "post": {
+                },
                 "security": [
                     {
                         "BearerAuth": []
                     }
-                ],
+                ]
+            }
+        },
+        "/recycled/empty": {
+            "post": {
                 "description": "清空当前用户回收站中的所有文件",
                 "produces": [
                     "application/json"
@@ -1738,16 +3350,16 @@ const docTemplate = `{
                             "$ref": "#/definitions/models.JsonResponse"
                         }
                     }
-                }
-            }
-        },
-        "/recycled/list": {
-            "get": {
+                },
                 "security": [
                     {
                         "BearerAuth": []
                     }
-                ],
+                ]
+            }
+        },
+        "/recycled/list": {
+            "get": {
                 "description": "获取当前用户回收站中的文件列表",
                 "consumes": [
                     "application/json"
@@ -1803,16 +3415,16 @@ const docTemplate = `{
                             "$ref": "#/definitions/models.JsonResponse"
                         }
                     }
-                }
-            }
-        },
-        "/recycled/restore": {
-            "post": {
+                },
                 "security": [
                     {
                         "BearerAuth": []
                     }
-                ],
+                ]
+            }
+        },
+        "/recycled/restore": {
+            "post": {
                 "description": "从回收站还原文件到原位置",
                 "consumes": [
                     "application/json"
@@ -1848,16 +3460,16 @@ const docTemplate = `{
                             "$ref": "#/definitions/models.JsonResponse"
                         }
                     }
-                }
-            }
-        },
-        "/user/apiKey/delete": {
-            "post": {
+                },
                 "security": [
                     {
                         "BearerAuth": []
                     }
-                ],
+                ]
+            }
+        },
+        "/user/apiKey/delete": {
+            "post": {
                 "description": "删除指定的API Key",
                 "consumes": [
                     "application/json"
@@ -1905,16 +3517,16 @@ const docTemplate = `{
                             "$ref": "#/definitions/models.JsonResponse"
                         }
                     }
-                }
-            }
-        },
-        "/user/apiKey/generate": {
-            "post": {
+                },
                 "security": [
                     {
                         "BearerAuth": []
                     }
-                ],
+                ]
+            }
+        },
+        "/user/apiKey/generate": {
+            "post": {
                 "description": "为用户生成新的API Key，用于API调用认证",
                 "consumes": [
                     "application/json"
@@ -1962,16 +3574,16 @@ const docTemplate = `{
                             "$ref": "#/definitions/models.JsonResponse"
                         }
                     }
-                }
-            }
-        },
-        "/user/apiKey/list": {
-            "get": {
+                },
                 "security": [
                     {
                         "BearerAuth": []
                     }
-                ],
+                ]
+            }
+        },
+        "/user/apiKey/list": {
+            "get": {
                 "description": "获取当前用户的所有API Key列表（Key已掩码）",
                 "produces": [
                     "application/json"
@@ -2008,7 +3620,12 @@ const docTemplate = `{
                             "$ref": "#/definitions/models.JsonResponse"
                         }
                     }
-                }
+                },
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ]
             }
         },
         "/user/challenge": {
@@ -2051,11 +3668,6 @@ const docTemplate = `{
         },
         "/user/info": {
             "get": {
-                "security": [
-                    {
-                        "BearerAuth": []
-                    }
-                ],
                 "description": "获取当前用户的信息",
                 "produces": [
                     "application/json"
@@ -2089,7 +3701,12 @@ const docTemplate = `{
                             "$ref": "#/definitions/models.JsonResponse"
                         }
                     }
-                }
+                },
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ]
             }
         },
         "/user/login": {
@@ -2186,11 +3803,6 @@ const docTemplate = `{
         },
         "/user/setFilePassword": {
             "post": {
-                "security": [
-                    {
-                        "BearerAuth": []
-                    }
-                ],
                 "description": "设置用户文件加密密码（首次设置）",
                 "consumes": [
                     "application/json"
@@ -2226,7 +3838,12 @@ const docTemplate = `{
                             "$ref": "#/definitions/models.JsonResponse"
                         }
                     }
-                }
+                },
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ]
             }
         },
         "/user/sysInfo": {
@@ -2257,11 +3874,6 @@ const docTemplate = `{
         },
         "/user/updateFilePassword": {
             "post": {
-                "security": [
-                    {
-                        "BearerAuth": []
-                    }
-                ],
                 "description": "修改用户文件加密密码",
                 "consumes": [
                     "application/json"
@@ -2297,16 +3909,16 @@ const docTemplate = `{
                             "$ref": "#/definitions/models.JsonResponse"
                         }
                     }
-                }
-            }
-        },
-        "/user/updatePassword": {
-            "post": {
+                },
                 "security": [
                     {
                         "BearerAuth": []
                     }
-                ],
+                ]
+            }
+        },
+        "/user/updatePassword": {
+            "post": {
                 "description": "修改用户登录密码",
                 "consumes": [
                     "application/json"
@@ -2342,16 +3954,16 @@ const docTemplate = `{
                             "$ref": "#/definitions/models.JsonResponse"
                         }
                     }
-                }
-            }
-        },
-        "/user/updateUser": {
-            "post": {
+                },
                 "security": [
                     {
                         "BearerAuth": []
                     }
-                ],
+                ]
+            }
+        },
+        "/user/updateUser": {
+            "post": {
                 "description": "更新当前用户的基本信息",
                 "consumes": [
                     "application/json"
@@ -2387,16 +3999,16 @@ const docTemplate = `{
                             "$ref": "#/definitions/models.JsonResponse"
                         }
                     }
-                }
-            }
-        },
-        "/video/play/precheck": {
-            "post": {
+                },
                 "security": [
                     {
                         "BearerAuth": []
                     }
-                ],
+                ]
+            }
+        },
+        "/video/play/precheck": {
+            "post": {
                 "description": "验证权限并生成24小时有效的播放 Token",
                 "consumes": [
                     "application/json"
@@ -2456,7 +4068,12 @@ const docTemplate = `{
                             "$ref": "#/definitions/models.JsonResponse"
                         }
                     }
-                }
+                },
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ]
             }
         },
         "/video/stream": {
@@ -2525,6 +4142,294 @@ const docTemplate = `{
                 "message": {
                     "description": "状态",
                     "type": "string"
+                }
+            }
+        },
+        "models.TagCategory": {
+            "type": "object",
+            "properties": {
+                "builtin": {
+                    "type": "boolean"
+                },
+                "code": {
+                    "type": "string"
+                },
+                "color": {
+                    "type": "string"
+                },
+                "created_at": {
+                    "type": "string"
+                },
+                "enabled": {
+                    "type": "boolean"
+                },
+                "id": {
+                    "type": "string"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "sort_order": {
+                    "type": "integer"
+                },
+                "updated_at": {
+                    "type": "string"
+                }
+            }
+        },
+        "models.TagRebuildFailure": {
+            "type": "object",
+            "properties": {
+                "created_at": {
+                    "type": "string"
+                },
+                "error": {
+                    "type": "string"
+                },
+                "job_id": {
+                    "type": "string"
+                },
+                "retry_count": {
+                    "type": "integer"
+                },
+                "status": {
+                    "type": "string"
+                },
+                "uf_id": {
+                    "type": "string"
+                },
+                "updated_at": {
+                    "type": "string"
+                },
+                "user_id": {
+                    "type": "string"
+                }
+            }
+        },
+        "models.TagRebuildJob": {
+            "type": "object",
+            "properties": {
+                "created_at": {
+                    "type": "string"
+                },
+                "cursor": {
+                    "type": "string"
+                },
+                "failed": {
+                    "type": "integer"
+                },
+                "finished_at": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "string"
+                },
+                "last_error": {
+                    "type": "string"
+                },
+                "processed": {
+                    "type": "integer"
+                },
+                "requested_by": {
+                    "type": "string"
+                },
+                "scope_id": {
+                    "type": "string"
+                },
+                "scope_type": {
+                    "type": "string"
+                },
+                "started_at": {
+                    "type": "string"
+                },
+                "status": {
+                    "type": "string"
+                },
+                "succeeded": {
+                    "type": "integer"
+                },
+                "target_version": {
+                    "type": "integer"
+                },
+                "total": {
+                    "type": "integer"
+                },
+                "updated_at": {
+                    "type": "string"
+                }
+            }
+        },
+        "models.TagRule": {
+            "type": "object",
+            "properties": {
+                "category_id": {
+                    "type": "string"
+                },
+                "created_at": {
+                    "type": "string"
+                },
+                "enabled": {
+                    "type": "boolean"
+                },
+                "id": {
+                    "type": "string"
+                },
+                "pattern": {
+                    "type": "string"
+                },
+                "priority": {
+                    "type": "integer"
+                },
+                "replacement": {
+                    "type": "string"
+                },
+                "rule_set_id": {
+                    "type": "string"
+                },
+                "target_field": {
+                    "type": "string"
+                },
+                "type": {
+                    "type": "string"
+                },
+                "updated_at": {
+                    "type": "string"
+                },
+                "weight": {
+                    "type": "number"
+                }
+            }
+        },
+        "models.TagRuleSet": {
+            "type": "object",
+            "properties": {
+                "based_on_version": {
+                    "type": "integer"
+                },
+                "created_at": {
+                    "type": "string"
+                },
+                "created_by": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "string"
+                },
+                "published_at": {
+                    "type": "string"
+                },
+                "revision": {
+                    "type": "integer"
+                },
+                "rules": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/models.TagRule"
+                    }
+                },
+                "scope_id": {
+                    "type": "string"
+                },
+                "scope_type": {
+                    "type": "string"
+                },
+                "status": {
+                    "type": "string"
+                },
+                "updated_at": {
+                    "type": "string"
+                },
+                "version": {
+                    "type": "integer"
+                }
+            }
+        },
+        "request.AdminSaveTagDraftRequest": {
+            "type": "object",
+            "required": [
+                "revision"
+            ],
+            "properties": {
+                "revision": {
+                    "type": "integer",
+                    "minimum": 1
+                },
+                "rules": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/request.TagRuleInput"
+                    }
+                }
+            }
+        },
+        "request.AdminTagCategoryRequest": {
+            "type": "object",
+            "required": [
+                "code",
+                "name"
+            ],
+            "properties": {
+                "code": {
+                    "type": "string"
+                },
+                "color": {
+                    "type": "string"
+                },
+                "enabled": {
+                    "type": "boolean"
+                },
+                "id": {
+                    "type": "string"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "sort_order": {
+                    "type": "integer"
+                }
+            }
+        },
+        "request.AdminTagSettingsRequest": {
+            "type": "object",
+            "required": [
+                "limit"
+            ],
+            "properties": {
+                "enabled": {
+                    "type": "boolean"
+                },
+                "limit": {
+                    "type": "integer",
+                    "maximum": 100,
+                    "minimum": 1
+                }
+            }
+        },
+        "request.BatchUpdateTagsRequest": {
+            "type": "object",
+            "required": [
+                "file_ids"
+            ],
+            "properties": {
+                "add": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/request.ManualTagInput"
+                    }
+                },
+                "file_ids": {
+                    "type": "array",
+                    "maxItems": 100,
+                    "minItems": 1,
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "remove_tag_ids": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
                 }
             }
         },
@@ -2631,6 +4536,23 @@ const docTemplate = `{
                 }
             }
         },
+        "request.ManualTagInput": {
+            "type": "object",
+            "required": [
+                "name"
+            ],
+            "properties": {
+                "category_id": {
+                    "type": "string"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "visibility": {
+                    "type": "string"
+                }
+            }
+        },
         "request.MoveFileRequest": {
             "type": "object",
             "required": [
@@ -2679,34 +4601,6 @@ const docTemplate = `{
             "properties": {
                 "content": {
                     "description": "种子文件内容（Base64编码）或磁力链接（magnet:开头）",
-                    "type": "string"
-                }
-            }
-        },
-        "request.PublicFileListRequest": {
-            "type": "object",
-            "required": [
-                "page",
-                "pageSize"
-            ],
-            "properties": {
-                "page": {
-                    "description": "页码（从1开始）",
-                    "type": "integer",
-                    "minimum": 1
-                },
-                "pageSize": {
-                    "description": "每页数量",
-                    "type": "integer",
-                    "maximum": 100,
-                    "minimum": 1
-                },
-                "sortBy": {
-                    "description": "排序字段（name, size, time）",
-                    "type": "string"
-                },
-                "type": {
-                    "description": "文件类型",
                     "type": "string"
                 }
             }
@@ -2817,6 +4711,109 @@ const docTemplate = `{
                 "save_path": {
                     "description": "保存的虚拟路径（可选，默认为/离线下载/）",
                     "type": "string"
+                }
+            }
+        },
+        "request.TagPreviewRequest": {
+            "type": "object",
+            "required": [
+                "samples"
+            ],
+            "properties": {
+                "rules": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/request.TagRuleInput"
+                    }
+                },
+                "samples": {
+                    "type": "array",
+                    "maxItems": 100,
+                    "minItems": 1,
+                    "items": {
+                        "type": "string"
+                    }
+                }
+            }
+        },
+        "request.TagRuleInput": {
+            "type": "object",
+            "required": [
+                "pattern",
+                "type"
+            ],
+            "properties": {
+                "category_id": {
+                    "type": "string"
+                },
+                "enabled": {
+                    "type": "boolean"
+                },
+                "id": {
+                    "type": "string"
+                },
+                "pattern": {
+                    "type": "string"
+                },
+                "priority": {
+                    "type": "integer"
+                },
+                "replacement": {
+                    "type": "string"
+                },
+                "target_field": {
+                    "type": "string"
+                },
+                "type": {
+                    "type": "string"
+                },
+                "weight": {
+                    "type": "number"
+                }
+            }
+        },
+        "request.UpdateManualTagsRequest": {
+            "type": "object",
+            "properties": {
+                "add": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/request.ManualTagInput"
+                    }
+                },
+                "remove_tag_ids": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                }
+            }
+        },
+        "request.UpdatePersonalDictionaryRequest": {
+            "type": "object",
+            "properties": {
+                "rules": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/request.TagRuleInput"
+                    }
+                }
+            }
+        },
+        "request.UpdateTagExclusionsRequest": {
+            "type": "object",
+            "properties": {
+                "restore_tag_ids": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "suppress_tag_ids": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
                 }
             }
         },
@@ -2973,6 +4970,26 @@ const docTemplate = `{
                 }
             }
         },
+        "response.CompactTagView": {
+            "type": "object",
+            "properties": {
+                "category_code": {
+                    "type": "string"
+                },
+                "color": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "string"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "visibility": {
+                    "type": "string"
+                }
+            }
+        },
         "response.DirectoryItem": {
             "type": "object",
             "properties": {
@@ -3025,6 +5042,15 @@ const docTemplate = `{
                 "public": {
                     "description": "是否公开",
                     "type": "boolean"
+                },
+                "tag_state": {
+                    "type": "string"
+                },
+                "tags": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/response.CompactTagView"
+                    }
                 }
             }
         },
@@ -3067,6 +5093,35 @@ const docTemplate = `{
                 "total": {
                     "description": "总数（目录+文件）",
                     "type": "integer"
+                }
+            }
+        },
+        "response.FileTagsResponse": {
+            "type": "object",
+            "properties": {
+                "file_id": {
+                    "type": "string"
+                },
+                "last_error": {
+                    "type": "string"
+                },
+                "state": {
+                    "type": "string"
+                },
+                "suppressed": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/response.TagView"
+                    }
+                },
+                "tags": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/response.TagView"
+                    }
+                },
+                "updated_at": {
+                    "type": "string"
                 }
             }
         },
@@ -3130,6 +5185,66 @@ const docTemplate = `{
                 },
                 "torrent_name": {
                     "description": "种子名称",
+                    "type": "string"
+                }
+            }
+        },
+        "response.TagCategoryView": {
+            "type": "object",
+            "properties": {
+                "code": {
+                    "type": "string"
+                },
+                "color": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "string"
+                },
+                "name": {
+                    "type": "string"
+                }
+            }
+        },
+        "response.TagPreviewItem": {
+            "type": "object",
+            "properties": {
+                "input": {
+                    "type": "string"
+                },
+                "tags": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/response.CompactTagView"
+                    }
+                }
+            }
+        },
+        "response.TagView": {
+            "type": "object",
+            "properties": {
+                "automatic": {
+                    "type": "boolean"
+                },
+                "category": {
+                    "$ref": "#/definitions/response.TagCategoryView"
+                },
+                "id": {
+                    "type": "string"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "sources": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "suppressed": {
+                    "type": "boolean"
+                },
+                "visibility": {
                     "type": "string"
                 }
             }

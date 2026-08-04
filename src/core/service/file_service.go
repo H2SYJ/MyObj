@@ -13,11 +13,12 @@ import (
 	"myobj/src/pkg/custom_type"
 	"myobj/src/pkg/logger"
 	"myobj/src/pkg/models"
+	"myobj/src/pkg/repository"
+	"myobj/src/pkg/tagging"
 	"myobj/src/pkg/upload"
 	"myobj/src/pkg/virtualpath"
 	"os"
 	"path/filepath"
-	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -26,6 +27,11 @@ import (
 	"github.com/google/uuid"
 	"gorm.io/gorm"
 )
+
+// ErrInvalidFileSearch 表示搜索条件本身无效，处理器应返回 HTTP 400。
+var ErrInvalidFileSearch = errors.New("文件搜索参数无效")
+
+const maxFileTagFilterCount = 100
 
 // 全局上传锁，用于防止同一文件的并发处理
 var uploadLocks sync.Map          // key: userID+fileName, value: *sync.Mutex
@@ -38,6 +44,32 @@ type FileService struct {
 	cacheLocal      cache.Cache
 	finalizeManager *UploadFinalizeManager
 	taskEvents      *TaskEventHub
+	tagService      *TagService
+}
+
+func (f *FileService) SetTagService(service *TagService) { f.tagService = service }
+func (f *FileService) TagService() *TagService           { return f.tagService }
+
+func (f *FileService) createUserFileWithTagState(ctx context.Context, userFile *models.UserFiles) error {
+	err := f.factory.DB().WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if err := f.factory.WithTx(tx).UserFiles().Create(ctx, userFile); err != nil {
+			return err
+		}
+		return tagging.QueueUserFile(ctx, tx, userFile.UserID, userFile.UfID)
+	})
+	if err == nil && f.tagService != nil {
+		f.tagService.Notify()
+	}
+	return err
+}
+
+func (f *FileService) rollbackUserFileWithTagState(ctx context.Context, userID, ufID string) error {
+	return f.factory.DB().WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if err := deleteUserFileTagRecords(tx, userID, ufID); err != nil {
+			return err
+		}
+		return tx.Unscoped().Where("user_id = ? AND uf_id = ?", userID, ufID).Delete(&models.UserFiles{}).Error
+	})
 }
 
 func (f *FileService) SetTaskEventHub(events *TaskEventHub) {
@@ -222,7 +254,7 @@ func (f *FileService) Precheck(req *request.UploadPrecheckRequest, c cache.Cache
 				CreatedAt:   custom_type.Now(),
 				UfID:        uuid.NewString(),
 			}
-			err := f.factory.UserFiles().Create(context.Background(), userFile)
+			err := f.createUserFileWithTagState(ctx, userFile)
 			if err != nil {
 				logger.LOG.Error("创建用户文件失败", "error", err, "userID", req.UserID, "fileID", signature.ID, "fileName", req.FileName)
 				return nil, err
@@ -233,7 +265,7 @@ func (f *FileService) Precheck(req *request.UploadPrecheckRequest, c cache.Cache
 				if err := f.factory.User().Update(ctx, user); err != nil {
 					logger.LOG.Error("更新用户空间失败", "error", err, "userID", user.ID)
 					// 回滚：删除刚创建的用户文件关联
-					if delErr := f.factory.UserFiles().Delete(ctx, user.ID, userFile.FileID); delErr != nil {
+					if delErr := f.rollbackUserFileWithTagState(ctx, user.ID, userFile.UfID); delErr != nil {
 						logger.LOG.Error("回滚删除用户文件失败", "error", delErr)
 					}
 					return nil, err
@@ -256,7 +288,7 @@ func (f *FileService) Precheck(req *request.UploadPrecheckRequest, c cache.Cache
 				CreatedAt:   custom_type.Now(),
 				UfID:        uuid.NewString(),
 			}
-			err := f.factory.UserFiles().Create(context.Background(), userFile)
+			err := f.createUserFileWithTagState(ctx, userFile)
 			if err != nil {
 				logger.LOG.Error("创建用户文件失败", "error", err, "userID", req.UserID, "fileID", signature.ID, "fileName", req.FileName)
 				return nil, err
@@ -267,7 +299,7 @@ func (f *FileService) Precheck(req *request.UploadPrecheckRequest, c cache.Cache
 				if err := f.factory.User().Update(ctx, user); err != nil {
 					logger.LOG.Error("更新用户空间失败", "error", err, "userID", user.ID)
 					// 回滚：删除刚创建的用户文件关联
-					if delErr := f.factory.UserFiles().Delete(ctx, user.ID, userFile.FileID); delErr != nil {
+					if delErr := f.rollbackUserFileWithTagState(ctx, user.ID, userFile.UfID); delErr != nil {
 						logger.LOG.Error("回滚删除用户文件失败", "error", delErr)
 					}
 					return nil, err
@@ -385,146 +417,98 @@ func (f *FileService) Precheck(req *request.UploadPrecheckRequest, c cache.Cache
 // SearchUserFiles 搜索当前用户的文件
 func (f *FileService) SearchUserFiles(req *request.FileSearchRequest, userID string) (*models.JsonResponse, error) {
 	ctx := context.Background()
-
-	// 默认分页参数
-	page := req.Page
-	if page < 1 {
-		page = 1
+	page, pageSize := normalizeFilePage(req.Page, req.PageSize)
+	tagIDs, tagMode, err := normalizeTagFilter(req.TagIDs, req.TagMode)
+	if err != nil {
+		return nil, err
 	}
-	pageSize := req.PageSize
-	if pageSize < 1 || pageSize > 100 {
-		pageSize = 20
+	if strings.TrimSpace(req.Keyword) == "" && len(tagIDs) == 0 {
+		return nil, fmt.Errorf("%w: 关键词或标签筛选至少填写一项", ErrInvalidFileSearch)
 	}
-	offset := (page - 1) * pageSize
-
-	// 搜索用户文件
+	terms, err := f.searchTerms(ctx, userID, req.Keyword)
+	if err != nil {
+		return nil, err
+	}
 	sortBy, sortOrder := normalizeFileSort(req.SortBy, req.SortOrder)
-	userFiles, err := f.factory.UserFiles().SearchUserFilesSorted(ctx, userID, req.Keyword, sortBy, sortOrder, offset, pageSize)
+	query := repository.UserFileQuery{
+		UserID: userID, SearchTerms: terms, TagIDs: tagIDs, TagMode: tagMode,
+		FileType: req.Type, SortBy: sortBy, SortOrder: sortOrder,
+		Offset: (page - 1) * pageSize, Limit: pageSize,
+	}
+	if req.DirectoryID > 0 {
+		query.DirectoryID = &req.DirectoryID
+	}
+	userFiles, err := f.factory.UserFiles().ListFiltered(ctx, query)
 	if err != nil {
 		logger.LOG.Error("搜索用户文件失败", "error", err, "userID", userID, "keyword", req.Keyword)
 		return nil, err
 	}
-	// 获取文件详情和用户文件信息
-	type FileWithUserInfo struct {
-		*models.FileInfo
-		UfID     string `json:"uf_id"`
-		FileName string `json:"file_name"`
-		IsPublic bool   `json:"public"`
-	}
-
-	resultFiles := make([]*FileWithUserInfo, 0, len(userFiles))
-	for _, uf := range userFiles {
-		file, err := f.factory.FileInfo().GetByID(ctx, uf.FileID)
-		if err != nil {
-			continue
-		}
-
-		resultFiles = append(resultFiles, &FileWithUserInfo{
-			FileInfo: file,
-			UfID:     uf.UfID,
-			FileName: uf.FileName,
-			IsPublic: uf.IsPublic,
-		})
-	}
-
-	// 统计总数
-	total, err := f.factory.UserFiles().CountUserFilesByKeyword(ctx, userID, req.Keyword)
+	query.Offset, query.Limit = 0, 0
+	total, err := f.factory.UserFiles().CountFiltered(ctx, query)
 	if err != nil {
 		logger.LOG.Error("统计用户文件数量失败", "error", err, "userID", userID, "keyword", req.Keyword)
 		return nil, err
 	}
-
-	result := map[string]interface{}{
-		"files": resultFiles,
-		"total": total,
+	items, err := f.buildSearchFileItems(ctx, userFiles, false)
+	if err != nil {
+		return nil, err
 	}
-	return models.NewJsonResponse(200, "搜索成功", result), nil
+	return models.NewJsonResponse(200, "搜索成功", response.FileSearchResponse{
+		Files: items, Total: total, Page: page, PageSize: pageSize,
+	}), nil
 }
 
 // SearchPublicFiles 搜索公开文件（广场）
 func (f *FileService) SearchPublicFiles(req *request.FileSearchRequest) (*models.JsonResponse, error) {
 	ctx := context.Background()
-
-	// 默认分页参数
-	page := req.Page
-	if page < 1 {
-		page = 1
-	}
-	pageSize := req.PageSize
-	if pageSize < 1 || pageSize > 100 {
-		pageSize = 20
-	}
-	offset := (page - 1) * pageSize
-
-	var userFiles []*models.UserFiles
-	var total int64
-	var err error
-
-	if req.Keyword != "" {
-		// 根据关键词搜索
-		userFiles, err = f.factory.UserFiles().SearchPublicFiles(ctx, req.Keyword, offset, pageSize)
-		if err != nil {
-			logger.LOG.Error("搜索公开文件失败", "error", err, "keyword", req.Keyword)
-			return nil, err
-		}
-		total, err = f.factory.UserFiles().CountPublicFilesByKeyword(ctx, req.Keyword)
-	} else {
-		// 获取所有公开文件
-		userFiles, err = f.factory.UserFiles().ListPublicFiles(ctx, offset, pageSize)
-		if err != nil {
-			logger.LOG.Error("获取公开文件列表失败", "error", err)
-			return nil, err
-		}
-		total, err = f.factory.UserFiles().CountPublicFiles(ctx)
-	}
-
+	page, pageSize := normalizeFilePage(req.Page, req.PageSize)
+	tagIDs, tagMode, err := normalizeTagFilter(req.TagIDs, req.TagMode)
 	if err != nil {
-		logger.LOG.Error("统计公开文件数量失败", "error", err)
 		return nil, err
 	}
-
-	// 获取文件详情和用户信息
-	type FileWithOwner struct {
-		*models.FileInfo
-		OwnerName string `json:"owner_name"`
+	if strings.TrimSpace(req.Keyword) == "" && len(tagIDs) == 0 {
+		return nil, fmt.Errorf("%w: 关键词或标签筛选至少填写一项", ErrInvalidFileSearch)
 	}
-
-	resultFiles := make([]*FileWithOwner, 0, len(userFiles))
-	for _, uf := range userFiles {
-		file, err := f.factory.FileInfo().GetByID(ctx, uf.FileID)
-		if err != nil {
-			continue
-		}
-
-		// 获取用户名
-		user, err := f.factory.User().GetByID(ctx, uf.UserID)
-		ownerName := "Unknown"
-		if err == nil && user != nil {
-			ownerName = user.UserName
-		}
-
-		resultFiles = append(resultFiles, &FileWithOwner{
-			FileInfo:  file,
-			OwnerName: ownerName,
-		})
+	terms, err := f.searchTerms(ctx, "", req.Keyword)
+	if err != nil {
+		return nil, err
 	}
-
-	result := map[string]interface{}{
-		"files": resultFiles,
-		"total": total,
+	sortBy, sortOrder := normalizeFileSort(req.SortBy, req.SortOrder)
+	query := repository.UserFileQuery{
+		PublicOnly: true, SearchTerms: terms, TagIDs: tagIDs, TagMode: tagMode,
+		FileType: req.Type, SortBy: sortBy, SortOrder: sortOrder,
+		Offset: (page - 1) * pageSize, Limit: pageSize,
 	}
-	return models.NewJsonResponse(200, "搜索成功", result), nil
+	userFiles, err := f.factory.UserFiles().ListFiltered(ctx, query)
+	if err != nil {
+		return nil, err
+	}
+	query.Offset, query.Limit = 0, 0
+	total, err := f.factory.UserFiles().CountFiltered(ctx, query)
+	if err != nil {
+		return nil, err
+	}
+	items, err := f.buildSearchFileItems(ctx, userFiles, true)
+	if err != nil {
+		return nil, err
+	}
+	return models.NewJsonResponse(200, "搜索成功", response.FileSearchResponse{
+		Files: items, Total: total, Page: page, PageSize: pageSize,
+	}), nil
 }
 
 // GetFileList 获取文件列表（我的文件页面）
 func (f *FileService) GetFileList(req *request.FileListRequest, userID string) (*models.JsonResponse, error) {
 	ctx := context.Background()
 	sortBy, sortOrder := normalizeFileSort(req.SortBy, req.SortOrder)
+	tagIDs, tagMode, err := normalizeTagFilter(req.TagIDs, req.TagMode)
+	if err != nil {
+		return nil, err
+	}
 
 	// 处理虚拟路径ID，空或为0时使用根目录
 	var currentDirectoryID int
 	var currentDirectory *models.VirtualDirectory
-	var err error
 
 	if req.DirectoryID == 0 {
 		// 查询用户根目录
@@ -546,13 +530,21 @@ func (f *FileService) GetFileList(req *request.FileListRequest, userID string) (
 		}
 	}
 
-	// 查询总数（子目录 + 文件）
-	folderCount, err := f.factory.Directory().CountSubFoldersByParentID(ctx, userID, currentDirectoryID)
-	if err != nil {
-		logger.LOG.Error("统计子目录数量失败", "error", err, "userID", userID, "directory_id", currentDirectoryID)
-		return nil, err
+	// 使用标签或文件类型筛选时只展示当前目录内的匹配文件，避免未匹配目录占用分页位置。
+	filteringFiles := len(tagIDs) > 0 || (req.Type != "" && req.Type != "all")
+	var folderCount int64
+	if !filteringFiles {
+		folderCount, err = f.factory.Directory().CountSubFoldersByParentID(ctx, userID, currentDirectoryID)
+		if err != nil {
+			logger.LOG.Error("统计子目录数量失败", "error", err, "userID", userID, "directory_id", currentDirectoryID)
+			return nil, err
+		}
 	}
-	fileCount, err := f.factory.FileInfo().CountByDirectoryID(ctx, userID, currentDirectoryID)
+	fileQuery := repository.UserFileQuery{
+		UserID: userID, DirectoryID: &currentDirectoryID, TagIDs: tagIDs, TagMode: tagMode,
+		FileType: req.Type, SortBy: sortBy, SortOrder: sortOrder,
+	}
+	fileCount, err := f.factory.UserFiles().CountFiltered(ctx, fileQuery)
 	if err != nil {
 		logger.LOG.Error("统计文件数量失败", "error", err, "userID", userID, "directory_id", currentDirectoryID)
 		return nil, err
@@ -586,7 +578,8 @@ func (f *FileService) GetFileList(req *request.FileListRequest, userID string) (
 		// 如果还有剩余空间，查询文件（直接从user_files表查询，避免file_id重复问题）
 		remaining := req.PageSize - len(folders)
 		if remaining > 0 {
-			userFiles, err = f.factory.UserFiles().ListByDirectoryIDSorted(ctx, userID, currentDirectoryID, sortBy, sortOrder, 0, remaining)
+			fileQuery.Offset, fileQuery.Limit = 0, remaining
+			userFiles, err = f.factory.UserFiles().ListFiltered(ctx, fileQuery)
 			if err != nil {
 				logger.LOG.Error("查询文件列表失败", "error", err, "userID", userID, "directory_id", currentDirectoryID)
 				return nil, err
@@ -595,7 +588,8 @@ func (f *FileService) GetFileList(req *request.FileListRequest, userID string) (
 	} else {
 		// 当前页只包含文件（直接从user_files表查询，避免file_id重复问题）
 		fileOffset := offset - int(folderCount)
-		userFiles, err = f.factory.UserFiles().ListByDirectoryIDSorted(ctx, userID, currentDirectoryID, sortBy, sortOrder, fileOffset, req.PageSize)
+		fileQuery.Offset, fileQuery.Limit = fileOffset, req.PageSize
+		userFiles, err = f.factory.UserFiles().ListFiltered(ctx, fileQuery)
 		if err != nil {
 			logger.LOG.Error("查询文件列表失败", "error", err, "userID", userID, "directory_id", currentDirectoryID)
 			return nil, err
@@ -632,12 +626,39 @@ func (f *FileService) GetFileList(req *request.FileListRequest, userID string) (
 		})
 	}
 
+	fileIDs := make([]string, 0, len(userFiles))
+	ufIDs := make([]string, 0, len(userFiles))
+	for _, userFile := range userFiles {
+		fileIDs = append(fileIDs, userFile.FileID)
+		ufIDs = append(ufIDs, userFile.UfID)
+	}
+	var fileInfos []models.FileInfo
+	if len(fileIDs) > 0 {
+		if err := f.factory.DB().WithContext(ctx).Where("id IN ?", fileIDs).Find(&fileInfos).Error; err != nil {
+			return nil, err
+		}
+	}
+	fileInfoMap := make(map[string]models.FileInfo, len(fileInfos))
+	for _, fileInfo := range fileInfos {
+		fileInfoMap[fileInfo.ID] = fileInfo
+	}
+	tagMap := make(map[string][]response.CompactTagView)
+	stateMap := make(map[string]string)
+	if f.tagService != nil {
+		tagMap, err = f.tagService.CompactTags(ctx, userID, ufIDs, false)
+		if err != nil {
+			return nil, err
+		}
+		stateMap, err = f.tagService.TagStates(ctx, ufIDs)
+		if err != nil {
+			return nil, err
+		}
+	}
 	// 转换文件数据（直接使用user_files记录，避免file_id重复导致查询错误）
 	for _, uf := range userFiles {
-		// 获取file_info详情
-		fileInfo, err := f.factory.FileInfo().GetByID(ctx, uf.FileID)
-		if err != nil {
-			logger.LOG.Warn("获取文件信息失败", "error", err, "fileID", uf.FileID, "ufID", uf.UfID)
+		fileInfo, exists := fileInfoMap[uf.FileID]
+		if !exists {
+			logger.LOG.Warn("获取文件信息失败", "fileID", uf.FileID, "ufID", uf.UfID)
 			continue
 		}
 
@@ -650,6 +671,8 @@ func (f *FileService) GetFileList(req *request.FileListRequest, userID string) (
 			HasThumbnail: fileInfo.ThumbnailImg != "",
 			Public:       uf.IsPublic,
 			CreatedAt:    fileInfo.CreatedAt,
+			Tags:         tagMap[uf.UfID],
+			TagState:     stateMap[uf.UfID],
 		})
 	}
 
@@ -666,6 +689,113 @@ func normalizeFileSort(sortBy, sortOrder string) (string, string) {
 		sortOrder = "desc"
 	}
 	return sortBy, sortOrder
+}
+
+func normalizeFilePage(page, pageSize int) (int, int) {
+	if page < 1 {
+		page = 1
+	}
+	if pageSize < 1 || pageSize > 100 {
+		pageSize = 20
+	}
+	return page, pageSize
+}
+
+func normalizeTagFilter(raw, mode string) ([]string, string, error) {
+	mode = strings.ToLower(strings.TrimSpace(mode))
+	if mode == "" {
+		mode = "all"
+	}
+	if mode != "all" && mode != "any" {
+		return nil, "", fmt.Errorf("%w: tag_mode 仅支持 all 或 any", ErrInvalidFileSearch)
+	}
+	seen := make(map[string]struct{})
+	result := make([]string, 0)
+	for _, tagID := range strings.Split(raw, ",") {
+		tagID = strings.TrimSpace(tagID)
+		if tagID == "" {
+			continue
+		}
+		if _, exists := seen[tagID]; exists {
+			continue
+		}
+		seen[tagID] = struct{}{}
+		result = append(result, tagID)
+		if len(result) > maxFileTagFilterCount {
+			return nil, "", fmt.Errorf("%w: 标签筛选最多允许%d项", ErrInvalidFileSearch, maxFileTagFilterCount)
+		}
+	}
+	return result, mode, nil
+}
+
+func (f *FileService) searchTerms(ctx context.Context, userID, keyword string) ([]string, error) {
+	if strings.TrimSpace(keyword) == "" {
+		return nil, nil
+	}
+	if f.tagService == nil {
+		return []string{strings.TrimSpace(keyword)}, nil
+	}
+	return f.tagService.SearchTerms(ctx, userID, keyword)
+}
+
+func (f *FileService) buildSearchFileItems(ctx context.Context, userFiles []*models.UserFiles, publicOnly bool) ([]response.SearchFileItem, error) {
+	if len(userFiles) == 0 {
+		return []response.SearchFileItem{}, nil
+	}
+	fileIDs := make([]string, 0, len(userFiles))
+	ufIDs := make([]string, 0, len(userFiles))
+	userIDs := make([]string, 0, len(userFiles))
+	for _, userFile := range userFiles {
+		fileIDs = append(fileIDs, userFile.FileID)
+		ufIDs = append(ufIDs, userFile.UfID)
+		userIDs = append(userIDs, userFile.UserID)
+	}
+	var fileInfos []models.FileInfo
+	if err := f.factory.DB().WithContext(ctx).Where("id IN ?", fileIDs).Find(&fileInfos).Error; err != nil {
+		return nil, err
+	}
+	fileMap := make(map[string]models.FileInfo, len(fileInfos))
+	for _, fileInfo := range fileInfos {
+		fileMap[fileInfo.ID] = fileInfo
+	}
+	ownerMap := make(map[string]string)
+	if publicOnly {
+		var users []models.UserInfo
+		if err := f.factory.DB().WithContext(ctx).Where("id IN ?", userIDs).Find(&users).Error; err != nil {
+			return nil, err
+		}
+		for _, user := range users {
+			ownerMap[user.ID] = user.Name
+		}
+	}
+	tags := make(map[string][]response.CompactTagView)
+	states := make(map[string]string)
+	if f.tagService != nil {
+		var err error
+		tags, err = f.tagService.CompactTags(ctx, "", ufIDs, publicOnly)
+		if err != nil {
+			return nil, err
+		}
+		states, err = f.tagService.TagStates(ctx, ufIDs)
+		if err != nil {
+			return nil, err
+		}
+	}
+	items := make([]response.SearchFileItem, 0, len(userFiles))
+	for _, userFile := range userFiles {
+		fileInfo, exists := fileMap[userFile.FileID]
+		if !exists {
+			continue
+		}
+		items = append(items, response.SearchFileItem{
+			ID: fileInfo.ID, Name: fileInfo.Name, Size: fileInfo.Size, Mime: fileInfo.Mime,
+			ThumbnailImg: fileInfo.ThumbnailImg, CreatedAt: fileInfo.CreatedAt, UpdatedAt: fileInfo.UpdatedAt,
+			IsEnc: fileInfo.IsEnc, UfID: userFile.UfID, FileName: userFile.FileName,
+			Public: userFile.IsPublic, OwnerName: ownerMap[userFile.UserID], Tags: tags[userFile.UfID],
+			TagState: states[userFile.UfID],
+		})
+	}
+	return items, nil
 }
 
 // buildBreadcrumbs 构建面包屑导航（只展示当前、上级、上上级）
@@ -816,7 +946,15 @@ func (f *FileService) RenameFile(req *request.RenameFileRequest, userID string) 
 
 	// 5. 更新文件名
 	userFile.FileName = req.NewFileName
-	err = f.factory.UserFiles().Update(ctx, userFile)
+	err = f.factory.DB().WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if err := f.factory.WithTx(tx).UserFiles().Update(ctx, userFile); err != nil {
+			return err
+		}
+		if f.tagService != nil {
+			return f.tagService.QueueUserFile(ctx, tx, userID, userFile.UfID)
+		}
+		return nil
+	})
 	if err != nil {
 		logger.LOG.Error("重命名文件失败", "error", err, "fileID", req.FileID, "newFileName", req.NewFileName)
 		return nil, fmt.Errorf("重命名文件失败: %w", err)
@@ -1375,138 +1513,36 @@ func (f *FileService) handleSingleUpload(ctx context.Context, req *request.FileU
 // PublicFileList 获取公开文件列表
 func (f *FileService) PublicFileList(req *request.PublicFileListRequest) (*models.JsonResponse, error) {
 	ctx := context.Background()
-
-	// 默认分页参数
-	page := req.Page
-	if page < 1 {
-		page = 1
-	}
-	pageSize := req.PageSize
-	if pageSize < 1 || pageSize > 100 {
-		pageSize = 20
-	}
-	offset := (page - 1) * pageSize
-
-	// 获取所有公开文件
-	userFiles, err := f.factory.UserFiles().ListPublicFiles(ctx, offset, pageSize)
+	page, pageSize := normalizeFilePage(req.Page, req.PageSize)
+	tagIDs, tagMode, err := normalizeTagFilter(req.TagIDs, req.TagMode)
 	if err != nil {
-		logger.LOG.Error("获取公开文件列表失败", "error", err)
 		return nil, err
 	}
-
-	// 统计公开文件数量
-	total, err := f.factory.UserFiles().CountPublicFiles(ctx)
+	sortBy, sortOrder := normalizeFileSort(req.SortBy, "desc")
+	query := repository.UserFileQuery{
+		PublicOnly: true, TagIDs: tagIDs, TagMode: tagMode, FileType: req.Type,
+		SortBy: sortBy, SortOrder: sortOrder, Offset: (page - 1) * pageSize, Limit: pageSize,
+	}
+	userFiles, err := f.factory.UserFiles().ListFiltered(ctx, query)
 	if err != nil {
-		logger.LOG.Error("统计公开文件数量失败", "error", err)
 		return nil, err
 	}
-
-	// 构建响应数据
-	fileList := make([]response.PublicFileItem, 0, len(userFiles))
-	for _, uf := range userFiles {
-		// 获取文件详情
-		fileInfo, err := f.factory.FileInfo().GetByID(ctx, uf.FileID)
-		if err != nil {
-			logger.LOG.Warn("获取文件信息失败", "fileID", uf.FileID, "error", err)
-			continue
-		}
-
-		// 获取文件所属用户信息
-		user, err := f.factory.User().GetByID(ctx, uf.UserID)
-		if err != nil {
-			logger.LOG.Warn("获取用户信息失败", "userID", uf.UserID, "error", err)
-			continue
-		}
-
-		// 根据文件类型过滤
-		if req.Type != "" && req.Type != "all" {
-			// 获取文件主类型（如 image、video、audio 等）
-			mainType := ""
-			if len(fileInfo.Mime) > 0 {
-				parts := strings.Split(fileInfo.Mime, "/")
-				if len(parts) > 0 {
-					mainType = parts[0]
-				}
-			}
-
-			// 特殊处理压缩文件
-			if req.Type == "archive" {
-				if !strings.Contains(fileInfo.Mime, "zip") && !strings.Contains(fileInfo.Mime, "rar") &&
-					!strings.Contains(fileInfo.Mime, "7z") && !strings.Contains(fileInfo.Mime, "tar") &&
-					!strings.Contains(fileInfo.Mime, "gzip") {
-					continue
-				}
-			} else if req.Type == "doc" {
-				// 文档类型：pdf、word、excel、ppt等
-				// 检查 PDF
-				isPDF := strings.Contains(fileInfo.Mime, "pdf")
-				// 检查 Word 文档（包括旧格式 .doc 和新格式 .docx）
-				isWord := strings.Contains(fileInfo.Mime, "word") || strings.Contains(fileInfo.Mime, "wordprocessingml")
-				// 检查 Excel 表格（包括旧格式 .xls 和新格式 .xlsx）
-				isExcel := strings.Contains(fileInfo.Mime, "excel") || strings.Contains(fileInfo.Mime, "spreadsheetml")
-				// 检查 PowerPoint 演示（包括旧格式 .ppt 和新格式 .pptx）
-				isPPT := strings.Contains(fileInfo.Mime, "powerpoint") || strings.Contains(fileInfo.Mime, "presentationml")
-				// 检查通用文档类型
-				isDocument := strings.Contains(fileInfo.Mime, "document") || strings.Contains(fileInfo.Mime, "presentation")
-
-				if !isPDF && !isWord && !isDocument && !isExcel && !isPPT {
-					continue
-				}
-			} else if req.Type == "other" {
-				// 其他类型：匹配所有不属于 image、video、audio、doc、archive 的文件
-				if mainType == "image" || mainType == "video" || mainType == "audio" {
-					continue
-				}
-				// 检查是否是文档类型
-				isPDF := strings.Contains(fileInfo.Mime, "pdf")
-				isWord := strings.Contains(fileInfo.Mime, "word") || strings.Contains(fileInfo.Mime, "wordprocessingml")
-				isExcel := strings.Contains(fileInfo.Mime, "excel") || strings.Contains(fileInfo.Mime, "spreadsheetml")
-				isPPT := strings.Contains(fileInfo.Mime, "powerpoint") || strings.Contains(fileInfo.Mime, "presentationml")
-				isDocument := strings.Contains(fileInfo.Mime, "document") || strings.Contains(fileInfo.Mime, "presentation")
-
-				if isPDF || isWord || isDocument || isExcel || isPPT {
-					continue
-				}
-				// 检查是否是压缩文件
-				if strings.Contains(fileInfo.Mime, "zip") || strings.Contains(fileInfo.Mime, "rar") ||
-					strings.Contains(fileInfo.Mime, "7z") || strings.Contains(fileInfo.Mime, "tar") ||
-					strings.Contains(fileInfo.Mime, "gzip") {
-					continue
-				}
-				// 其他所有类型都匹配（包括 text、application 等）
-			} else if mainType != req.Type {
-				// 其他类型直接匹配主类型（image、video、audio）
-				continue
-			}
-		}
-
+	query.Offset, query.Limit = 0, 0
+	total, err := f.factory.UserFiles().CountFiltered(ctx, query)
+	if err != nil {
+		return nil, err
+	}
+	searchItems, err := f.buildSearchFileItems(ctx, userFiles, true)
+	if err != nil {
+		return nil, err
+	}
+	fileList := make([]response.PublicFileItem, 0, len(searchItems))
+	for _, item := range searchItems {
 		fileList = append(fileList, response.PublicFileItem{
-			UfID:         uf.UfID,
-			FileName:     uf.FileName,
-			FileSize:     fileInfo.Size,
-			MimeType:     fileInfo.Mime,
-			OwnerName:    user.Name,
-			HasThumbnail: fileInfo.ThumbnailImg != "",
-			CreatedAt:    uf.CreatedAt,
+			UfID: item.UfID, FileName: item.FileName, FileSize: item.Size, MimeType: item.Mime,
+			OwnerName: item.OwnerName, HasThumbnail: item.ThumbnailImg != "", CreatedAt: item.CreatedAt,
+			Tags: item.Tags,
 		})
-	}
-
-	// 排序
-	if req.SortBy != "" {
-		switch req.SortBy {
-		case "name":
-			sort.Slice(fileList, func(i, j int) bool {
-				return fileList[i].FileName < fileList[j].FileName
-			})
-		case "size":
-			sort.Slice(fileList, func(i, j int) bool {
-				return fileList[i].FileSize > fileList[j].FileSize
-			})
-		case "time":
-			sort.Slice(fileList, func(i, j int) bool {
-				return fileList[i].CreatedAt.After(fileList[j].CreatedAt)
-			})
-		}
 	}
 
 	resp := response.PublicFileListResponse{

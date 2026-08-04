@@ -104,6 +104,16 @@ export interface FileItem {
   has_thumbnail: boolean
   public: boolean
   created_at: string
+  tags?: CompactTag[]
+  tag_state?: 'pending' | 'running' | 'ready' | 'partial' | 'failed' | string
+}
+
+export interface CompactTag {
+  id: string
+  name: string
+  category_code: string
+  color: string
+  visibility: 'inherit' | 'private' | 'public' | string
 }
 
 // 文件列表请求
@@ -112,6 +122,8 @@ export interface FileListRequest {
   type?: string
   sortBy?: string
   sortOrder?: 'asc' | 'desc'
+  tag_ids?: string
+  tag_mode?: 'all' | 'any'
   page: number
   pageSize: number
 }

@@ -11,6 +11,7 @@
           <span class="file-selection-count">{{ t('files.selected', { count: toolbarSelectedCount }) }}</span>
           <el-button icon="Download" @click="handleSelectionDownload">{{ t('files.download') }}</el-button>
           <el-button icon="FolderOpened" @click="handleMoveFile">{{ t('files.move') }}</el-button>
+          <el-button icon="PriceTag" @click="openTagManager()">{{ t('tags.batchManage') }}</el-button>
           <el-button type="danger" plain icon="Delete" @click="handleSelectionDelete">{{
             t('files.delete')
           }}</el-button>
@@ -32,7 +33,27 @@
           :current-path="currentPath"
           @navigate="navigateToPath"
         />
+        <el-button
+          v-if="isMobile"
+          class="mobile-tag-filter-trigger"
+          :type="tagIds.length ? 'primary' : 'default'"
+          plain
+          icon="PriceTag"
+          :aria-label="t('tags.filterTitle')"
+          @click="showMobileTagFilter = true"
+        >
+          {{ t('tags.filterTitle') }}<span v-if="tagIds.length"> · {{ tagIds.length }}</span>
+        </el-button>
         <div v-if="!isMobile" class="file-view-toolbar">
+          <TagFilter
+            :model-value="tagIds"
+            :mode="tagMode"
+            :scope="tagScope"
+            show-scope
+            @update:model-value="updateTagIds"
+            @update:mode="updateTagMode"
+            @update:scope="updateTagScope"
+          />
           <el-dropdown trigger="click">
             <el-button icon="Sort">{{
               t(`files.sort${sortBy === 'name' ? 'Name' : sortBy === 'size' ? 'Size' : 'Time'}`)
@@ -89,27 +110,31 @@
           :entries="entries"
           :is-selected="isSelectedEntry"
           :get-thumbnail-url="getThumbnailUrl"
+          :tag-limit="isMobile ? 1 : 3"
           @entry-click="handleEntryClick"
           @entry-toggle="toggleEntry"
           @entry-open="handleEntryOpen"
           @entry-context="openEntryContextMenu"
           @entry-long-press="handleEntryLongPress"
+          @tag-click="handleTagClick"
         />
         <FileList
           v-else
           :entries="entries"
           :is-selected="isSelectedEntry"
           :get-thumbnail-url="getThumbnailUrl"
+          :tag-limit="isMobile ? 1 : 3"
           @entry-click="handleEntryClick"
           @entry-toggle="toggleEntry"
           @entry-open="handleEntryOpen"
           @entry-context="openEntryContextMenu"
           @entry-long-press="handleEntryLongPress"
+          @tag-click="handleTagClick"
         />
 
         <EmptyState
           v-if="!fileListLoading && !isSearching && entries.length === 0"
-          :type="hasSearchKeyword ? 'search' : 'folder'"
+          :type="hasSearchKeyword || tagIds.length ? 'search' : 'folder'"
           :show-actions="false"
         />
 
@@ -161,6 +186,9 @@
         <button type="button" :disabled="selectedCount === 0" @click="handleMoveFile">
           <el-icon><FolderOpened /></el-icon><span>{{ t('files.move') }}</span>
         </button>
+        <button type="button" :disabled="selectedFileIds.length === 0" @click="openTagManager()">
+          <el-icon><PriceTag /></el-icon><span>{{ t('tags.batchManage') }}</span>
+        </button>
         <button type="button" :disabled="selectedCount === 0" class="danger" @click="handleSelectionDelete">
           <el-icon><Delete /></el-icon><span>{{ t('files.delete') }}</span>
         </button>
@@ -180,6 +208,24 @@
         @action="handleMenuAction"
         @close="closeContextMenu"
       />
+
+      <el-drawer
+        v-model="showMobileTagFilter"
+        :title="t('tags.filterTitle')"
+        direction="btt"
+        size="330px"
+        append-to-body
+      >
+        <TagFilter
+          :model-value="tagIds"
+          :mode="tagMode"
+          :scope="tagScope"
+          show-scope
+          @update:model-value="updateTagIds"
+          @update:mode="updateTagMode"
+          @update:scope="updateTagScope"
+        />
+      </el-drawer>
 
       <el-dialog v-model="showNewFolderDialog" :title="t('files.newFolder')" width="500px" @close="handleDialogClose">
         <el-form ref="folderFormRef" :model="folderForm" :rules="folderRules" label-width="100px">
@@ -327,6 +373,13 @@
         </template>
       </el-dialog>
 
+      <FileTagManager
+        v-model="showTagManager"
+        :file-ids="tagManagerFileIds"
+        :file-name="tagManagerFileName"
+        @saved="reloadDisplayData"
+      />
+
       <preview v-model="previewVisible" :file="previewFile" />
     </template>
   </WorkspacePage>
@@ -344,6 +397,7 @@
     List,
     Lock,
     Plus,
+    PriceTag,
     Refresh,
     Select,
     Share,
@@ -359,7 +413,7 @@
   import { MobileInfiniteList } from '@/components/mobile'
   import { handleFileUpload, uploadMultipleFiles } from '@/utils/file/upload'
   import { useUserStore } from '@/stores'
-  import type { FileItem, FileListResponse } from '@/types'
+  import type { CompactTag, FileListResponse } from '@/types'
   import Breadcrumb from './components/Breadcrumb.vue'
   import FileContextMenu from './components/FileContextMenu.vue'
   import FileGrid from './components/FileGrid.vue'
@@ -376,6 +430,8 @@
   import { useFileSearch } from './composables/useFileSearch'
   import { useFileViewMode } from './composables/useFileViewMode'
   import WorkspacePage from '@/components/WorkspacePage/index.vue'
+  import TagFilter from '@/components/TagFilter/index.vue'
+  import FileTagManager from '@/components/FileTagManager/index.vue'
 
   const { t } = useI18n()
   const { proxy } = getCurrentInstance() as ComponentInternalInstance
@@ -385,6 +441,22 @@
   const { isHandheld, hasCoarsePointer } = useResponsive()
   const isMobile = isHandheld
   const { viewMode, setViewMode } = useFileViewMode(isMobile)
+  const parseTagIds = (value: unknown) =>
+    typeof value === 'string'
+      ? [
+          ...new Set(
+            value
+              .split(',')
+              .map(item => item.trim())
+              .filter(Boolean)
+          )
+        ]
+      : []
+  const tagIds = ref<string[]>(parseTagIds(route.query.tags))
+  const tagMode = ref<'all' | 'any'>(route.query.tagMode === 'any' ? 'any' : 'all')
+  const tagScope = ref<'current' | 'all'>(route.query.tagScope === 'all' ? 'all' : 'current')
+  const currentDirectoryOnly = computed(() => tagScope.value === 'current')
+  const showMobileTagFilter = ref(false)
 
   const {
     fileListData,
@@ -401,30 +473,37 @@
     sortBy,
     sortOrder,
     setSorting
-  } = useFileList()
+  } = useFileList(tagIds, tagMode)
 
-  const { searchKeyword, isSearching, searchResults, performSearch, clearSearch, hasSearchKeyword } = useFileSearch(
-    sortBy,
-    sortOrder,
-    loadThumbnails
-  )
+  const {
+    searchKeyword,
+    isSearching,
+    searchResults,
+    performSearch,
+    clearSearch,
+    clearSearchResults,
+    hasSearchKeyword,
+    hasActiveSearch
+  } = useFileSearch(sortBy, sortOrder, loadThumbnails, tagIds, tagMode, currentPath, currentDirectoryOnly)
   const displayData = computed<FileListResponse>(() =>
-    hasSearchKeyword.value ? searchResults.value : fileListData.value
+    hasActiveSearch.value ? searchResults.value : fileListData.value
   )
   const entries = computed<FileEntry[]>(() => [
     ...displayData.value.folders.map(folderEntry),
     ...displayData.value.files.map(fileEntry)
   ])
   const displayPagination = computed(() => ({
-    page: hasSearchKeyword.value ? searchResults.value.page : currentPage.value,
-    pageSize: hasSearchKeyword.value ? searchResults.value.page_size : pageSize.value,
+    page: hasActiveSearch.value ? searchResults.value.page : currentPage.value,
+    pageSize: hasActiveSearch.value ? searchResults.value.page_size : pageSize.value,
     total: displayData.value.total
   }))
   const mobileHasMore = computed(() => displayData.value.files.length < displayPagination.value.total)
   const loadNextMobilePage = async () => {
-    if (!isMobile.value || fileListLoading.value || isSearching.value || !mobileHasMore.value) return
+    if (!isMobile.value || fileListLoading.value || isSearching.value || !mobileHasMore.value) {
+      return
+    }
     const nextPage = displayPagination.value.page + 1
-    if (hasSearchKeyword.value) {
+    if (hasActiveSearch.value) {
       await performSearch(searchKeyword.value, nextPage, displayPagination.value.pageSize, true)
     } else {
       currentPage.value = nextPage
@@ -432,7 +511,7 @@
     }
   }
   const reloadDisplayData = async () => {
-    if (hasSearchKeyword.value) {
+    if (hasActiveSearch.value) {
       await performSearch(searchKeyword.value, displayPagination.value.page, displayPagination.value.pageSize)
     } else {
       await loadFileList()
@@ -454,6 +533,20 @@
     selectAll,
     clearSelection
   } = useFileSelection(entries)
+
+  const showTagManager = ref(false)
+  const tagManagerFileIds = ref<string[]>([])
+  const tagManagerFileName = ref('')
+  const openTagManager = (fileIds?: string[], fileName = '') => {
+    const targetIds = fileIds || selectedFileIds.value
+    if (targetIds.length === 0) {
+      proxy?.$modal.msgWarning(t('tags.selectFileFirst'))
+      return
+    }
+    tagManagerFileIds.value = [...targetIds]
+    tagManagerFileName.value = fileName
+    showTagManager.value = true
+  }
   const {
     displayedCount: toolbarSelectedCount,
     scheduleDisplay: scheduleToolbarSelectionDisplay,
@@ -560,7 +653,9 @@
   }
 
   const eventPosition = (event: MouseEvent | KeyboardEvent) => {
-    if (event instanceof MouseEvent && (event.clientX || event.clientY)) return { x: event.clientX, y: event.clientY }
+    if (event instanceof MouseEvent && (event.clientX || event.clientY)) {
+      return { x: event.clientX, y: event.clientY }
+    }
     const rect = (event.currentTarget as HTMLElement | null)?.getBoundingClientRect()
     return rect ? { x: rect.left + 24, y: rect.top + 24 } : { x: window.innerWidth / 2, y: window.innerHeight / 2 }
   }
@@ -572,7 +667,9 @@
   }
 
   const handleBlankContextMenu = (event: MouseEvent) => {
-    if ((event.target as HTMLElement).closest('[data-entry-key]')) return
+    if ((event.target as HTMLElement).closest('[data-entry-key]')) {
+      return
+    }
     event.preventDefault()
     clearCurrentSelection()
     openMenu('page', event.clientX, event.clientY)
@@ -584,8 +681,12 @@
   }
 
   const contextMenuTitle = computed(() => {
-    if (contextMenu.kind === 'page') return t('files.pageActions')
-    if (selectedCount.value > 1) return t('files.selected', { count: selectedCount.value })
+    if (contextMenu.kind === 'page') {
+      return t('files.pageActions')
+    }
+    if (selectedCount.value > 1) {
+      return t('files.selected', { count: selectedCount.value })
+    }
     return contextMenu.entry ? entryName(contextMenu.entry) : ''
   })
 
@@ -621,6 +722,12 @@
           disabled: !selectionCapabilities.value.canMove
         },
         {
+          key: 'manage-tags',
+          label: t('tags.batchManage'),
+          icon: PriceTag,
+          disabled: selectedFileIds.value.length === 0
+        },
+        {
           key: 'delete-selection',
           label: t('files.delete'),
           icon: Delete,
@@ -631,7 +738,9 @@
       ]
     }
     const entry = contextMenu.entry
-    if (!entry) return []
+    if (!entry) {
+      return []
+    }
     if (entry.type === 'folder') {
       return [
         { key: 'open', label: t('files.open'), icon: FolderOpened },
@@ -645,6 +754,7 @@
       { key: 'preview', label: t('files.preview'), icon: View },
       { key: 'download-selection', label: t('files.download'), icon: Download },
       { key: 'share', label: t('files.share'), icon: Share },
+      { key: 'manage-tags', label: t('tags.manage'), icon: PriceTag },
       { key: 'rename', label: t('files.rename'), icon: EditPen },
       { key: 'move-selection', label: t('files.move'), icon: FolderOpened },
       {
@@ -662,11 +772,14 @@
     setSorting(nextSortBy, nextSortOrder)
     clearCurrentSelection()
     currentPage.value = 1
-    if (hasSearchKeyword.value) await performSearch(searchKeyword.value, 1, displayPagination.value.pageSize)
-    else await loadFileList()
+    if (hasActiveSearch.value) {
+      await performSearch(searchKeyword.value, 1, displayPagination.value.pageSize)
+    } else {
+      await loadFileList()
+    }
   }
 
-  const handleMenuAction = async (key: string) => {
+  const handleMenuAction = (key: string) => {
     const entry = contextMenu.entry
     closeContextMenu()
     switch (key) {
@@ -695,27 +808,45 @@
       case 'view-list':
         return setViewMode('list')
       case 'open':
-        if (entry) return openEntry(entry)
+        if (entry) {
+          return openEntry(entry)
+        }
         break
       case 'preview':
-        if (entry?.type === 'file') return handleFilePreview(entry.file)
+        if (entry?.type === 'file') {
+          return handleFilePreview(entry.file)
+        }
         break
       case 'download-selection':
         return handleSelectionDownload()
       case 'share':
-        if (entry?.type === 'file') return handleShareFile(entry.file)
+        if (entry?.type === 'file') {
+          return handleShareFile(entry.file)
+        }
         break
+      case 'manage-tags':
+        if (entry?.type === 'file' && selectedCount.value === 1) {
+          return openTagManager([entry.file.file_id], entry.file.file_name)
+        }
+        return openTagManager()
       case 'rename':
-        if (entry?.type === 'file') handleRenameFile(entry.file)
-        else if (entry?.type === 'folder') handleRenameDir(entry.folder)
+        if (entry?.type === 'file') {
+          handleRenameFile(entry.file)
+        } else if (entry?.type === 'folder') {
+          handleRenameDir(entry.folder)
+        }
         return
       case 'move-selection':
         return handleMoveFile()
       case 'set-public':
-        if (entry?.type === 'file') return handleSetFilePublic(entry.file, true)
+        if (entry?.type === 'file') {
+          return handleSetFilePublic(entry.file, true)
+        }
         break
       case 'set-private':
-        if (entry?.type === 'file') return handleSetFilePublic(entry.file, false)
+        if (entry?.type === 'file') {
+          return handleSetFilePublic(entry.file, false)
+        }
         break
       case 'delete-selection':
         return handleSelectionDelete()
@@ -723,19 +854,27 @@
   }
 
   const openEntry = async (entry: FileEntry) => {
-    if (entry.type === 'folder') navigateToPath(entry.folder.id)
-    else await handleOpenFile(entry.file)
+    if (entry.type === 'folder') {
+      navigateToPath(entry.folder.id)
+    } else {
+      await handleOpenFile(entry.file)
+    }
   }
 
   const handleEntryOpen = (entry: FileEntry, trigger: 'double-click' | 'keyboard') => {
-    if (trigger === 'double-click') hideToolbarSelectionDisplay()
+    if (trigger === 'double-click') {
+      hideToolbarSelectionDisplay()
+    }
     return openEntry(entry)
   }
 
   const handleEntryClick = (entry: FileEntry, event: MouseEvent) => {
     if (isMobile.value) {
-      if (mobileSelectionMode.value) toggleEntry(entry)
-      else openEntry(entry)
+      if (mobileSelectionMode.value) {
+        toggleEntry(entry)
+      } else {
+        openEntry(entry)
+      }
       return
     }
     selectEntryFromClick(entry, event)
@@ -743,16 +882,58 @@
   }
 
   const handleEntryLongPress = (entry: FileEntry) => {
-    if (!isMobile.value || !hasCoarsePointer.value) return
+    if (!isMobile.value || !hasCoarsePointer.value) {
+      return
+    }
     mobileSelectionMode.value = true
-    if (!isSelectedEntry(entry)) setSingle(entry)
+    if (!isSelectedEntry(entry)) {
+      setSingle(entry)
+    }
     navigator.vibrate?.(25)
   }
 
+  const pushTagRoute = (updates: { tags?: string[]; mode?: 'all' | 'any'; scope?: 'current' | 'all' }) => {
+    const nextTags = updates.tags ?? tagIds.value
+    const nextMode = updates.mode ?? tagMode.value
+    const nextScope = updates.scope ?? tagScope.value
+    router.push({
+      path: route.path,
+      query: {
+        ...route.query,
+        tags: nextTags.length ? nextTags.join(',') : undefined,
+        tagMode: nextTags.length && nextMode !== 'all' ? nextMode : undefined,
+        tagScope: nextTags.length && nextScope !== 'current' ? nextScope : undefined
+      }
+    })
+  }
+  const updateTagIds = (value: string[]) => pushTagRoute({ tags: value })
+  const updateTagMode = (value: 'all' | 'any') => pushTagRoute({ mode: value })
+  const updateTagScope = (value: 'current' | 'all') => pushTagRoute({ scope: value })
+  const handleTagClick = (tag: CompactTag) => {
+    if (!tagIds.value.includes(tag.id)) {
+      pushTagRoute({ tags: [...tagIds.value, tag.id] })
+    }
+  }
+
+  const applyTagFilters = async () => {
+    clearCurrentSelection()
+    currentPage.value = 1
+    if (hasSearchKeyword.value || (tagIds.value.length > 0 && tagScope.value === 'all')) {
+      await performSearch(searchKeyword.value, 1, pageSize.value)
+    } else {
+      clearSearchResults()
+      await loadFileList()
+    }
+  }
+
   const startBoxSelection = (event: PointerEvent) => {
-    if (isMobile.value || event.pointerType !== 'mouse' || event.button !== 0) return
+    if (isMobile.value || event.pointerType !== 'mouse' || event.button !== 0) {
+      return
+    }
     const target = event.target as HTMLElement
-    if (target.closest('[data-entry-key], button, input, textarea, .el-pagination')) return
+    if (target.closest('[data-entry-key], button, input, textarea, .el-pagination')) {
+      return
+    }
     closeContextMenu()
     boxSelection.active = true
     boxSelection.pointerId = event.pointerId
@@ -760,13 +941,17 @@
     boxSelection.startY = boxSelection.currentY = event.clientY
     boxSelection.additive = event.ctrlKey || event.metaKey
     boxSelection.baseKeys = boxSelection.additive ? [...selectedKeys.value] : []
-    if (!boxSelection.additive) clearSelection()
+    if (!boxSelection.additive) {
+      clearSelection()
+    }
     contentRef.value?.setPointerCapture(event.pointerId)
     event.preventDefault()
   }
 
   const updateBoxSelection = (event: PointerEvent) => {
-    if (!boxSelection.active || event.pointerId !== boxSelection.pointerId) return
+    if (!boxSelection.active || event.pointerId !== boxSelection.pointerId) {
+      return
+    }
     boxSelection.currentX = event.clientX
     boxSelection.currentY = event.clientY
     const left = Math.min(boxSelection.startX, event.clientX)
@@ -783,13 +968,18 @@
     applyKeys([...boxSelection.baseKeys, ...keys])
     const bounds = contentRef.value?.getBoundingClientRect()
     if (bounds) {
-      if (event.clientY < bounds.top + 36) contentRef.value?.scrollBy({ top: -18 })
-      else if (event.clientY > bounds.bottom - 36) contentRef.value?.scrollBy({ top: 18 })
+      if (event.clientY < bounds.top + 36) {
+        contentRef.value?.scrollBy({ top: -18 })
+      } else if (event.clientY > bounds.bottom - 36) {
+        contentRef.value?.scrollBy({ top: 18 })
+      }
     }
   }
 
   const finishBoxSelection = (event: PointerEvent) => {
-    if (!boxSelection.active || event.pointerId !== boxSelection.pointerId) return
+    if (!boxSelection.active || event.pointerId !== boxSelection.pointerId) {
+      return
+    }
     contentRef.value?.releasePointerCapture(event.pointerId)
     boxSelection.active = false
     boxSelection.pointerId = -1
@@ -843,10 +1033,14 @@
   }
 
   const handleDragOver = (event: DragEvent) => {
-    if (event.dataTransfer?.types.includes('Files')) isDraggingFiles.value = true
+    if (event.dataTransfer?.types.includes('Files')) {
+      isDraggingFiles.value = true
+    }
   }
   const handleDragLeave = (event: DragEvent) => {
-    if (!contentRef.value?.contains(event.relatedTarget as Node | null)) isDraggingFiles.value = false
+    if (!contentRef.value?.contains(event.relatedTarget as Node | null)) {
+      isDraggingFiles.value = false
+    }
   }
   const handleDrop = (event: DragEvent) => {
     isDraggingFiles.value = false
@@ -855,17 +1049,22 @@
       const enhanced = item as DataTransferItem & { webkitGetAsEntry?: () => { isDirectory: boolean } | null }
       return enhanced.webkitGetAsEntry?.()?.isDirectory
     })
-    if (hasDirectory) proxy?.$modal.msgWarning(t('files.folderUploadUnsupported'))
+    if (hasDirectory) {
+      proxy?.$modal.msgWarning(t('files.folderUploadUnsupported'))
+    }
     const files = Array.from(event.dataTransfer?.files || []).filter(file => !hasDirectory || file.size > 0)
-    if (files.length === 0 || hasDirectory) return
+    if (files.length === 0 || hasDirectory) {
+      return
+    }
     pendingDroppedFiles.value = files
     showUploadEncryptDialog.value = true
   }
 
   const handlePagination = ({ page, limit }: { page: number; limit: number }) => {
     clearCurrentSelection()
-    if (hasSearchKeyword.value) performSearch(searchKeyword.value, page, limit)
-    else {
+    if (hasActiveSearch.value) {
+      performSearch(searchKeyword.value, page, limit)
+    } else {
       currentPage.value = page
       pageSize.value = limit
       loadFileList()
@@ -877,15 +1076,20 @@
     return Boolean(element?.closest('input, textarea, [contenteditable="true"], .el-dialog, [role="menu"]'))
   }
   const handleGlobalKeydown = (event: KeyboardEvent) => {
-    if (event.defaultPrevented || isEditableTarget(event.target)) return
+    if (event.defaultPrevented || isEditableTarget(event.target)) {
+      return
+    }
     if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'a') {
       event.preventDefault()
       selectAll()
       return
     }
     if (event.key === 'Escape') {
-      if (contextMenu.visible) closeContextMenu()
-      else clearCurrentSelection()
+      if (contextMenu.visible) {
+        closeContextMenu()
+      } else {
+        clearCurrentSelection()
+      }
       return
     }
     if (event.key === 'ContextMenu' || (event.shiftKey && event.key === 'F10')) {
@@ -911,6 +1115,8 @@
       showDownloadPasswordDialog.value,
       showRenameFileDialog.value,
       showRenameDirDialog.value,
+      showTagManager.value,
+      showMobileTagFilter.value,
       previewVisible.value
     ].some(Boolean)
   )
@@ -919,11 +1125,15 @@
     () => route.query.directoryId,
     () => {
       clearCurrentSelection()
-      if (hasSearchKeyword.value) clearSearch()
+      if (hasSearchKeyword.value) {
+        clearSearch()
+      }
     }
   )
   watch(selectedCount, count => {
-    if (count === 0) mobileSelectionMode.value = false
+    if (count === 0) {
+      mobileSelectionMode.value = false
+    }
   })
 
   const handleGlobalSearch = (event: Event) => {
@@ -934,7 +1144,11 @@
       performSearch(keyword, 1, pageSize.value)
     } else if (hasSearchKeyword.value) {
       clearSearch()
-      loadFileList()
+      if (tagIds.value.length > 0 && tagScope.value === 'all') {
+        performSearch('', 1, pageSize.value)
+      } else {
+        loadFileList()
+      }
     }
   }
 
@@ -944,6 +1158,8 @@
     if (route.query.search && typeof route.query.search === 'string') {
       searchKeyword.value = route.query.search
       performSearch(route.query.search, 1, pageSize.value)
+    } else if (tagIds.value.length > 0 && tagScope.value === 'all') {
+      performSearch('', 1, pageSize.value)
     }
   })
   onBeforeUnmount(() => {
@@ -954,7 +1170,9 @@
     () => route.query.search,
     value => {
       const keyword = typeof value === 'string' ? value.trim() : ''
-      if (keyword === searchKeyword.value.trim()) return
+      if (keyword === searchKeyword.value.trim()) {
+        return
+      }
       clearCurrentSelection()
       if (keyword) {
         searchKeyword.value = keyword
@@ -964,6 +1182,21 @@
         currentPage.value = 1
         loadFileList()
       }
+    }
+  )
+  watch(
+    () => [route.query.tags, route.query.tagMode, route.query.tagScope],
+    async () => {
+      const nextIds = parseTagIds(route.query.tags)
+      const nextMode = route.query.tagMode === 'any' ? 'any' : 'all'
+      const nextScope = route.query.tagScope === 'all' ? 'all' : 'current'
+      if (nextIds.join(',') === tagIds.value.join(',') && nextMode === tagMode.value && nextScope === tagScope.value) {
+        return
+      }
+      tagIds.value = nextIds
+      tagMode.value = nextMode
+      tagScope.value = nextScope
+      await applyTagFilters()
     }
   )
 </script>
@@ -1142,6 +1375,10 @@
   @media (max-width: 767px) {
     .file-workspace-toolbar {
       min-height: 28px;
+    }
+
+    .mobile-tag-filter-trigger {
+      flex: 0 0 auto;
     }
 
     .file-content-area {

@@ -37,6 +37,7 @@
   import Password from './components/Password.vue'
   import Appearance from './components/Appearance.vue'
   import ApiKey from './components/ApiKey.vue'
+  import TagDictionary from './components/TagDictionary.vue'
   import { DesktopPage } from '@/components/desktop'
   import { MobilePage } from '@/components/mobile'
   import { useI18n, useResponsive } from '@/composables'
@@ -45,7 +46,13 @@
   const { isHandheld } = useResponsive()
   const route = useRoute()
   const section = computed(() => route.meta.settingSection)
-  const components = { profile: UserInfo, password: Password, appearance: Appearance, 'api-key': ApiKey }
+  const components = {
+    profile: UserInfo,
+    password: Password,
+    appearance: Appearance,
+    'api-key': ApiKey,
+    'tag-dictionary': TagDictionary
+  }
   const sectionComponent = computed(() => (section.value ? components[section.value] : undefined))
   const settingItems = computed(() => [
     {
@@ -71,6 +78,12 @@
       title: t('settings.apiKey.title'),
       description: t('settings.apiKeyDescription'),
       icon: 'Key'
+    },
+    {
+      path: '/settings/tag-dictionary',
+      title: t('settings.tagDictionary.title'),
+      description: t('settings.tagDictionary.navDescription'),
+      icon: 'CollectionTag'
     }
   ])
 </script>

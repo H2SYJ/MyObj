@@ -1,5 +1,5 @@
-import { computed, type Ref } from 'vue'
-import { searchUserFiles } from '@/api/file'
+import { computed, ref, type Ref } from 'vue'
+import { searchUserFiles, type SearchFileItem } from '@/api/file'
 import { useSearch } from '@/composables'
 import type { FileListResponse, FileItem } from '@/types'
 import type { FileSortBy, FileSortOrder } from './useFileList'
@@ -10,25 +10,37 @@ import type { FileSortBy, FileSortOrder } from './useFileList'
 export function useFileSearch(
   sortBy: Ref<FileSortBy>,
   sortOrder: Ref<FileSortOrder>,
-  loadThumbnails: (files: FileItem[]) => Promise<void>
+  loadThumbnails: (files: FileItem[]) => Promise<void>,
+  tagIds: Ref<string[]> = ref([]),
+  tagMode: Ref<'all' | 'any'> = ref('all'),
+  currentDirectoryId: Ref<number> = ref(0),
+  currentDirectoryOnly: Ref<boolean> = ref(false)
 ) {
   // 结果转换函数：将后端返回的文件转换为 FileItem 格式
-  const transformResult = (files: any[]): FileItem[] => {
-    return files.map((file: any) => ({
-      file_id: file.uf_id || file.id || '', // 优先使用 uf_id
-      file_name: file.file_name || file.name || '', // 优先使用 file_name（用户文件名）
-      file_size: file.size || file.file_size || 0,
-      mime_type: file.mime || file.mime_type || '',
-      created_at: file.created_at || file.createdAt || '',
-      is_enc: file.is_enc || false,
-      has_thumbnail: (file.thumbnail_img && file.thumbnail_img !== '') || false,
-      public: file.public || file.isPublic || false
+  const transformResult = (files: SearchFileItem[]): FileItem[] =>
+    files.map(file => ({
+      file_id: file.uf_id || file.id,
+      file_name: file.file_name || file.name,
+      file_size: file.size,
+      mime_type: file.mime,
+      created_at: file.created_at,
+      is_enc: file.is_enc,
+      has_thumbnail: Boolean(file.thumbnail_img),
+      public: file.public,
+      tags: file.tags || [],
+      tag_state: file.tag_state
     }))
-  }
 
-  const search = useSearch<FileItem>(
+  const search = useSearch<FileItem, SearchFileItem>(
     params => searchUserFiles({ ...params, sortBy: sortBy.value, sortOrder: sortOrder.value }),
-    transformResult
+    transformResult,
+    undefined,
+    true,
+    () => ({
+      tag_ids: tagIds.value.join(',') || undefined,
+      tag_mode: tagIds.value.length ? tagMode.value : undefined,
+      directory_id: currentDirectoryOnly.value && currentDirectoryId.value > 0 ? currentDirectoryId.value : undefined
+    })
   )
 
   // 将搜索结果包装为 FileListResponse 格式（兼容现有代码）
@@ -56,6 +68,10 @@ export function useFileSearch(
     searchResults,
     performSearch,
     clearSearch: search.clearSearch,
-    hasSearchKeyword: search.hasSearchKeyword
+    hasSearchKeyword: search.hasSearchKeyword,
+    clearSearchResults: search.clearSearchResults,
+    hasActiveSearch: computed(
+      () => search.hasSearchKeyword.value || (tagIds.value.length > 0 && !currentDirectoryOnly.value)
+    )
   }
 }

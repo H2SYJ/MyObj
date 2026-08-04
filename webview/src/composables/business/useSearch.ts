@@ -1,5 +1,5 @@
 import type { ComponentInternalInstance } from 'vue'
-import type { FileSearchParams, SearchResponse } from '@/api/file'
+import type { FileSearchParams, SearchResponse, SearchFileItem } from '@/api/file'
 import cache from '@/plugins/cache'
 
 const MAX_HISTORY = 10
@@ -12,11 +12,12 @@ const HISTORY_KEY = 'searchHistory'
  * @param onClear 清空搜索时的回调
  * @param enableHistory 是否启用搜索历史，默认 true
  */
-export function useSearch<T>(
-  searchApi: (params: FileSearchParams) => Promise<SearchResponse>,
-  transformResult: (files: any[]) => T[],
+export function useSearch<T, TSource = SearchFileItem>(
+  searchApi: (params: FileSearchParams) => Promise<SearchResponse<TSource>>,
+  transformResult: (files: TSource[]) => T[],
   onClear?: () => void,
-  enableHistory = true
+  enableHistory = true,
+  getExtraParams?: () => Partial<FileSearchParams>
 ) {
   const { proxy } = getCurrentInstance() as ComponentInternalInstance
 
@@ -30,7 +31,9 @@ export function useSearch<T>(
 
   // 加载搜索历史
   const loadHistory = () => {
-    if (!enableHistory) return
+    if (!enableHistory) {
+      return
+    }
     try {
       const history = cache.local.getJSON(HISTORY_KEY)
       if (Array.isArray(history)) {
@@ -43,7 +46,9 @@ export function useSearch<T>(
 
   // 添加搜索历史
   const addHistory = (keyword: string) => {
-    if (!enableHistory || !keyword.trim()) return
+    if (!enableHistory || !keyword.trim()) {
+      return
+    }
 
     // 移除重复项
     const filtered = searchHistory.value.filter(item => item !== keyword.trim())
@@ -78,7 +83,9 @@ export function useSearch<T>(
 
   // 获取匹配的搜索建议
   const getSuggestions = (keyword: string, maxResults: number = 5) => {
-    if (!enableHistory) return []
+    if (!enableHistory) {
+      return []
+    }
     if (!keyword.trim()) {
       return searchHistory.value.slice(0, maxResults)
     }
@@ -89,7 +96,8 @@ export function useSearch<T>(
 
   // 执行搜索
   const performSearch = async (keyword: string, pageNum: number = 1, pageSizeNum: number = 20, append = false) => {
-    if (!keyword.trim()) {
+    const extraParams = getExtraParams?.() || {}
+    if (!keyword.trim() && !extraParams.tag_ids) {
       // 如果关键词为空，清空搜索结果
       clearSearchResults()
       if (onClear) {
@@ -106,6 +114,7 @@ export function useSearch<T>(
     isSearching.value = true
     try {
       const params: FileSearchParams = {
+        ...extraParams,
         keyword: keyword.trim(),
         page: pageNum,
         pageSize: pageSizeNum
@@ -150,9 +159,9 @@ export function useSearch<T>(
   }
 
   // 是否有搜索关键词
-  const hasSearchKeyword = computed(() => {
-    return searchKeyword.value.trim().length > 0
-  })
+  const hasSearchKeyword = computed(() => searchKeyword.value.trim().length > 0)
+
+  const hasActiveSearch = computed(() => hasSearchKeyword.value || Boolean(getExtraParams?.().tag_ids))
 
   // 初始化
   if (enableHistory) {
@@ -171,6 +180,7 @@ export function useSearch<T>(
     clearSearch,
     clearSearchResults,
     hasSearchKeyword,
+    hasActiveSearch,
     // 搜索历史相关方法
     addHistory,
     clearHistory,

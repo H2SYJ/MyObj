@@ -136,6 +136,24 @@ type UserFilesRepository interface {
 	GetByUfID(ctx context.Context, ufID string) (*models.UserFiles, error)
 	ListByDirectoryID(ctx context.Context, userID string, directoryID int, offset, limit int) ([]*models.UserFiles, error)
 	ListByDirectoryIDSorted(ctx context.Context, userID string, directoryID int, sortBy, sortOrder string, offset, limit int) ([]*models.UserFiles, error)
+	ListFiltered(ctx context.Context, query UserFileQuery) ([]*models.UserFiles, error)
+	CountFiltered(ctx context.Context, query UserFileQuery) (int64, error)
+}
+
+// UserFileQuery 描述文件列表、搜索和文件广场共用的可组合查询条件。
+// SearchTerms 中每个词都必须由文件名或可见标签命中；TagMode 控制标签筛选的 all/any 语义。
+type UserFileQuery struct {
+	UserID      string
+	PublicOnly  bool
+	DirectoryID *int
+	SearchTerms []string
+	TagIDs      []string
+	TagMode     string
+	FileType    string
+	SortBy      string
+	SortOrder   string
+	Offset      int
+	Limit       int
 }
 
 // DirectoryRepository 虚拟目录仓储接口。

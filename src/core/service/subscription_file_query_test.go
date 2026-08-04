@@ -20,7 +20,7 @@ func TestSubscriptionFileQueriesAreLimitedToSaveRoot(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := db.AutoMigrate(&models.FileInfo{}, &models.VirtualDirectory{}); err != nil {
+	if err := db.AutoMigrate(&models.FileInfo{}, &models.VirtualDirectory{}, &models.TagDefinition{}, &models.UserFileTag{}, &models.UserFileTagExclusion{}); err != nil {
 		t.Fatal(err)
 	}
 	if err := db.Exec(`CREATE TABLE user_files (
@@ -69,6 +69,12 @@ func TestSubscriptionFileQueriesAreLimitedToSaveRoot(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
+	if err := db.Create(&models.TagDefinition{ID: "tag-video", Name: "电影", NormalizedName: "电影", CategoryID: "title", CreatedAt: time.Now()}).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Create(&models.UserFileTag{ID: "binding-video", UserID: "user-a", UFID: "uf-channel", TagID: "tag-video", SourceType: models.TagSourceManual, SourceKey: "user", Visibility: models.TagVisibilityPrivate, CreatedAt: time.Now()}).Error; err != nil {
+		t.Fatal(err)
+	}
 
 	service := &SubscriptionService{factory: impl.NewRepositoryFactory(db)}
 	ctx := context.Background()
@@ -82,8 +88,12 @@ func TestSubscriptionFileQueriesAreLimitedToSaveRoot(t *testing.T) {
 		t.Fatalf("保存目录递归查询范围错误: response=%+v err=%v", recursive, err)
 	}
 	channel, err := service.queryFilesInternal(ctx, "user-a", "/保存", pluginpkg.FileQueryRequest{Operation: "query", RelativePath: "频道"})
-	if err != nil || len(channel.Files) != 1 || channel.Files[0].UFID != "uf-channel" || channel.Files[0].AbsolutePath != "/保存/频道" {
+	if err != nil || len(channel.Files) != 1 || channel.Files[0].UFID != "uf-channel" || channel.Files[0].AbsolutePath != "/保存/频道" || len(channel.Files[0].Tags) != 1 {
 		t.Fatalf("相对保存目录的子目录查询失败: response=%+v err=%v", channel, err)
+	}
+	byTag, err := service.queryFilesInternal(ctx, "user-a", "/保存", pluginpkg.FileQueryRequest{Operation: "query", Recursive: true, TagsAll: []string{"电影"}})
+	if err != nil || len(byTag.Files) != 1 || byTag.Files[0].UFID != "uf-channel" {
+		t.Fatalf("标签查询失败: response=%+v err=%v", byTag, err)
 	}
 	channelRecursive, err := service.queryFilesInternal(ctx, "user-a", "/保存", pluginpkg.FileQueryRequest{Operation: "query", RelativePath: "频道", Recursive: true})
 	if err != nil || len(channelRecursive.Files) != 2 {
@@ -107,6 +117,13 @@ func TestSubscriptionFileQueriesAreLimitedToSaveRoot(t *testing.T) {
 	}
 	if _, err := service.queryFilesInternal(ctx, "user-a", "/保存", pluginpkg.FileQueryRequest{Operation: "query", RelativePath: "../其他"}); err == nil {
 		t.Fatal("包含..的查询目录未被拒绝")
+	}
+	tooManyTags := make([]string, maxFileTagFilterCount+1)
+	for index := range tooManyTags {
+		tooManyTags[index] = fmt.Sprintf("标签%d", index)
+	}
+	if _, err := service.queryFilesInternal(ctx, "user-a", "/保存", pluginpkg.FileQueryRequest{Operation: "query", TagsAll: tooManyTags}); err == nil || !strings.Contains(err.Error(), "invalid_request") {
+		t.Fatalf("插件标签查询超过上限时应被拒绝: %v", err)
 	}
 
 	inside, err := service.queryFilesInternal(ctx, "user-a", "/保存", pluginpkg.FileQueryRequest{Operation: "get", UFID: "uf-channel"})

@@ -11,6 +11,7 @@ import (
 	"myobj/src/pkg/models"
 	"net/http"
 	"path/filepath"
+	"strconv"
 
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
@@ -93,6 +94,16 @@ func (f *FileHandler) Router(c *gin.RouterGroup) {
 		fileGroup.POST("/setPublic", f.SetFilePublic)
 		// 获取虚拟目录
 		fileGroup.GET("/directories", middleware.PowerVerify("file:preview"), f.GetDirectories)
+		fileGroup.GET("/tag-categories", middleware.PowerVerify("file:tag"), f.ListTagCategories)
+		fileGroup.GET("/tags/suggestions", middleware.PowerVerify("file:tag"), f.TagSuggestions)
+		fileGroup.GET("/tags/:uf_id", middleware.PowerVerify("file:preview"), f.GetFileTags)
+		fileGroup.PUT("/tags/:uf_id/manual", middleware.PowerVerify("file:tag"), f.UpdateManualTags)
+		fileGroup.PUT("/tags/:uf_id/exclusions", middleware.PowerVerify("file:tag"), f.UpdateTagExclusions)
+		fileGroup.POST("/tags/:uf_id/retry", middleware.PowerVerify("file:tag"), f.RetryFileTags)
+		fileGroup.POST("/tags/batch", middleware.PowerVerify("file:tag"), f.BatchUpdateTags)
+		fileGroup.GET("/tag-dictionary", middleware.PowerVerify("file:tag"), f.GetPersonalTagDictionary)
+		fileGroup.PUT("/tag-dictionary", middleware.PowerVerify("file:tag"), f.UpdatePersonalTagDictionary)
+		fileGroup.POST("/tag-dictionary/preview", middleware.PowerVerify("file:tag"), f.PreviewPersonalTagDictionary)
 		// 打包下载
 		fileGroup.POST("/package/create", middleware.PowerVerify("file:download"), f.CreatePackage)
 		fileGroup.GET("/package/progress", middleware.PowerVerify("file:download"), f.GetPackageProgress)
@@ -100,6 +111,228 @@ func (f *FileHandler) Router(c *gin.RouterGroup) {
 	}
 
 	logger.LOG.Info("[路由] 文件路由注册完成✔️")
+}
+
+// GetFileTags godoc
+// @Summary 获取文件标签
+// @Description 获取当前用户文件的有效标签、已屏蔽自动标签及生成状态
+// @Tags 文件标签
+// @Produce json
+// @Security BearerAuth
+// @Param uf_id path string true "用户文件ID"
+// @Success 200 {object} models.JsonResponse{data=response.FileTagsResponse}
+// @Failure 400 {object} models.JsonResponse
+// @Router /file/tags/{uf_id} [get]
+func (f *FileHandler) GetFileTags(c *gin.Context) {
+	result, err := f.service.TagService().GetFileTags(c.Request.Context(), c.GetString("userID"), c.Param("uf_id"))
+	if err != nil {
+		c.JSON(200, models.NewJsonResponse(400, err.Error(), nil))
+		return
+	}
+	c.JSON(200, models.NewJsonResponse(200, "查询成功", result))
+}
+
+// ListTagCategories godoc
+// @Summary 获取可用标签分类
+// @Tags 文件标签
+// @Produce json
+// @Security BearerAuth
+// @Success 200 {object} models.JsonResponse{data=[]models.TagCategory}
+// @Router /file/tag-categories [get]
+func (f *FileHandler) ListTagCategories(c *gin.Context) {
+	result, err := f.service.TagService().ListCategories(c.Request.Context(), true)
+	if err != nil {
+		c.JSON(http.StatusOK, models.NewJsonResponse(400, err.Error(), nil))
+		return
+	}
+	c.JSON(http.StatusOK, models.NewJsonResponse(200, "查询成功", result))
+}
+
+// RetryFileTags godoc
+// @Summary 重试单文件自动标签
+// @Tags 文件标签
+// @Produce json
+// @Security BearerAuth
+// @Param uf_id path string true "用户文件ID"
+// @Success 200 {object} models.JsonResponse
+// @Failure 400 {object} models.JsonResponse
+// @Router /file/tags/{uf_id}/retry [post]
+func (f *FileHandler) RetryFileTags(c *gin.Context) {
+	if err := f.service.TagService().RetryUserFile(c.Request.Context(), c.GetString("userID"), c.Param("uf_id")); err != nil {
+		c.JSON(http.StatusOK, models.NewJsonResponse(400, err.Error(), nil))
+		return
+	}
+	c.JSON(http.StatusOK, models.NewJsonResponse(200, "已重新排队", nil))
+}
+
+// UpdateManualTags godoc
+// @Summary 更新文件手工标签
+// @Description 原子增加或删除手工标签，并设置公开性
+// @Tags 文件标签
+// @Accept json
+// @Produce json
+// @Security BearerAuth
+// @Param uf_id path string true "用户文件ID"
+// @Param request body request.UpdateManualTagsRequest true "手工标签变更"
+// @Success 200 {object} models.JsonResponse{data=response.FileTagsResponse}
+// @Failure 400 {object} models.JsonResponse
+// @Router /file/tags/{uf_id}/manual [put]
+func (f *FileHandler) UpdateManualTags(c *gin.Context) {
+	var req request.UpdateManualTagsRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(400, models.NewJsonResponse(400, "参数错误", nil))
+		return
+	}
+	err := f.service.TagService().UpdateManualTags(c.Request.Context(), c.GetString("userID"), []string{c.Param("uf_id")}, req.Add, req.RemoveTagIDs)
+	if err != nil {
+		c.JSON(200, models.NewJsonResponse(400, err.Error(), nil))
+		return
+	}
+	result, err := f.service.TagService().GetFileTags(c.Request.Context(), c.GetString("userID"), c.Param("uf_id"))
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, models.NewJsonResponse(500, err.Error(), nil))
+		return
+	}
+	c.JSON(200, models.NewJsonResponse(200, "标签已更新", result))
+}
+
+// UpdateTagExclusions godoc
+// @Summary 屏蔽或恢复自动标签
+// @Tags 文件标签
+// @Accept json
+// @Produce json
+// @Security BearerAuth
+// @Param uf_id path string true "用户文件ID"
+// @Param request body request.UpdateTagExclusionsRequest true "屏蔽项变更"
+// @Success 200 {object} models.JsonResponse{data=response.FileTagsResponse}
+// @Failure 400 {object} models.JsonResponse
+// @Router /file/tags/{uf_id}/exclusions [put]
+func (f *FileHandler) UpdateTagExclusions(c *gin.Context) {
+	var req request.UpdateTagExclusionsRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(400, models.NewJsonResponse(400, "参数错误", nil))
+		return
+	}
+	err := f.service.TagService().UpdateExclusions(c.Request.Context(), c.GetString("userID"), c.Param("uf_id"), req.SuppressTagIDs, req.RestoreTagIDs)
+	if err != nil {
+		c.JSON(200, models.NewJsonResponse(400, err.Error(), nil))
+		return
+	}
+	result, err := f.service.TagService().GetFileTags(c.Request.Context(), c.GetString("userID"), c.Param("uf_id"))
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, models.NewJsonResponse(500, err.Error(), nil))
+		return
+	}
+	c.JSON(200, models.NewJsonResponse(200, "自动标签设置已更新", result))
+}
+
+// BatchUpdateTags godoc
+// @Summary 批量更新手工标签
+// @Description 先校验全部文件归属，再对最多100个文件原子更新
+// @Tags 文件标签
+// @Accept json
+// @Produce json
+// @Security BearerAuth
+// @Param request body request.BatchUpdateTagsRequest true "批量标签变更"
+// @Success 200 {object} models.JsonResponse
+// @Failure 400 {object} models.JsonResponse
+// @Router /file/tags/batch [post]
+func (f *FileHandler) BatchUpdateTags(c *gin.Context) {
+	var req request.BatchUpdateTagsRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(400, models.NewJsonResponse(400, "参数错误", nil))
+		return
+	}
+	if err := f.service.TagService().UpdateManualTags(c.Request.Context(), c.GetString("userID"), req.FileIDs, req.Add, req.RemoveTagIDs); err != nil {
+		c.JSON(200, models.NewJsonResponse(400, err.Error(), nil))
+		return
+	}
+	c.JSON(200, models.NewJsonResponse(200, "批量标签已更新", nil))
+}
+
+// TagSuggestions godoc
+// @Summary 获取标签建议
+// @Description 仅返回当前用户使用过的标签和允许公开的全局建议
+// @Tags 文件标签
+// @Produce json
+// @Security BearerAuth
+// @Param keyword query string false "标签关键词"
+// @Param limit query int false "返回数量，1到50" default(20)
+// @Success 200 {object} models.JsonResponse{data=[]response.CompactTagView}
+// @Router /file/tags/suggestions [get]
+func (f *FileHandler) TagSuggestions(c *gin.Context) {
+	limit, _ := strconv.Atoi(c.Query("limit"))
+	result, err := f.service.TagService().Suggestions(c.Request.Context(), c.GetString("userID"), c.Query("keyword"), limit)
+	if err != nil {
+		c.JSON(200, models.NewJsonResponse(400, err.Error(), nil))
+		return
+	}
+	c.JSON(200, models.NewJsonResponse(200, "查询成功", result))
+}
+
+// GetPersonalTagDictionary godoc
+// @Summary 获取个人分词词典
+// @Tags 文件标签
+// @Produce json
+// @Security BearerAuth
+// @Success 200 {object} models.JsonResponse{data=models.TagRuleSet}
+// @Router /file/tag-dictionary [get]
+func (f *FileHandler) GetPersonalTagDictionary(c *gin.Context) {
+	result, err := f.service.TagService().PersonalDictionary(c.Request.Context(), c.GetString("userID"))
+	if err != nil {
+		c.JSON(200, models.NewJsonResponse(400, err.Error(), nil))
+		return
+	}
+	c.JSON(200, models.NewJsonResponse(200, "查询成功", result))
+}
+
+// UpdatePersonalTagDictionary godoc
+// @Summary 热更新个人分词词典
+// @Description 保存个人词语、停用词和别名，并创建用户范围历史重建任务
+// @Tags 文件标签
+// @Accept json
+// @Produce json
+// @Security BearerAuth
+// @Param request body request.UpdatePersonalDictionaryRequest true "个人词典"
+// @Success 200 {object} models.JsonResponse
+// @Failure 400 {object} models.JsonResponse
+// @Router /file/tag-dictionary [put]
+func (f *FileHandler) UpdatePersonalTagDictionary(c *gin.Context) {
+	var req request.UpdatePersonalDictionaryRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(400, models.NewJsonResponse(400, "参数错误", nil))
+		return
+	}
+	ruleSet, job, err := f.service.TagService().SavePersonalDictionary(c.Request.Context(), c.GetString("userID"), req.Rules)
+	if err != nil {
+		c.JSON(200, models.NewJsonResponse(400, err.Error(), nil))
+		return
+	}
+	c.JSON(200, models.NewJsonResponse(200, "个人词典已热更新", gin.H{"rule_set": ruleSet, "rebuild_job": job}))
+}
+
+// PreviewPersonalTagDictionary godoc
+// @Summary 预览个人分词词典
+// @Tags 文件标签
+// @Accept json
+// @Produce json
+// @Security BearerAuth
+// @Param request body request.TagPreviewRequest true "文件名样例和候选规则"
+// @Success 200 {object} models.JsonResponse{data=[]response.TagPreviewItem}
+// @Failure 400 {object} models.JsonResponse
+// @Router /file/tag-dictionary/preview [post]
+func (f *FileHandler) PreviewPersonalTagDictionary(c *gin.Context) {
+	var req request.TagPreviewRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(400, models.NewJsonResponse(400, "参数错误", nil))
+		return
+	}
+	result, err := f.service.TagService().PreviewRules(c.Request.Context(), c.GetString("userID"), req.Samples, req.Rules, true)
+	if err != nil {
+		c.JSON(200, models.NewJsonResponse(400, err.Error(), nil))
+		return
+	}
+	c.JSON(200, models.NewJsonResponse(200, "预览成功", result))
 }
 
 // Precheck godoc
@@ -131,12 +364,15 @@ func (f *FileHandler) Precheck(c *gin.Context) {
 
 // SearchUserFiles godoc
 // @Summary 搜索当前用户文件
-// @Description 根据关键词搜索当前用户的文件
+// @Description 关键词和标签筛选至少提供一项；每个关键词可由文件名或标签命中
 // @Tags 文件管理
 // @Accept json
 // @Produce json
 // @Security BearerAuth
-// @Param keyword query string true "搜索关键词"
+// @Param keyword query string false "搜索关键词"
+// @Param directory_id query int false "限制在当前目录"
+// @Param tag_ids query string false "逗号分隔的标签ID"
+// @Param tag_mode query string false "标签匹配模式" Enums(all,any) default(all)
 // @Param page query int false "页码" default(1)
 // @Param pageSize query int false "每页数量" default(20)
 // @Success 200 {object} models.JsonResponse{data=object} "搜索结果"
@@ -145,27 +381,48 @@ func (f *FileHandler) Precheck(c *gin.Context) {
 func (f *FileHandler) SearchUserFiles(c *gin.Context) {
 	req := new(request.FileSearchRequest)
 	if err := c.ShouldBindQuery(req); err != nil {
-		c.JSON(200, models.NewJsonResponse(400, "参数错误", err.Error()))
+		c.JSON(http.StatusBadRequest, models.NewJsonResponse(400, "参数错误", err.Error()))
 		return
 	}
 	userID := c.GetString("userID")
 	result, err := f.service.SearchUserFiles(req, userID)
 	if err != nil {
+		if errors.Is(err, service.ErrInvalidFileSearch) {
+			c.JSON(http.StatusBadRequest, models.NewJsonResponse(400, err.Error(), nil))
+			return
+		}
 		c.JSON(200, models.NewJsonResponse(500, "搜索失败", err.Error()))
 		return
 	}
 	c.JSON(200, result)
 }
 
-// SearchPublicFiles 搜索公开文件（广场）
+// SearchPublicFiles godoc
+// @Summary 搜索公开文件
+// @Description 关键词和标签筛选至少提供一项；私有手工标签不参与搜索
+// @Tags 文件管理
+// @Produce json
+// @Security BearerAuth
+// @Param keyword query string false "搜索关键词"
+// @Param tag_ids query string false "逗号分隔的标签ID"
+// @Param tag_mode query string false "标签匹配模式" Enums(all,any) default(all)
+// @Param page query int false "页码" default(1)
+// @Param pageSize query int false "每页数量" default(20)
+// @Success 200 {object} models.JsonResponse{data=object}
+// @Failure 400 {object} models.JsonResponse
+// @Router /file/search/public [get]
 func (f *FileHandler) SearchPublicFiles(c *gin.Context) {
 	req := new(request.FileSearchRequest)
 	if err := c.ShouldBindQuery(req); err != nil {
-		c.JSON(200, models.NewJsonResponse(400, "参数错误", err.Error()))
+		c.JSON(http.StatusBadRequest, models.NewJsonResponse(400, "参数错误", err.Error()))
 		return
 	}
 	result, err := f.service.SearchPublicFiles(req)
 	if err != nil {
+		if errors.Is(err, service.ErrInvalidFileSearch) {
+			c.JSON(http.StatusBadRequest, models.NewJsonResponse(400, err.Error(), nil))
+			return
+		}
 		c.JSON(200, models.NewJsonResponse(500, "搜索失败", err.Error()))
 		return
 	}
@@ -180,6 +437,8 @@ func (f *FileHandler) SearchPublicFiles(c *gin.Context) {
 // @Produce json
 // @Security BearerAuth
 // @Param directory_id query int false "目录ID，0表示用户根目录"
+// @Param tag_ids query string false "逗号分隔的标签ID"
+// @Param tag_mode query string false "标签匹配模式" Enums(all,any) default(all)
 // @Param page query int true "页码" minimum(1)
 // @Param pageSize query int true "每页数量" minimum(1) maximum(100)
 // @Success 200 {object} models.JsonResponse{data=response.FileListResponse} "文件列表"
@@ -194,6 +453,10 @@ func (f *FileHandler) GetFileList(c *gin.Context) {
 	userID := c.GetString("userID")
 	result, err := f.service.GetFileList(req, userID)
 	if err != nil {
+		if errors.Is(err, service.ErrInvalidFileSearch) {
+			c.JSON(200, models.NewJsonResponse(400, err.Error(), nil))
+			return
+		}
 		c.JSON(200, models.NewJsonResponse(500, "获取失败", err.Error()))
 		return
 	}
@@ -714,9 +977,12 @@ func (f *FileHandler) GetUploadTaskList(c *gin.Context) {
 // @Summary 获取广场公开文件列表
 // @Description 获取广场公开文件列表
 // @Tags 文件管理
-// @Accept json
 // @Produce json
-// @Param request body request.PublicFileListRequest true "请求参数"
+// @Param type query string false "文件类型"
+// @Param tag_ids query string false "逗号分隔的标签ID"
+// @Param tag_mode query string false "标签匹配模式" Enums(all,any) default(all)
+// @Param page query int false "页码" default(1)
+// @Param pageSize query int false "每页数量" default(20)
 // @Success 200 {object} models.JsonResponse{data=object} "成功"
 // @Failure 500 {object} models.JsonResponse "失败"
 // @Router /file/public/list [get]
@@ -728,6 +994,10 @@ func (f *FileHandler) PublicFileList(c *gin.Context) {
 	}
 	result, err := f.service.PublicFileList(req)
 	if err != nil {
+		if errors.Is(err, service.ErrInvalidFileSearch) {
+			c.JSON(200, models.NewJsonResponse(400, err.Error(), nil))
+			return
+		}
 		c.JSON(200, models.NewJsonResponse(500, "获取文件列表失败", err.Error()))
 		return
 	}

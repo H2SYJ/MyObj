@@ -16,6 +16,7 @@ import (
 	"myobj/src/pkg/logger"
 	"myobj/src/pkg/models"
 	pluginpkg "myobj/src/pkg/plugin"
+	"myobj/src/pkg/tagging"
 	"myobj/src/pkg/virtualpath"
 	"net/url"
 	"reflect"
@@ -975,6 +976,17 @@ func (s *SubscriptionService) queryFilesInternal(ctx context.Context, userID, sa
 	if request.UpdatedBefore != nil {
 		query = query.Where("file_info.updated_at <= ?", *request.UpdatedBefore)
 	}
+	tagsAll := normalizePluginTags(request.TagsAll)
+	tagsAny := normalizePluginTags(request.TagsAny)
+	if len(tagsAll)+len(tagsAny) > maxFileTagFilterCount {
+		return pluginpkg.FileQueryResponse{}, fmt.Errorf("invalid_request")
+	}
+	for _, tagName := range tagsAll {
+		query = query.Where("EXISTS (SELECT 1 FROM user_file_tag uft JOIN tag_definition td ON td.id = uft.tag_id WHERE uft.user_id = user_files.user_id AND uft.uf_id = user_files.uf_id AND td.normalized_name = ? AND NOT EXISTS (SELECT 1 FROM user_file_tag_exclusion e WHERE e.user_id = uft.user_id AND e.uf_id = uft.uf_id AND e.tag_id = uft.tag_id))", tagName)
+	}
+	if len(tagsAny) > 0 {
+		query = query.Where("EXISTS (SELECT 1 FROM user_file_tag uft JOIN tag_definition td ON td.id = uft.tag_id WHERE uft.user_id = user_files.user_id AND uft.uf_id = user_files.uf_id AND td.normalized_name IN ? AND NOT EXISTS (SELECT 1 FROM user_file_tag_exclusion e WHERE e.user_id = uft.user_id AND e.uf_id = uft.uf_id AND e.tag_id = uft.tag_id))", tagsAny)
+	}
 	queryPath, err := virtualpath.JoinSavePath(saveRoot, request.RelativePath)
 	if err != nil {
 		return pluginpkg.FileQueryResponse{}, err
@@ -1087,7 +1099,38 @@ func (s *SubscriptionService) fileQueryBase(ctx context.Context, userID string) 
 }
 func (s *SubscriptionService) safeFileInfo(ctx context.Context, userID string, row safeFileRow) (pluginpkg.SafeFileInfo, error) {
 	path, err := virtualpath.ResolveAbsolutePath(ctx, userID, row.DirectoryID, s.factory)
-	return pluginpkg.SafeFileInfo{UFID: row.UFID, FileName: row.FileName, AbsolutePath: path, FileSize: row.FileSize, MIMEType: row.MIMEType, CreatedAt: row.CreatedAt, UpdatedAt: row.UpdatedAt, IsEncrypted: row.IsEncrypted, IsPublic: row.IsPublic, HasThumbnail: row.ThumbnailImg != ""}, err
+	if err != nil {
+		return pluginpkg.SafeFileInfo{}, err
+	}
+	tags, err := s.safeFileTags(ctx, userID, row.UFID)
+	return pluginpkg.SafeFileInfo{UFID: row.UFID, FileName: row.FileName, AbsolutePath: path, FileSize: row.FileSize, MIMEType: row.MIMEType, CreatedAt: row.CreatedAt, UpdatedAt: row.UpdatedAt, IsEncrypted: row.IsEncrypted, IsPublic: row.IsPublic, HasThumbnail: row.ThumbnailImg != "", Tags: tags}, err
+}
+
+func (s *SubscriptionService) safeFileTags(ctx context.Context, userID, ufID string) ([]string, error) {
+	var names []string
+	err := s.factory.DB().WithContext(ctx).Table("user_file_tag AS uft").Distinct("td.name").
+		Joins("JOIN tag_definition td ON td.id = uft.tag_id").
+		Where("uft.user_id = ? AND uft.uf_id = ?", userID, ufID).
+		Where("NOT EXISTS (SELECT 1 FROM user_file_tag_exclusion e WHERE e.user_id = uft.user_id AND e.uf_id = uft.uf_id AND e.tag_id = uft.tag_id)").
+		Order("td.name ASC").Pluck("td.name", &names).Error
+	return names, err
+}
+
+func normalizePluginTags(values []string) []string {
+	result := make([]string, 0, len(values))
+	seen := make(map[string]struct{}, len(values))
+	for _, value := range values {
+		value = tagging.Normalize(value)
+		if value == "" {
+			continue
+		}
+		if _, exists := seen[value]; exists {
+			continue
+		}
+		seen[value] = struct{}{}
+		result = append(result, value)
+	}
+	return result
 }
 func (s *SubscriptionService) resolveDirectoryID(ctx context.Context, userID, raw string) (int, error) {
 	return virtualpath.ResolveDirectoryID(ctx, userID, raw, s.factory)

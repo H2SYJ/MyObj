@@ -24,9 +24,9 @@ type DownloadableItem struct {
 	FileName     string     `json:"file_name,omitempty"`
 	// RelativeSavePath 是订阅保存目录下不带前导/的相对目录。
 	RelativeSavePath string            `json:"relative_save_path,omitempty"`
-	ThumbnailURL   string            `json:"thumbnail_url,omitempty"`
-	RequestHeaders map[string]string `json:"request_headers,omitempty"`
-	HeaderHosts    []string          `json:"header_hosts,omitempty"`
+	ThumbnailURL     string            `json:"thumbnail_url,omitempty"`
+	RequestHeaders   map[string]string `json:"request_headers,omitempty"`
+	HeaderHosts      []string          `json:"header_hosts,omitempty"`
 }
 
 func (item *DownloadableItem) UnmarshalJSON(data []byte) error {
@@ -127,6 +127,8 @@ type FileQueryRequest struct {
 	CreatedBefore *time.Time `json:"created_before,omitempty"`
 	UpdatedAfter  *time.Time `json:"updated_after,omitempty"`
 	UpdatedBefore *time.Time `json:"updated_before,omitempty"`
+	TagsAll       []string   `json:"tags_all,omitempty"`
+	TagsAny       []string   `json:"tags_any,omitempty"`
 	Cursor        string     `json:"cursor,omitempty"`
 	Limit         int        `json:"limit,omitempty"`
 }
@@ -142,6 +144,7 @@ type SafeFileInfo struct {
 	IsEncrypted  bool      `json:"is_encrypted"`
 	IsPublic     bool      `json:"is_public"`
 	HasThumbnail bool      `json:"has_thumbnail"`
+	Tags         []string  `json:"tags,omitempty"`
 }
 
 type FileQueryResponse struct {

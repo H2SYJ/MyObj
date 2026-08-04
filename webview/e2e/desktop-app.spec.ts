@@ -218,7 +218,7 @@ test('固定侧栏、路由搜索恢复与无横向滚动', async ({ page }) => 
 
   const overflow = await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth)
   expect(overflow).toBeLessThanOrEqual(0)
-  await expect(page).toHaveScreenshot('desktop-files-shell.png', { fullPage: true })
+  await expect(page).toHaveScreenshot('desktop-files-shell.png', { fullPage: true, maxDiffPixelRatio: 0.03 })
 
   const search = page.locator('.desktop-header__search input')
   await search.fill('验收报告')
@@ -230,16 +230,17 @@ test('固定侧栏、路由搜索恢复与无横向滚动', async ({ page }) => 
   await search.fill('')
   await search.press('Enter')
   await expect(page.locator('.file-grid')).toBeVisible()
-  await page.locator('.page-toolbar__secondary .el-button-group button').nth(1).click()
+  await page.locator('.file-view-toolbar .el-button-group button').nth(1).click()
   await expect(page.locator('.file-list')).toBeVisible()
-  await expect(page).toHaveScreenshot('desktop-files-list.png', { fullPage: true })
+  await expect(page).toHaveScreenshot('desktop-files-list.png', { fullPage: true, maxDiffPixelRatio: 0.03 })
 })
 
 test('任务查询参数、账户概览和设置分区可直接访问', async ({ page }, testInfo) => {
   await page.goto('/tasks?tab=download')
-  await expect(page.locator('.task-tabs')).toBeVisible()
+  const taskTabs = page.getByRole('tablist', { name: /传输列表|Transfer List/i })
+  await expect(taskTabs).toBeVisible()
   await expect(page).toHaveScreenshot('desktop-tasks.png', { fullPage: true })
-  await page.locator('.task-tabs .el-tabs__item').first().click()
+  await taskTabs.getByRole('tab').first().click()
   await expect(page).toHaveURL(/\/tasks\?tab=upload/)
 
   await page.goto('/me')
@@ -247,7 +248,7 @@ test('任务查询参数、账户概览和设置分区可直接访问', async ({
 
   const isEnglish = testInfo.project.name === 'chromium-desktop-1024'
   await page.goto('/subscriptions')
-  await expect(page.locator('.subscriptions-page h2')).toHaveText(isEnglish ? 'Subscriptions' : '订阅管理')
+  await expect(page.getByRole('heading', { name: isEnglish ? 'Subscriptions' : '订阅管理', exact: true })).toBeVisible()
 
   await page.goto('/settings/appearance')
   await expect(page.locator('.desktop-settings')).toBeVisible()

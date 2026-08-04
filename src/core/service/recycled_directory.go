@@ -71,6 +71,11 @@ func (r *RecycledService) restoreDirectory(ctx context.Context, recycled *models
 				Updates(map[string]interface{}{"directory_id": newDirID, "deleted_at": nil}).Error; err != nil {
 				return err
 			}
+			if r.tagService != nil {
+				if err := r.tagService.QueueUserFile(ctx, tx, recycled.UserID, member.FileID); err != nil {
+					return err
+				}
+			}
 		}
 		if err := tx.Where("recycled_id = ?", recycled.ID).Delete(&models.RecycledDirectoryFile{}).Error; err != nil {
 			return err
@@ -130,6 +135,9 @@ func (r *RecycledService) deleteDirectoryRecycled(ctx context.Context, recycled 
 			if fileInfo.ID != "" {
 				returnedSize += int64(fileInfo.Size)
 			}
+			if err := deleteUserFileTagRecords(tx, recycled.UserID, member.FileID); err != nil {
+				return err
+			}
 			if err := tx.Unscoped().Where("user_id = ? AND uf_id = ?", recycled.UserID, member.FileID).Delete(&models.UserFiles{}).Error; err != nil {
 				return err
 			}
@@ -138,6 +146,9 @@ func (r *RecycledService) deleteDirectoryRecycled(ctx context.Context, recycled 
 				return err
 			}
 			if references == 0 && fileInfo.ID != "" {
+				if err := deleteFileMetadataRecords(tx, fileInfo.ID); err != nil {
+					return err
+				}
 				if err := r.deletePhysicalFile(&fileInfo); err != nil {
 					return err
 				}

@@ -30,7 +30,7 @@ func main() {
 
 - `HTTPRequest`：经 MyObj 公网 URL 安全策略访问 HTTP/HTTPS 数据源，需要 `network.public_http`。
 - `FileGet`：按当前用户的 `uf_id` 查询单个安全文件元数据，需要 `files.read_metadata`。
-- `FilesQuery`：按保存目录内的根相对目录、精确或包含名称、MIME、时间等条件分页查询文件元数据，需要 `files.read_metadata`；宿主不会返回订阅保存目录之外的文件。默认预留 2 MiB 响应缓冲区，可通过 `FileQuery.MaxResponseBytes` 调整为 64 KiB 至 2 MiB。
+- `FilesQuery`：按保存目录内的根相对目录、精确或包含名称、MIME、时间、`TagsAll`、`TagsAny` 等条件分页查询文件元数据，需要 `files.read_metadata`；返回的 `SafeFileInfo.Tags` 只包含当前用户未屏蔽的有效标签，宿主不会返回订阅保存目录之外的文件。默认预留 2 MiB 响应缓冲区，可通过 `FileQuery.MaxResponseBytes` 调整为 64 KiB 至 2 MiB。
 - `DownloadableItem`：返回 HTTP/HLS URL、稳定 ID、保存目录下不带前导 `/` 的 `relative_save_path`、缩略图和离线下载自定义头。
 
 插件不能直接访问宿主数据库、文件系统或原生网络。WASI 不预挂载目录；权限必须先在 `manifest.json` 声明，并在安装和订阅阶段获得授权。

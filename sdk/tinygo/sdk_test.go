@@ -7,7 +7,7 @@ import (
 )
 
 func TestFileQueryMarshalsNameEquals(t *testing.T) {
-	encoded, err := json.Marshal(FileQuery{NameEquals: "目标影片.mp4", MaxResponseBytes: minimumFileResponseBytes})
+	encoded, err := json.Marshal(FileQuery{NameEquals: "目标影片.mp4", TagsAll: []string{"电影"}, TagsAny: []string{"4K", "1080P"}, MaxResponseBytes: minimumFileResponseBytes})
 	if err != nil {
 		t.Fatalf("编码文件查询失败: %v", err)
 	}
@@ -17,6 +17,9 @@ func TestFileQueryMarshalsNameEquals(t *testing.T) {
 	}
 	if wire["name_equals"] != "目标影片.mp4" {
 		t.Fatalf("name_equals = %#v", wire["name_equals"])
+	}
+	if len(wire["tags_all"].([]interface{})) != 1 || len(wire["tags_any"].([]interface{})) != 2 {
+		t.Fatalf("标签查询字段编码错误: %#v", wire)
 	}
 	if _, exists := wire["MaxResponseBytes"]; exists {
 		t.Fatalf("MaxResponseBytes 不应传给宿主: %#v", wire)

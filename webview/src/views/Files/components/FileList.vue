@@ -41,6 +41,13 @@
         <div class="name-content">
           <file-name-tooltip v-if="entry.type === 'file'" :file-name="entry.file.file_name" view-mode="table" />
           <span v-else class="folder-name">{{ entry.folder.name }}</span>
+          <FileTags
+            v-if="entry.type === 'file'"
+            :tags="entry.file.tags"
+            :limit="tagLimit"
+            compact
+            @tag-click="tag => $emit('tag-click', tag)"
+          />
           <span v-if="entry.type === 'file'" class="mobile-meta">
             {{ formatSize(entry.file.file_size) }} · {{ formatDate(entry.file.created_at) }}
           </span>
@@ -65,24 +72,33 @@
   import { formatDate, formatSize } from '@/utils'
   import { useI18n } from '@/composables'
   import type { FileEntry } from '../types'
+  import type { CompactTag } from '@/types'
+  import FileTags from '@/components/FileTags/index.vue'
 
-  defineProps<{
-    entries: FileEntry[]
-    isSelected: (entry: FileEntry) => boolean
-    getThumbnailUrl: (fileId: string) => string
-  }>()
+  withDefaults(
+    defineProps<{
+      entries: FileEntry[]
+      isSelected: (entry: FileEntry) => boolean
+      getThumbnailUrl: (fileId: string) => string
+      tagLimit?: number
+    }>(),
+    { tagLimit: 3 }
+  )
   const emit = defineEmits<{
     'entry-click': [entry: FileEntry, event: MouseEvent]
     'entry-toggle': [entry: FileEntry]
     'entry-open': [entry: FileEntry, trigger: 'double-click' | 'keyboard']
     'entry-context': [entry: FileEntry, event: MouseEvent | KeyboardEvent]
     'entry-long-press': [entry: FileEntry]
+    'tag-click': [tag: CompactTag]
   }>()
   const { t } = useI18n()
   let longPressTimer: ReturnType<typeof setTimeout> | undefined
   let longPressTriggered = false
   const startLongPress = (entry: FileEntry, event: PointerEvent) => {
-    if (event.pointerType === 'mouse') return
+    if (event.pointerType === 'mouse') {
+      return
+    }
     cancelLongPress()
     longPressTriggered = false
     longPressTimer = setTimeout(() => {
@@ -98,7 +114,9 @@
     emit('entry-click', entry, event)
   }
   const cancelLongPress = () => {
-    if (longPressTimer) clearTimeout(longPressTimer)
+    if (longPressTimer) {
+      clearTimeout(longPressTimer)
+    }
     longPressTimer = undefined
   }
   const openMore = (entry: FileEntry, event: MouseEvent) => {
@@ -153,6 +171,9 @@
   .name-content {
     min-width: 0;
     flex: 1;
+  }
+  .name-content :deep(.file-tags) {
+    margin-top: 4px;
   }
   .name-content :deep(.file-name-text--table),
   .folder-name {

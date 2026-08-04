@@ -138,6 +138,18 @@ export const routes: RouteRecordRaw[] = [
           hideMobileNav: true
         }
       },
+      {
+        path: '/settings/tag-dictionary',
+        name: 'SettingsTagDictionary',
+        component: () => import('@/views/Settings/index.vue'),
+        meta: {
+          title: '个人分词词典',
+          mobileTitle: '个人分词词典',
+          settingSection: 'tag-dictionary',
+          mobileParent: '/settings',
+          hideMobileNav: true
+        }
+      },
       // 协作功能暂时隐藏
       // {
       //   path: '/collaboration',
@@ -197,6 +209,17 @@ export const routes: RouteRecordRaw[] = [
             name: 'AdminPlugins',
             component: () => import('@/views/Admin/Plugins/index.vue'),
             meta: { title: '插件中心', i18nKey: 'route.adminPlugins', mobileParent: '/admin', hideMobileNav: true }
+          },
+          {
+            path: 'tags',
+            name: 'AdminTags',
+            component: () => import('@/views/Admin/Tags/index.vue'),
+            meta: {
+              title: '标签与词典',
+              i18nKey: 'route.adminTags',
+              mobileParent: '/admin',
+              hideMobileNav: true
+            }
           }
         ]
       }

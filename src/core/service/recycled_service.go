@@ -23,7 +23,10 @@ import (
 type RecycledService struct {
 	factory    *impl.RepositoryFactory
 	cacheLocal cache.Cache
+	tagService *TagService
 }
+
+func (r *RecycledService) SetTagService(service *TagService) { r.tagService = service }
 
 func NewRecycledService(factory *impl.RepositoryFactory, cacheLocal cache.Cache) *RecycledService {
 	return &RecycledService{
@@ -184,6 +187,11 @@ func (r *RecycledService) RestoreFile(req *request.RestoreFileRequest, userID st
 			Where("user_id = ? AND uf_id = ?", userID, recycled.FileID).
 			Updates(updateMap).Error; err != nil {
 			return fmt.Errorf("恢复用户文件失败: %w", err)
+		}
+		if r.tagService != nil {
+			if err := r.tagService.QueueUserFile(ctx, tx, userID, recycled.FileID); err != nil {
+				return fmt.Errorf("恢复文件标签任务失败: %w", err)
+			}
 		}
 
 		// 删除回收站记录
@@ -382,6 +390,9 @@ func (r *RecycledService) deleteSingleFile(ctx context.Context, recycled *models
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return r.factory.DB().WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+				if err := deleteUserFileTagRecords(tx, recycled.UserID, recycled.FileID); err != nil {
+					return err
+				}
 				if err := tx.Unscoped().Where("user_id = ? AND uf_id = ?", recycled.UserID, recycled.FileID).
 					Delete(&models.UserFiles{}).Error; err != nil {
 					return err
@@ -412,6 +423,9 @@ func (r *RecycledService) deleteSingleFile(ctx context.Context, recycled *models
 				}
 			}
 		}
+		if err := deleteUserFileTagRecords(tx, recycled.UserID, recycled.FileID); err != nil {
+			return fmt.Errorf("删除文件标签失败: %w", err)
+		}
 
 		if err := tx.Unscoped().Where("user_id = ? AND uf_id = ?", recycled.UserID, recycled.FileID).
 			Delete(&models.UserFiles{}).Error; err != nil {
@@ -419,6 +433,9 @@ func (r *RecycledService) deleteSingleFile(ctx context.Context, recycled *models
 		}
 
 		if refCount <= 1 {
+			if err := deleteFileMetadataRecords(tx, userFile.FileID); err != nil {
+				return fmt.Errorf("删除文件元数据失败: %w", err)
+			}
 			if fileInfo.IsChunk {
 				if err := txFactory.FileChunk().DeleteByFileID(ctx, userFile.FileID); err != nil {
 					return fmt.Errorf("删除文件分片记录失败: %w", err)

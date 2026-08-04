@@ -13,6 +13,17 @@ START TRANSACTION;
 -- 1. 删除已存在的表（如果存在）
 -- ================================
 DROP TABLE IF EXISTS `group_power`;
+DROP TABLE IF EXISTS `tag_rebuild_failure`;
+DROP TABLE IF EXISTS `tag_rebuild_job`;
+DROP TABLE IF EXISTS `tag_rule`;
+DROP TABLE IF EXISTS `tag_rule_set`;
+DROP TABLE IF EXISTS `file_metadata_state`;
+DROP TABLE IF EXISTS `file_metadata`;
+DROP TABLE IF EXISTS `user_file_tag_state`;
+DROP TABLE IF EXISTS `user_file_tag_exclusion`;
+DROP TABLE IF EXISTS `user_file_tag`;
+DROP TABLE IF EXISTS `tag_definition`;
+DROP TABLE IF EXISTS `tag_category`;
 DROP TABLE IF EXISTS `power`;
 DROP TABLE IF EXISTS `groups`;
 DROP TABLE IF EXISTS `user_files`;
@@ -481,6 +492,188 @@ CREATE TABLE `disk` (
     KEY `idx_disk_path` (`disk_path`(255))
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='磁盘信息表';
 
+-- 文件标签分类
+CREATE TABLE `tag_category` (
+    `id` VARCHAR(64) NOT NULL,
+    `code` VARCHAR(64) NOT NULL,
+    `name` VARCHAR(64) NOT NULL,
+    `color` VARCHAR(32) NOT NULL,
+    `sort_order` INT NOT NULL DEFAULT 0,
+    `enabled` BOOLEAN NOT NULL DEFAULT TRUE,
+    `builtin` BOOLEAN NOT NULL DEFAULT FALSE,
+    `created_at` DATETIME NOT NULL,
+    `updated_at` DATETIME NOT NULL,
+    PRIMARY KEY (`id`),
+    UNIQUE KEY `uk_tag_category_code` (`code`),
+    KEY `idx_tag_category_enabled` (`enabled`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='文件标签分类';
+
+CREATE TABLE `tag_definition` (
+    `id` VARCHAR(64) NOT NULL,
+    `name` VARCHAR(255) NOT NULL,
+    `normalized_name` VARCHAR(191) NOT NULL,
+    `category_id` VARCHAR(64) NOT NULL,
+    `created_at` DATETIME NOT NULL,
+    PRIMARY KEY (`id`),
+    UNIQUE KEY `uk_tag_definition` (`normalized_name`, `category_id`),
+    KEY `idx_tag_definition_category` (`category_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='标签定义';
+
+CREATE TABLE `user_file_tag` (
+    `id` VARCHAR(64) NOT NULL,
+    `user_id` VARCHAR(64) NOT NULL,
+    `uf_id` VARCHAR(64) NOT NULL,
+    `tag_id` VARCHAR(64) NOT NULL,
+    `source_type` VARCHAR(32) NOT NULL,
+    `source_key` VARCHAR(128) NOT NULL DEFAULT '',
+    `rule_version` BIGINT NOT NULL DEFAULT 0,
+    `visibility` VARCHAR(16) NOT NULL DEFAULT 'inherit',
+    `created_by` VARCHAR(64) NOT NULL DEFAULT '',
+    `created_at` DATETIME NOT NULL,
+    PRIMARY KEY (`id`),
+    UNIQUE KEY `uk_user_file_tag_source` (`uf_id`, `tag_id`, `source_type`, `source_key`),
+    KEY `idx_user_tag_file` (`user_id`, `tag_id`, `uf_id`),
+    KEY `idx_user_file_tag` (`user_id`, `uf_id`),
+    KEY `idx_uf_source` (`uf_id`, `source_type`),
+    KEY `idx_user_file_tag_visibility` (`visibility`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='用户文件标签来源';
+
+CREATE TABLE `user_file_tag_exclusion` (
+    `user_id` VARCHAR(64) NOT NULL,
+    `uf_id` VARCHAR(64) NOT NULL,
+    `tag_id` VARCHAR(64) NOT NULL,
+    `created_at` DATETIME NOT NULL,
+    PRIMARY KEY (`user_id`, `uf_id`, `tag_id`),
+    KEY `idx_tag_exclusion_uf` (`uf_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='用户屏蔽的自动标签';
+
+CREATE TABLE `user_file_tag_state` (
+    `uf_id` VARCHAR(64) NOT NULL,
+    `user_id` VARCHAR(64) NOT NULL,
+    `global_version` BIGINT NOT NULL DEFAULT 0,
+    `user_version` BIGINT NOT NULL DEFAULT 0,
+    `metadata_version` BIGINT NOT NULL DEFAULT 0,
+    `status` VARCHAR(32) NOT NULL,
+    `last_error` TEXT,
+    `retry_count` INT NOT NULL DEFAULT 0,
+    `next_retry_at` DATETIME NULL,
+    `run_token` VARCHAR(64) NOT NULL DEFAULT '',
+    `lease_expires_at` DATETIME NULL,
+    `generated_at` DATETIME NULL,
+    `updated_at` DATETIME NOT NULL,
+    PRIMARY KEY (`uf_id`),
+    KEY `idx_tag_state_user` (`user_id`),
+    KEY `idx_tag_state_global_version` (`global_version`),
+    KEY `idx_tag_state_schedule` (`status`, `next_retry_at`),
+    KEY `idx_tag_state_run_token` (`run_token`),
+    KEY `idx_tag_state_lease` (`lease_expires_at`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='自动标签生成状态和队列';
+
+CREATE TABLE `file_metadata` (
+    `id` VARCHAR(64) NOT NULL,
+    `file_id` VARCHAR(64) NOT NULL,
+    `provider` VARCHAR(64) NOT NULL,
+    `key_name` VARCHAR(128) NOT NULL,
+    `value` TEXT NOT NULL,
+    `value_type` VARCHAR(16) NOT NULL DEFAULT 'string',
+    `version` BIGINT NOT NULL DEFAULT 1,
+    `updated_at` DATETIME NOT NULL,
+    PRIMARY KEY (`id`),
+    UNIQUE KEY `uk_file_metadata` (`file_id`, `provider`, `key_name`),
+    KEY `idx_file_metadata_file` (`file_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='物理文件可扩展元数据';
+
+CREATE TABLE `file_metadata_state` (
+    `file_id` VARCHAR(64) NOT NULL,
+    `version` BIGINT NOT NULL DEFAULT 0,
+    `status` VARCHAR(32) NOT NULL,
+    `last_error` TEXT,
+    `retry_count` INT NOT NULL DEFAULT 0,
+    `next_retry_at` DATETIME NULL,
+    `run_token` VARCHAR(64) NOT NULL DEFAULT '',
+    `lease_expires_at` DATETIME NULL,
+    `updated_at` DATETIME NOT NULL,
+    PRIMARY KEY (`file_id`),
+    KEY `idx_metadata_state_status` (`status`),
+    KEY `idx_metadata_state_retry` (`next_retry_at`),
+    KEY `idx_metadata_state_lease` (`lease_expires_at`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='物理文件元数据提取状态';
+
+CREATE TABLE `tag_rule_set` (
+    `id` VARCHAR(64) NOT NULL,
+    `scope_type` VARCHAR(16) NOT NULL,
+    `scope_id` VARCHAR(64) NOT NULL DEFAULT '',
+    `version` BIGINT NOT NULL,
+    `revision` INT NOT NULL DEFAULT 1,
+    `status` VARCHAR(16) NOT NULL,
+    `based_on_version` BIGINT NOT NULL DEFAULT 0,
+    `created_by` VARCHAR(64) NOT NULL DEFAULT '',
+    `created_at` DATETIME NOT NULL,
+    `updated_at` DATETIME NOT NULL,
+    `published_at` DATETIME NULL,
+    PRIMARY KEY (`id`),
+    KEY `idx_tag_rule_scope` (`scope_type`, `scope_id`, `status`, `version`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='标签规则集版本';
+
+CREATE TABLE `tag_rule` (
+    `id` VARCHAR(64) NOT NULL,
+    `rule_set_id` VARCHAR(64) NOT NULL,
+    `rule_type` VARCHAR(32) NOT NULL,
+    `target_field` VARCHAR(128) NOT NULL DEFAULT 'filename',
+    `pattern` TEXT NOT NULL,
+    `replacement` TEXT,
+    `category_id` VARCHAR(64) NOT NULL DEFAULT 'other',
+    `priority` INT NOT NULL DEFAULT 0,
+    `weight` DECIMAL(8,3) NOT NULL DEFAULT 1,
+    `enabled` BOOLEAN NOT NULL DEFAULT TRUE,
+    `created_at` DATETIME NOT NULL,
+    `updated_at` DATETIME NOT NULL,
+    PRIMARY KEY (`id`),
+    KEY `idx_tag_rule_set` (`rule_set_id`),
+    KEY `idx_tag_rule_type` (`rule_type`),
+    KEY `idx_tag_rule_category` (`category_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='标签分词和提取规则';
+
+CREATE TABLE `tag_rebuild_job` (
+    `id` VARCHAR(64) NOT NULL,
+    `scope_type` VARCHAR(16) NOT NULL,
+    `scope_id` VARCHAR(64) NOT NULL DEFAULT '',
+    `target_version` BIGINT NOT NULL,
+    `status` VARCHAR(32) NOT NULL,
+    `cursor_value` VARCHAR(64) NOT NULL DEFAULT '',
+    `total` BIGINT NOT NULL DEFAULT 0,
+    `processed` BIGINT NOT NULL DEFAULT 0,
+    `succeeded` BIGINT NOT NULL DEFAULT 0,
+    `failed` BIGINT NOT NULL DEFAULT 0,
+    `last_error` TEXT,
+    `run_token` VARCHAR(64) NOT NULL DEFAULT '',
+    `lease_expires_at` DATETIME NULL,
+    `requested_by` VARCHAR(64) NOT NULL DEFAULT '',
+    `started_at` DATETIME NULL,
+    `finished_at` DATETIME NULL,
+    `created_at` DATETIME NOT NULL,
+    `updated_at` DATETIME NOT NULL,
+    PRIMARY KEY (`id`),
+    KEY `idx_tag_rebuild_scope` (`scope_type`, `scope_id`),
+    KEY `idx_tag_job_schedule` (`status`, `lease_expires_at`),
+    KEY `idx_tag_job_run_token` (`run_token`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='标签全量重建任务';
+
+CREATE TABLE `tag_rebuild_failure` (
+    `job_id` VARCHAR(64) NOT NULL,
+    `uf_id` VARCHAR(64) NOT NULL,
+    `user_id` VARCHAR(64) NOT NULL,
+    `status` VARCHAR(32) NOT NULL,
+    `error_message` TEXT,
+    `retry_count` INT NOT NULL DEFAULT 0,
+    `created_at` DATETIME NOT NULL,
+    `updated_at` DATETIME NOT NULL,
+    PRIMARY KEY (`job_id`, `uf_id`),
+    KEY `idx_tag_rebuild_failure_status` (`job_id`, `status`),
+    KEY `idx_tag_rebuild_failure_uf` (`uf_id`),
+    KEY `idx_tag_rebuild_failure_user` (`user_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='标签重建逐文件失败明细';
+
 -- 系统配置表
 CREATE TABLE `sys_config` (
     `id` INT NOT NULL AUTO_INCREMENT COMMENT '配置ID',
@@ -499,6 +692,32 @@ CREATE TABLE `sys_config` (
 INSERT INTO `groups` (`id`, `name`, `created_at`, `group_default`, `space`) VALUES
 (1, 'administer', '2025-11-10 23:04:08', 0, NULL),
 (2, 'user', '2025-11-15 23:23:29', 1, 500);
+
+INSERT INTO `tag_category` (`id`, `code`, `name`, `color`, `sort_order`, `enabled`, `builtin`, `created_at`, `updated_at`) VALUES
+('title', 'title', '标题', '#409eff', 10, TRUE, TRUE, '2026-08-04 00:00:00', '2026-08-04 00:00:00'),
+('file_type', 'file_type', '文件类型', '#67c23a', 20, TRUE, TRUE, '2026-08-04 00:00:00', '2026-08-04 00:00:00'),
+('year', 'year', '年份', '#e6a23c', 30, TRUE, TRUE, '2026-08-04 00:00:00', '2026-08-04 00:00:00'),
+('season_episode', 'season_episode', '季集', '#f56c6c', 40, TRUE, TRUE, '2026-08-04 00:00:00', '2026-08-04 00:00:00'),
+('resolution', 'resolution', '分辨率', '#909399', 50, TRUE, TRUE, '2026-08-04 00:00:00', '2026-08-04 00:00:00'),
+('codec', 'codec', '编码', '#7b61ff', 60, TRUE, TRUE, '2026-08-04 00:00:00', '2026-08-04 00:00:00'),
+('source', 'source', '来源', '#13ce66', 70, TRUE, TRUE, '2026-08-04 00:00:00', '2026-08-04 00:00:00'),
+('language', 'language', '语言', '#ff8a00', 80, TRUE, TRUE, '2026-08-04 00:00:00', '2026-08-04 00:00:00'),
+('other', 'other', '其他', '#909399', 90, TRUE, TRUE, '2026-08-04 00:00:00', '2026-08-04 00:00:00');
+
+INSERT INTO `tag_rule_set` (`id`, `scope_type`, `scope_id`, `version`, `revision`, `status`, `based_on_version`, `created_by`, `created_at`, `updated_at`, `published_at`) VALUES
+('global-tag-rules-v1', 'global', '', 1, 1, 'active', 0, 'system', '2026-08-04 00:00:00', '2026-08-04 00:00:00', '2026-08-04 00:00:00');
+
+INSERT INTO `tag_rule` (`id`, `rule_set_id`, `rule_type`, `target_field`, `pattern`, `replacement`, `category_id`, `priority`, `weight`, `enabled`, `created_at`, `updated_at`) VALUES
+('global-rule-year-v1', 'global-tag-rules-v1', 'regex', 'basename', '(?:^|[^0-9])((?:19|20)\\d{2})(?:[^0-9]|$)', '$1', 'year', 90, 1, TRUE, '2026-08-04 00:00:00', '2026-08-04 00:00:00'),
+('global-rule-resolution-v1', 'global-tag-rules-v1', 'regex', 'basename', '(?i)(?:^|[^a-z0-9])(2160p|4k|1080p|720p|8k)(?:[^a-z0-9]|$)', '$1', 'resolution', 100, 1, TRUE, '2026-08-04 00:00:00', '2026-08-04 00:00:00'),
+('global-rule-codec-v1', 'global-tag-rules-v1', 'regex', 'basename', '(?i)(?:^|[^a-z0-9])(h\\.?264|h\\.?265|x264|x265|hevc|av1)(?:[^a-z0-9]|$)', '$1', 'codec', 95, 1, TRUE, '2026-08-04 00:00:00', '2026-08-04 00:00:00'),
+('global-rule-source-v1', 'global-tag-rules-v1', 'regex', 'basename', '(?i)(?:^|[^a-z0-9])(web[- .]?dl|web[- .]?rip|blu[- .]?ray|bdrip|hdtv)(?:[^a-z0-9]|$)', '$1', 'source', 90, 1, TRUE, '2026-08-04 00:00:00', '2026-08-04 00:00:00'),
+('global-rule-episode-v1', 'global-tag-rules-v1', 'regex', 'basename', '(?i)(?:^|[^a-z0-9])(s\\d{1,2}e\\d{1,3})(?:[^a-z0-9]|$)', '$1', 'season_episode', 100, 1, TRUE, '2026-08-04 00:00:00', '2026-08-04 00:00:00'),
+('global-rule-language-v1', 'global-tag-rules-v1', 'regex', 'basename', '(国语|粤语|日语|英语|中文字幕|中英字幕)', '$1', 'language', 90, 1, TRUE, '2026-08-04 00:00:00', '2026-08-04 00:00:00');
+
+INSERT INTO `sys_config` (`key`, `value`) VALUES
+('auto_tag_enabled', 'true'),
+('auto_tag_limit', '20');
 
 -- 插入权限数据
 INSERT INTO `power` (`id`, `name`, `description`, `created_at`, `characteristic`) VALUES
@@ -526,7 +745,8 @@ INSERT INTO `power` (`id`, `name`, `description`, `created_at`, `characteristic`
 (22, '用户文件密码', '设置，修改文件密码', '2025-11-13 19:14:46', 'file:update:filePassword'),
 (23, '移动文件/目录', '移动文件或目录至其他虚拟目录', '2025-11-18 01:17:59', 'file:move'),
 (24, '删除文件', '删除文件（移动到回收站）', '2025-12-11 19:02:02', 'file:delete'),
-(25, 'WebDAV访问', '允许通过WebDAV协议访问文件系统', '2025-12-30 07:34:05', 'webdav:access');
+(25, 'WebDAV访问', '允许通过WebDAV协议访问文件系统', '2025-12-30 07:34:05', 'webdav:access'),
+(26, '文件标签', '维护文件标签和个人分词词典', '2026-08-04 00:00:00', 'file:tag');
 
 -- 插入组权限关联数据
 INSERT INTO `group_power` (`group_id`, `power_id`) VALUES
@@ -555,6 +775,7 @@ INSERT INTO `group_power` (`group_id`, `power_id`) VALUES
 (1, 23),
 (1, 24),
 (1, 25),
+(1, 26),
 (2, 9),
 (2, 10),
 (2, 11),
@@ -569,7 +790,8 @@ INSERT INTO `group_power` (`group_id`, `power_id`) VALUES
 (2, 22),
 (2, 23),
 (2, 24),
-(2, 25);
+(2, 25),
+(2, 26);
 
 -- 提交事务
 COMMIT;

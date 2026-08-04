@@ -57,6 +57,34 @@ type FileItem struct {
 	HasThumbnail bool                 `json:"has_thumbnail"` // 是否有缩略图
 	Public       bool                 `json:"public"`        // 是否公开
 	CreatedAt    custom_type.JsonTime `json:"created_at"`
+	Tags         []CompactTagView     `json:"tags,omitempty"`
+	TagState     string               `json:"tag_state,omitempty"`
+}
+
+// SearchFileItem 是个人搜索和文件广场搜索共用的明确响应类型。
+// 保留既有 id/name/size/mime 字段，避免破坏旧客户端，同时提供用户文件维度字段和标签。
+type SearchFileItem struct {
+	ID           string               `json:"id"`
+	Name         string               `json:"name"`
+	Size         int                  `json:"size"`
+	Mime         string               `json:"mime"`
+	ThumbnailImg string               `json:"thumbnail_img"`
+	CreatedAt    custom_type.JsonTime `json:"created_at"`
+	UpdatedAt    custom_type.JsonTime `json:"updated_at"`
+	IsEnc        bool                 `json:"is_enc"`
+	UfID         string               `json:"uf_id"`
+	FileName     string               `json:"file_name"`
+	Public       bool                 `json:"public"`
+	OwnerName    string               `json:"owner_name,omitempty"`
+	Tags         []CompactTagView     `json:"tags,omitempty"`
+	TagState     string               `json:"tag_state,omitempty"`
+}
+
+type FileSearchResponse struct {
+	Files    []SearchFileItem `json:"files"`
+	Total    int64            `json:"total"`
+	Page     int              `json:"page"`
+	PageSize int              `json:"page_size"`
 }
 
 // FileInfoData 文件信息结构体
@@ -157,6 +185,7 @@ type PublicFileItem struct {
 	HasThumbnail bool `json:"has_thumbnail"`
 	// 创建时间
 	CreatedAt custom_type.JsonTime `json:"created_at"`
+	Tags      []CompactTagView     `json:"tags,omitempty"`
 }
 
 // PublicFileListResponse 公开文件列表响应

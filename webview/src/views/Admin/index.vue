@@ -48,6 +48,7 @@
   import AdminDisks from './Disks/index.vue'
   import AdminSystem from './System/index.vue'
   import AdminPlugins from './Plugins/index.vue'
+  import AdminTags from './Tags/index.vue'
   import { DesktopPage } from '@/components/desktop'
   import { MobilePage } from '@/components/mobile'
   import { useI18n, useResponsive } from '@/composables'
@@ -81,14 +82,33 @@
       title: t('route.adminPlugins'),
       description: t('admin.nav.plugins'),
       icon: 'Connection'
+    },
+    {
+      path: '/admin/tags',
+      title: t('route.adminTags'),
+      description: t('admin.nav.tags'),
+      icon: 'CollectionTag'
     }
   ])
   const activeAdminComponent = computed(() => {
-    if (route.path.endsWith('/groups')) return AdminGroups
-    if (route.path.endsWith('/permissions')) return AdminPermissions
-    if (route.path.endsWith('/disks')) return AdminDisks
-    if (route.path.endsWith('/system')) return AdminSystem
-    if (route.path.endsWith('/plugins')) return AdminPlugins
+    if (route.path.endsWith('/groups')) {
+      return AdminGroups
+    }
+    if (route.path.endsWith('/permissions')) {
+      return AdminPermissions
+    }
+    if (route.path.endsWith('/disks')) {
+      return AdminDisks
+    }
+    if (route.path.endsWith('/system')) {
+      return AdminSystem
+    }
+    if (route.path.endsWith('/plugins')) {
+      return AdminPlugins
+    }
+    if (route.path.endsWith('/tags')) {
+      return AdminTags
+    }
     return AdminUsers
   })
 </script>
@@ -166,6 +186,9 @@
   .admin-workspace__content :deep(.admin-disks),
   .admin-workspace__content :deep(.admin-system),
   .admin-workspace__content :deep(.plugin-center) {
+    height: 100%;
+  }
+  .admin-workspace__content :deep(.admin-tags) {
     height: 100%;
   }
   @media (max-width: 991px) {

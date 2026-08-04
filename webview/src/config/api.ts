@@ -59,6 +59,10 @@ export const API_ENDPOINTS = {
     SEARCH_PUBLIC: '/file/search/public',
     // 公开文件列表
     PUBLIC_LIST: '/file/public/list',
+    TAGS: '/file/tags',
+    TAG_SUGGESTIONS: '/file/tags/suggestions',
+    TAG_CATEGORIES: '/file/tag-categories',
+    TAG_DICTIONARY: '/file/tag-dictionary',
     // 设置文件公开状态
     SET_PUBLIC: '/file/setPublic'
   },
@@ -169,6 +173,13 @@ export const API_ENDPOINTS = {
       TOGGLE: '/admin/plugin/toggle',
       UNINSTALL: '/admin/plugin/uninstall',
       AUDIT: '/admin/plugin/audit'
+    },
+    TAG: {
+      SETTINGS: '/admin/tag/settings',
+      CATEGORIES: '/admin/tag/categories',
+      RULE_SETS: '/admin/tag/rule-sets',
+      DRAFTS: '/admin/tag/drafts',
+      REBUILD_JOBS: '/admin/tag/rebuild-jobs'
     }
   },
 

@@ -10,8 +10,10 @@ import (
 	"myobj/src/pkg/custom_type"
 	"myobj/src/pkg/hash"
 	"myobj/src/pkg/logger"
+	"myobj/src/pkg/metadata"
 	"myobj/src/pkg/models"
 	"myobj/src/pkg/preview"
+	"myobj/src/pkg/tagging"
 	"myobj/src/pkg/util"
 	"myobj/src/pkg/virtualpath"
 	"os"
@@ -181,6 +183,14 @@ func ProcessUploadedFile(data *FileUploadData, repoFactory *impl.RepositoryFacto
 	}
 	if tempThumbnailPath == "" {
 		tempThumbnailPath = providedThumbnailPath
+	}
+	// 元数据必须在加密和分块存储前探测；Provider 失败只会让标签状态降级为 partial。
+	metadataResult := metadata.Extract(ctx, metadata.Input{
+		Path: mergedFilePath, FileName: data.FileName, MIME: mimeType,
+		Size: data.FileSize, Encrypted: data.IsEnc,
+	})
+	if metadataResult.Partial {
+		logger.LOG.Warn("文件元数据仅部分提取成功", "file_name", data.FileName, "error", metadataResult.ErrorText())
 	}
 
 	// 4. 使用预检阶段选中的存储磁盘，确保临时文件和最终文件位于同一磁盘。
@@ -373,6 +383,9 @@ func ProcessUploadedFile(data *FileUploadData, repoFactory *impl.RepositoryFacto
 		if err := txFactory.FileInfo().Create(ctx, fileInfo); err != nil {
 			return fmt.Errorf("写入文件信息失败: %w", err)
 		}
+		if _, err := metadata.Persist(ctx, tx, fileInfo.ID, metadataResult); err != nil {
+			return fmt.Errorf("写入文件元数据失败: %w", err)
+		}
 
 		// 10.2 写入分片信息（如果是分片存储）
 		if len(chunks) > 0 {
@@ -384,6 +397,9 @@ func ProcessUploadedFile(data *FileUploadData, repoFactory *impl.RepositoryFacto
 		// 10.3 写入用户文件关联
 		if err := txFactory.UserFiles().Create(ctx, userFile); err != nil {
 			return fmt.Errorf("写入用户文件关联失败: %w", err)
+		}
+		if err := tagging.QueueUserFile(ctx, tx, userFile.UserID, userFile.UfID); err != nil {
+			return fmt.Errorf("写入文件标签任务失败: %w", err)
 		}
 
 		// 10.4 原子扣减用户剩余空间，避免并发上传或离线下载把空间扣成负数。

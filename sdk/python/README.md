@@ -88,8 +88,9 @@ logging.getLogger("myobj_sdk").setLevel(logging.DEBUG)
 result = client.list_files(directory_id=1, page=1, page_size=20)
 print(result["data"])
 
-# 搜索文件
-result = client.search_files("报告", page=1, page_size=20)
+# 搜索文件；关键词和 Tag 至少提供一项，可限制在当前目录
+result = client.search_files("报告", directory_id=12, page=1, page_size=20)
+tag_result = client.search_files(tag_ids=["标签ID一", "标签ID二"], tag_mode="all")
 
 # 获取目录树
 directories = client.get_directories()
@@ -111,6 +112,38 @@ client.delete_files(["用户文件ID一", "用户文件ID二"])
 ```
 
 接口使用的是文件列表返回的用户文件 ID（通常为 `uf_id`），不是底层存储文件 ID。
+
+## 文件标签和个人词典
+
+```python
+# 读取标签、获取建议，并在失败时重新生成自动标签
+tags = client.get_file_tags("用户文件ID")
+suggestions = client.get_tag_suggestions("科幻", limit=20)
+client.retry_file_tags("用户文件ID")
+
+# 添加公开手工标签、屏蔽一个自动标签
+client.update_manual_tags(
+    "用户文件ID",
+    add=[{"name": "收藏", "category_id": "other", "visibility": "public"}],
+)
+client.update_tag_exclusions("用户文件ID", suppress_tag_ids=["自动标签ID"])
+
+# 最多对 100 个文件执行原子批量打标
+client.batch_update_tags(
+    ["用户文件ID一", "用户文件ID二"],
+    add=[{"name": "待整理", "category_id": "other", "visibility": "private"}],
+)
+
+# 预览并热更新个人自定义词、停用词和别名
+rules = [
+    {"type": "word", "pattern": "流浪地球", "category_id": "title", "enabled": True},
+    {"type": "alias", "pattern": "WEB DL", "replacement": "WEB-DL", "category_id": "source", "enabled": True},
+]
+preview = client.preview_tag_dictionary(["流浪地球2.2023.WEB DL.mkv"], rules)
+client.update_tag_dictionary(rules)
+```
+
+`list_files()`、`search_files()`、`search_public_files()` 和 `list_public_files()` 都支持 `tag_ids` 与 `tag_mode="all"|"any"`。手工标签默认私有，只有明确设为 `public` 才会随公开文件出现在文件广场。
 
 ## 上传
 

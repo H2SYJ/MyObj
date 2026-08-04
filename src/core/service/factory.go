@@ -19,16 +19,22 @@ type ServerFactory struct {
 	downloadService     *DownloadService
 	recycledService     *RecycledService
 	adminService        *AdminService
+	tagService          *TagService
 	pluginService       *PluginService
 	subscriptionService *SubscriptionService
 }
 
 func NewServiceFactory(factory *impl.RepositoryFactory, cacheLocal cache.Cache) *ServerFactory {
 	taskEvents := NewTaskEventHub()
+	tagService, err := NewTagService(factory)
+	if err != nil {
+		panic(err)
+	}
 	networkPolicy := initializeDownloadNetworkPolicy(factory)
 	downloadService := NewDownloadService(factory, networkPolicy)
 	downloadService.SetTaskEventHub(taskEvents)
 	fileService := NewFileService(factory, cacheLocal)
+	fileService.SetTagService(tagService)
 	fileService.SetTaskEventHub(taskEvents)
 	runtime, err := pluginpkg.NewRuntime(context.Background())
 	if err != nil {
@@ -38,14 +44,20 @@ func NewServiceFactory(factory *impl.RepositoryFactory, cacheLocal cache.Cache) 
 	subscriptionService := NewSubscriptionService(factory, pluginService, downloadService)
 	downloadService.SetTaskFinishedHook(subscriptionService.NotifyThumbnailForDownloadTask)
 	subscriptionService.Start()
+	adminService := NewAdminService(factory, networkPolicy)
+	adminService.SetTagService(tagService)
+	recycledService := NewRecycledService(factory, cacheLocal)
+	recycledService.SetTagService(tagService)
+	tagService.Start()
 	return &ServerFactory{
 		taskEvents:          taskEvents,
 		userService:         NewUserService(factory, cacheLocal),
 		fileService:         fileService,
 		shareService:        NewSharesService(factory, cacheLocal),
 		downloadService:     downloadService,
-		recycledService:     NewRecycledService(factory, cacheLocal),
-		adminService:        NewAdminService(factory, networkPolicy),
+		recycledService:     recycledService,
+		adminService:        adminService,
+		tagService:          tagService,
 		pluginService:       pluginService,
 		subscriptionService: subscriptionService,
 	}
@@ -62,6 +74,7 @@ func (f *ServerFactory) SubscriptionService() *SubscriptionService { return f.su
 func (f *ServerFactory) Close(ctx context.Context) error {
 	f.subscriptionService.Stop()
 	f.downloadService.Stop()
+	f.tagService.Close()
 	return f.pluginService.Close(ctx)
 }
 
@@ -88,3 +101,5 @@ func (f *ServerFactory) RecycledService() *RecycledService {
 func (f *ServerFactory) AdminService() *AdminService {
 	return f.adminService
 }
+
+func (f *ServerFactory) TagService() *TagService { return f.tagService }

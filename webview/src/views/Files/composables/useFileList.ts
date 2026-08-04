@@ -1,6 +1,7 @@
 import { getFileList, getThumbnail } from '@/api/file'
 import { useI18n } from '@/composables'
 import type { FileItem, FileListResponse } from '@/types'
+import type { Ref } from 'vue'
 import cache from '@/plugins/cache'
 
 export type FileSortBy = 'name' | 'size' | 'time'
@@ -9,7 +10,7 @@ export type FileSortOrder = 'asc' | 'desc'
 const SORT_BY_KEY = 'files.sortBy'
 const SORT_ORDER_KEY = 'files.sortOrder'
 
-export function useFileList() {
+export function useFileList(tagIds?: Ref<string[]>, tagMode?: Ref<'all' | 'any'>) {
   const { proxy } = getCurrentInstance() as ComponentInternalInstance
   const router = useRouter()
   const route = useRoute()
@@ -41,7 +42,9 @@ export function useFileList() {
   const breadcrumbs = computed(() => fileListData.value.breadcrumbs)
 
   const formatBreadcrumbName = (name: string): string => {
-    if (!name) return ''
+    if (!name) {
+      return ''
+    }
     if (name === 'home' || name === '') {
       return t('files.home')
     }
@@ -78,6 +81,8 @@ export function useFileList() {
         directory_id: currentDirectoryId.value,
         sortBy: sortBy.value,
         sortOrder: sortOrder.value,
+        tag_ids: tagIds?.value.join(',') || undefined,
+        tag_mode: tagIds?.value.length ? tagMode?.value || 'all' : undefined,
         page: currentPage.value,
         pageSize: pageSize.value
       })
@@ -119,9 +124,7 @@ export function useFileList() {
     // 注意：不需要手动调用 loadFileList，watch 会自动处理
   }
 
-  const getThumbnailUrl = (fileId: string) => {
-    return thumbnailCache.value.get(fileId) || ''
-  }
+  const getThumbnailUrl = (fileId: string) => thumbnailCache.value.get(fileId) || ''
 
   const handlePageChange = (page: number) => {
     currentPage.value = page

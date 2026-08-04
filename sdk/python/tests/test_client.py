@@ -105,6 +105,92 @@ class MyObjClientTest(unittest.TestCase):
             self.assertIn(name, call["headers"])
         self.assertNotIn("Authorization", call["headers"])
 
+    def test_search_files_accepts_tag_filter_without_keyword(self) -> None:
+        session = FakeSession(
+            [
+                json_response(
+                    {"code": 200, "message": "ok", "data": {"files": [], "total": 0}}
+                )
+            ]
+        )
+        client = self.make_client(session)
+
+        client.search_files(tag_ids=["tag-1", "tag-2", "tag-1"], tag_mode="any")
+
+        params = session.calls[0]["params"]
+        self.assertEqual(params["tag_ids"], "tag-1,tag-2")
+        self.assertEqual(params["tag_mode"], "any")
+        self.assertNotIn("keyword", params)
+
+    def test_search_files_sends_directory_scope(self) -> None:
+        session = FakeSession(
+            [
+                json_response(
+                    {"code": 200, "message": "ok", "data": {"files": [], "total": 0}}
+                )
+            ]
+        )
+        client = self.make_client(session)
+
+        client.search_files("报告", directory_id=12)
+
+        self.assertEqual(session.calls[0]["params"]["directory_id"], 12)
+
+    def test_search_files_rejects_unbounded_search(self) -> None:
+        client = self.make_client(FakeSession([]))
+
+        with self.assertRaises(ValueError):
+            client.search_files()
+
+    def test_tag_and_dictionary_methods_serialize_utf8_content(self) -> None:
+        session = FakeSession(
+            [
+                json_response({"code": 200, "message": "ok", "data": {}}),
+                json_response({"code": 200, "message": "ok", "data": {}}),
+            ]
+        )
+        client = self.make_client(session)
+
+        client.update_manual_tags(
+            "uf-1",
+            add=[{"name": "流浪地球", "category_id": "title", "visibility": "private"}],
+        )
+        client.update_tag_dictionary(
+            [
+                {
+                    "type": "word",
+                    "pattern": "流浪地球",
+                    "category_id": "title",
+                    "enabled": True,
+                }
+            ]
+        )
+
+        self.assertEqual(session.calls[0]["method"], "PUT")
+        self.assertEqual(session.calls[0]["json"]["add"][0]["name"], "流浪地球")
+        self.assertEqual(
+            session.calls[1]["url"], "http://localhost:8080/api/file/tag-dictionary"
+        )
+        self.assertEqual(session.calls[1]["json"]["rules"][0]["pattern"], "流浪地球")
+
+    def test_tag_suggestions_and_single_file_retry(self) -> None:
+        session = FakeSession(
+            [
+                json_response({"code": 200, "message": "ok", "data": []}),
+                json_response({"code": 200, "message": "ok", "data": None}),
+            ]
+        )
+        client = self.make_client(session)
+
+        client.get_tag_suggestions("科幻", limit=10)
+        client.retry_file_tags("uf-1")
+
+        self.assertEqual(session.calls[0]["params"], {"keyword": "科幻", "limit": 10})
+        self.assertEqual(session.calls[1]["method"], "POST")
+        self.assertEqual(
+            session.calls[1]["url"], "http://localhost:8080/api/file/tags/uf-1/retry"
+        )
+
     def test_business_error_raises_api_error(self) -> None:
         session = FakeSession(
             [
@@ -302,7 +388,11 @@ class MyObjClientTest(unittest.TestCase):
         session = FakeSession(
             [
                 json_response(
-                    {"code": 200, "message": "创建成功", "data": {"task_id": "task-backoff"}}
+                    {
+                        "code": 200,
+                        "message": "创建成功",
+                        "data": {"task_id": "task-backoff"},
+                    }
                 ),
                 *[
                     json_response(
@@ -336,7 +426,11 @@ class MyObjClientTest(unittest.TestCase):
                 session = FakeSession(
                     [
                         json_response(
-                            {"code": 200, "message": "创建成功", "data": {"task_id": "task-error"}}
+                            {
+                                "code": 200,
+                                "message": "创建成功",
+                                "data": {"task_id": "task-error"},
+                            }
                         ),
                         json_response(
                             {
@@ -356,7 +450,11 @@ class MyObjClientTest(unittest.TestCase):
         session = FakeSession(
             [
                 json_response(
-                    {"code": 200, "message": "创建成功", "data": {"task_id": "task-timeout"}}
+                    {
+                        "code": 200,
+                        "message": "创建成功",
+                        "data": {"task_id": "task-timeout"},
+                    }
                 ),
                 json_response(
                     {"code": 200, "message": "查询成功", "data": {"state": 1}}
@@ -443,9 +541,7 @@ class MyObjClientTest(unittest.TestCase):
         directory_id = client.ensure_directory(2, "演员甲")
 
         self.assertEqual(directory_id, 12)
-        self.assertEqual(
-            session.calls[1]["json"], {"parent_id": 2, "name": "演员甲"}
-        )
+        self.assertEqual(session.calls[1]["json"], {"parent_id": 2, "name": "演员甲"})
 
     def test_debug_logs_request_response_and_redacts_password(self) -> None:
         session = FakeSession(
@@ -533,9 +629,10 @@ class MyObjClientTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temp_dir:
             file_path = Path(temp_dir) / "示例.txt"
             file_path.write_bytes(b"a" * MyObjClient.DEFAULT_CHUNK_SIZE + b"b")
-            with patch("myobj_sdk.client.tqdm", side_effect=make_progress_bar), patch(
-                "myobj_sdk.client.logging_redirect_tqdm"
-            ) as redirect:
+            with (
+                patch("myobj_sdk.client.tqdm", side_effect=make_progress_bar),
+                patch("myobj_sdk.client.logging_redirect_tqdm") as redirect,
+            ):
                 redirect.return_value.__enter__.return_value = None
                 client.upload_file(
                     file_path,
@@ -548,9 +645,7 @@ class MyObjClientTest(unittest.TestCase):
         self.assertEqual(len(progress_bars), 1)
         expected_total = MyObjClient.DEFAULT_CHUNK_SIZE + 1
         self.assertEqual(progress_bars[0].options["total"], expected_total)
-        self.assertEqual(
-            progress_bars[0].updates, [MyObjClient.DEFAULT_CHUNK_SIZE, 1]
-        )
+        self.assertEqual(progress_bars[0].updates, [MyObjClient.DEFAULT_CHUNK_SIZE, 1])
         self.assertEqual(progress_bars[0].refresh_count, 1)
         self.assertTrue(progress_bars[0].closed)
         self.assertEqual(
@@ -571,9 +666,10 @@ class MyObjClientTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temp_dir:
             file_path = Path(temp_dir) / "示例.txt"
             file_path.write_text("abc", encoding="utf-8")
-            with patch("myobj_sdk.client.tqdm") as progress_bar, patch(
-                "myobj_sdk.client.logging_redirect_tqdm"
-            ) as redirect:
+            with (
+                patch("myobj_sdk.client.tqdm") as progress_bar,
+                patch("myobj_sdk.client.logging_redirect_tqdm") as redirect,
+            ):
                 client.upload_file(file_path, 1, show_progress=False)
 
         progress_bar.assert_not_called()
@@ -595,9 +691,10 @@ class MyObjClientTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temp_dir:
             file_path = Path(temp_dir) / "空文件.txt"
             file_path.write_bytes(b"")
-            with patch("myobj_sdk.client.tqdm", side_effect=make_progress_bar), patch(
-                "myobj_sdk.client.logging_redirect_tqdm"
-            ) as redirect:
+            with (
+                patch("myobj_sdk.client.tqdm", side_effect=make_progress_bar),
+                patch("myobj_sdk.client.logging_redirect_tqdm") as redirect,
+            ):
                 redirect.return_value.__enter__.return_value = None
                 client.upload_file(
                     file_path,

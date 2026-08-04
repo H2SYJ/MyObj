@@ -52,6 +52,13 @@
           fluid
         />
       </div>
+      <FileTags
+        v-if="entry.type === 'file'"
+        :tags="entry.file.tags"
+        :limit="tagLimit"
+        compact
+        @tag-click="tag => $emit('tag-click', tag)"
+      />
     </article>
   </div>
 </template>
@@ -60,25 +67,34 @@
   import { useI18n } from '@/composables'
   import { getFileIcon } from '@/utils/file/fileIcon'
   import type { FileEntry } from '../types'
+  import type { CompactTag } from '@/types'
+  import FileTags from '@/components/FileTags/index.vue'
 
-  const props = defineProps<{
-    entries: FileEntry[]
-    isSelected: (entry: FileEntry) => boolean
-    getThumbnailUrl: (fileId: string) => string
-  }>()
+  withDefaults(
+    defineProps<{
+      entries: FileEntry[]
+      isSelected: (entry: FileEntry) => boolean
+      getThumbnailUrl: (fileId: string) => string
+      tagLimit?: number
+    }>(),
+    { tagLimit: 3 }
+  )
   const emit = defineEmits<{
     'entry-click': [entry: FileEntry, event: MouseEvent]
     'entry-toggle': [entry: FileEntry]
     'entry-open': [entry: FileEntry, trigger: 'double-click' | 'keyboard']
     'entry-context': [entry: FileEntry, event: MouseEvent | KeyboardEvent]
     'entry-long-press': [entry: FileEntry]
+    'tag-click': [tag: CompactTag]
   }>()
   const { t } = useI18n()
   let longPressTimer: ReturnType<typeof setTimeout> | undefined
   let longPressTriggered = false
 
   const startLongPress = (entry: FileEntry, event: PointerEvent) => {
-    if (event.pointerType === 'mouse') return
+    if (event.pointerType === 'mouse') {
+      return
+    }
     cancelLongPress()
     longPressTriggered = false
     longPressTimer = setTimeout(() => {
@@ -94,7 +110,9 @@
     emit('entry-click', entry, event)
   }
   const cancelLongPress = () => {
-    if (longPressTimer) clearTimeout(longPressTimer)
+    if (longPressTimer) {
+      clearTimeout(longPressTimer)
+    }
     longPressTimer = undefined
   }
   const openMore = (entry: FileEntry, event: MouseEvent) => {
@@ -182,6 +200,10 @@
     border: 1px solid var(--el-border-color-lighter);
     border-radius: 11px;
     background: var(--el-bg-color);
+  }
+  .file-card > :deep(.file-tags) {
+    min-height: 22px;
+    margin: 7px 3px 0;
   }
   .file-preview :deep(.file-icon-card),
   .file-preview :deep(.thumbnail-image) {

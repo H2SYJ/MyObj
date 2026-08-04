@@ -17,12 +17,16 @@ type UploadPrecheckRequest struct {
 
 // FileSearchRequest 文件搜索请求
 type FileSearchRequest struct {
-	Keyword   string `form:"keyword" binding:"required"`
+	Keyword   string `form:"keyword"`
 	Type      string `form:"type"`
 	SortBy    string `form:"sortBy"`
 	SortOrder string `form:"sortOrder"`
-	Page      int    `form:"page"`
-	PageSize  int    `form:"pageSize"`
+	// DirectoryID 大于0时将个人搜索限制在当前目录；公开搜索忽略该字段。
+	DirectoryID int    `form:"directory_id"`
+	TagIDs      string `form:"tag_ids"`
+	TagMode     string `form:"tag_mode"`
+	Page        int    `form:"page"`
+	PageSize    int    `form:"pageSize"`
 }
 
 // FileListRequest 文件列表请求
@@ -35,6 +39,9 @@ type FileListRequest struct {
 	SortBy string `form:"sortBy"`
 	// 排序方向（asc, desc）
 	SortOrder string `form:"sortOrder"`
+	// TagIDs 为逗号分隔的标签ID；TagMode 支持all或any。
+	TagIDs  string `form:"tag_ids"`
+	TagMode string `form:"tag_mode"`
 	// 页码（从1开始）
 	Page int `form:"page" binding:"required,min=1"`
 	// 每页数量
@@ -49,7 +56,7 @@ type MakeDirRequest struct {
 
 // MoveFileRequest 移动文件请求
 type MoveFileRequest struct {
-	FileID           string `json:"file_id" binding:"required"`
+	FileID            string `json:"file_id" binding:"required"`
 	TargetDirectoryID int    `json:"target_directory_id" binding:"required,min=1"`
 }
 
@@ -103,7 +110,9 @@ type PublicFileListRequest struct {
 	// 文件类型
 	Type string `form:"type"`
 	// 排序字段（name, size, time）
-	SortBy string `form:"sortBy"`
+	SortBy  string `form:"sortBy"`
+	TagIDs  string `form:"tag_ids"`
+	TagMode string `form:"tag_mode"`
 	// 页码（从1开始）
 	Page int `form:"page" binding:"required,min=1"`
 	// 每页数量

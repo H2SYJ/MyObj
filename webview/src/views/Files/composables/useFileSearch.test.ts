@@ -51,4 +51,28 @@ describe('useFileSearch', () => {
     expect(performSearch).toHaveBeenCalledWith('示例', 1, 20)
     expect(loadThumbnails).toHaveBeenCalledWith(searchResults.value)
   })
+
+  it('向搜索请求提供标签模式和当前目录范围', () => {
+    vi.mocked(useSearch).mockReturnValue({
+      searchKeyword: ref(''),
+      isSearching: ref(false),
+      searchResults: ref([]),
+      total: ref(0),
+      currentPage: ref(1),
+      pageSize: ref(20),
+      performSearch: vi.fn(),
+      clearSearch: vi.fn(),
+      clearSearchResults: vi.fn(),
+      hasSearchKeyword: ref(false)
+    } as unknown as ReturnType<typeof useSearch>)
+
+    useFileSearch(ref('time'), ref('desc'), vi.fn(), ref(['tag-1', 'tag-2']), ref('any'), ref(12), ref(true))
+
+    const extraParams = vi.mocked(useSearch).mock.calls[0][4]
+    expect(extraParams?.()).toEqual({
+      tag_ids: 'tag-1,tag-2',
+      tag_mode: 'any',
+      directory_id: 12
+    })
+  })
 })

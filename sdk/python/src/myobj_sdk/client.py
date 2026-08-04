@@ -89,9 +89,7 @@ class MyObjClient:
     @staticmethod
     def _is_sensitive_log_key(key: Any) -> bool:
         normalized_key = str(key).lower().replace("-", "_")
-        return any(
-            keyword in normalized_key for keyword in SENSITIVE_LOG_KEYWORDS
-        )
+        return any(keyword in normalized_key for keyword in SENSITIVE_LOG_KEYWORDS)
 
     @classmethod
     def _sanitize_log_value(cls, value: Any, *, key: Any = "") -> Any:
@@ -258,6 +256,16 @@ class MyObjClient:
             raise ValueError("page_size 必须在 1 到 100 之间")
 
     @staticmethod
+    def _tag_filter(tag_ids: Sequence[str], tag_mode: str) -> tuple[str, str]:
+        normalized = list(
+            dict.fromkeys(tag_id.strip() for tag_id in tag_ids if tag_id.strip())
+        )
+        mode = tag_mode.lower().strip() or "all"
+        if mode not in ("all", "any"):
+            raise ValueError("tag_mode 仅支持 all 或 any")
+        return ",".join(normalized), mode
+
+    @staticmethod
     def _check_polling(initial_interval: float, max_interval: float) -> None:
         if initial_interval <= 0:
             raise ValueError("poll_interval 必须大于0")
@@ -284,12 +292,16 @@ class MyObjClient:
         directory_id: int = 0,
         file_type: str = "",
         sort_by: str = "",
+        sort_order: str = "",
+        tag_ids: Sequence[str] = (),
+        tag_mode: str = "all",
         page: int = 1,
         page_size: int = 20,
     ) -> dict[str, Any]:
         """获取当前用户指定目录下的文件列表。"""
 
         self._check_page(page, page_size)
+        tags, mode = self._tag_filter(tag_ids, tag_mode)
         return self._request_json(
             "GET",
             "/file/list",
@@ -297,6 +309,9 @@ class MyObjClient:
                 directory_id=directory_id,
                 type=file_type,
                 sortBy=sort_by,
+                sortOrder=sort_order,
+                tag_ids=tags,
+                tag_mode=mode if tags else "",
                 page=page,
                 pageSize=page_size,
             ),
@@ -304,25 +319,34 @@ class MyObjClient:
 
     def search_files(
         self,
-        keyword: str,
+        keyword: str = "",
         *,
+        directory_id: int = 0,
         file_type: str = "",
         sort_by: str = "",
+        sort_order: str = "",
+        tag_ids: Sequence[str] = (),
+        tag_mode: str = "all",
         page: int = 1,
         page_size: int = 20,
     ) -> dict[str, Any]:
         """搜索当前用户的文件。"""
 
         self._check_page(page, page_size)
-        if not keyword:
-            raise ValueError("keyword 不能为空")
+        tags, mode = self._tag_filter(tag_ids, tag_mode)
+        if not keyword.strip() and not tags:
+            raise ValueError("keyword 或 tag_ids 至少提供一项")
         return self._request_json(
             "GET",
             "/file/search/user",
             params=self._params(
                 keyword=keyword,
+                directory_id=directory_id if directory_id > 0 else "",
                 type=file_type,
                 sortBy=sort_by,
+                sortOrder=sort_order,
+                tag_ids=tags,
+                tag_mode=mode if tags else "",
                 page=page,
                 pageSize=page_size,
             ),
@@ -330,18 +354,22 @@ class MyObjClient:
 
     def search_public_files(
         self,
-        keyword: str,
+        keyword: str = "",
         *,
         file_type: str = "",
         sort_by: str = "",
+        sort_order: str = "",
+        tag_ids: Sequence[str] = (),
+        tag_mode: str = "all",
         page: int = 1,
         page_size: int = 20,
     ) -> dict[str, Any]:
         """搜索公开文件。当前服务端仍要求认证。"""
 
         self._check_page(page, page_size)
-        if not keyword:
-            raise ValueError("keyword 不能为空")
+        tags, mode = self._tag_filter(tag_ids, tag_mode)
+        if not keyword.strip() and not tags:
+            raise ValueError("keyword 或 tag_ids 至少提供一项")
         return self._request_json(
             "GET",
             "/file/search/public",
@@ -349,6 +377,9 @@ class MyObjClient:
                 keyword=keyword,
                 type=file_type,
                 sortBy=sort_by,
+                sortOrder=sort_order,
+                tag_ids=tags,
+                tag_mode=mode if tags else "",
                 page=page,
                 pageSize=page_size,
             ),
@@ -359,21 +390,144 @@ class MyObjClient:
         *,
         file_type: str = "",
         sort_by: str = "",
+        tag_ids: Sequence[str] = (),
+        tag_mode: str = "all",
         page: int = 1,
         page_size: int = 20,
     ) -> dict[str, Any]:
         """获取文件广场列表。"""
 
         self._check_page(page, page_size)
+        tags, mode = self._tag_filter(tag_ids, tag_mode)
         return self._request_json(
             "GET",
             "/file/public/list",
             params=self._params(
                 type=file_type,
                 sortBy=sort_by,
+                tag_ids=tags,
+                tag_mode=mode if tags else "",
                 page=page,
                 pageSize=page_size,
             ),
+        )
+
+    def get_file_tags(self, file_id: str) -> dict[str, Any]:
+        """读取用户文件的有效、已屏蔽及来源标签。"""
+
+        return self._request_json("GET", f"/file/tags/{file_id}")
+
+    def get_tag_suggestions(
+        self,
+        keyword: str = "",
+        *,
+        limit: int = 20,
+    ) -> dict[str, Any]:
+        """返回当前用户使用过及允许公开的标签建议。"""
+
+        if not 1 <= limit <= 50:
+            raise ValueError("limit 必须在 1 到 50 之间")
+        return self._request_json(
+            "GET",
+            "/file/tags/suggestions",
+            params=self._params(keyword=keyword, limit=limit),
+        )
+
+    def retry_file_tags(self, file_id: str) -> dict[str, Any]:
+        """将单个文件的自动标签生成任务重新排队。"""
+
+        return self._request_json("POST", f"/file/tags/{file_id}/retry")
+
+    def update_manual_tags(
+        self,
+        file_id: str,
+        *,
+        add: Sequence[Mapping[str, Any]] = (),
+        remove_tag_ids: Sequence[str] = (),
+    ) -> dict[str, Any]:
+        """增加、删除手工标签并设置分类和公开性。"""
+
+        return self._request_json(
+            "PUT",
+            f"/file/tags/{file_id}/manual",
+            json={
+                "add": [dict(item) for item in add],
+                "remove_tag_ids": list(remove_tag_ids),
+            },
+        )
+
+    def update_tag_exclusions(
+        self,
+        file_id: str,
+        *,
+        suppress_tag_ids: Sequence[str] = (),
+        restore_tag_ids: Sequence[str] = (),
+    ) -> dict[str, Any]:
+        """屏蔽或恢复自动标签。"""
+
+        return self._request_json(
+            "PUT",
+            f"/file/tags/{file_id}/exclusions",
+            json={
+                "suppress_tag_ids": list(suppress_tag_ids),
+                "restore_tag_ids": list(restore_tag_ids),
+            },
+        )
+
+    def batch_update_tags(
+        self,
+        file_ids: Sequence[str],
+        *,
+        add: Sequence[Mapping[str, Any]] = (),
+        remove_tag_ids: Sequence[str] = (),
+    ) -> dict[str, Any]:
+        """对最多 100 个用户文件原子增删手工标签。"""
+
+        ids = list(dict.fromkeys(file_ids))
+        if not 1 <= len(ids) <= 100:
+            raise ValueError("file_ids 数量必须在 1 到 100 之间")
+        return self._request_json(
+            "POST",
+            "/file/tags/batch",
+            json={
+                "file_ids": ids,
+                "add": [dict(item) for item in add],
+                "remove_tag_ids": list(remove_tag_ids),
+            },
+        )
+
+    def get_tag_dictionary(self) -> dict[str, Any]:
+        """读取当前用户的个人分词词典。"""
+
+        return self._request_json("GET", "/file/tag-dictionary")
+
+    def update_tag_dictionary(
+        self, rules: Sequence[Mapping[str, Any]]
+    ) -> dict[str, Any]:
+        """热更新个人词典并创建该用户的历史重建任务。"""
+
+        return self._request_json(
+            "PUT",
+            "/file/tag-dictionary",
+            json={"rules": [dict(rule) for rule in rules]},
+        )
+
+    def preview_tag_dictionary(
+        self,
+        samples: Sequence[str],
+        rules: Sequence[Mapping[str, Any]] = (),
+    ) -> dict[str, Any]:
+        """使用尚未保存的个人词典预览文件名标签。"""
+
+        if not 1 <= len(samples) <= 100:
+            raise ValueError("samples 数量必须在 1 到 100 之间")
+        return self._request_json(
+            "POST",
+            "/file/tag-dictionary/preview",
+            json={
+                "samples": list(samples),
+                "rules": [dict(rule) for rule in rules],
+            },
         )
 
     def get_directories(self) -> dict[str, Any]:
@@ -420,10 +574,7 @@ class MyObjClient:
                     for folder in folders:
                         if not isinstance(folder, Mapping):
                             continue
-                        if (
-                            folder.get("name") == name
-                            and folder.get("id") is not None
-                        ):
+                        if folder.get("name") == name and folder.get("id") is not None:
                             return int(folder["id"])
 
                 total = int(data.get("total", 0) or 0)
@@ -629,9 +780,7 @@ class MyObjClient:
                 uploaded_md5s: set[str] = set()
             elif isinstance(precheck_data, Mapping):
                 precheck_id = str(
-                    precheck_data.get("precheck_id")
-                    or precheck_data.get("id")
-                    or ""
+                    precheck_data.get("precheck_id") or precheck_data.get("id") or ""
                 )
                 existing_md5s = precheck_data.get("md5")
                 uploaded_md5s = set(
@@ -742,7 +891,9 @@ class MyObjClient:
                     },
                 }
             if status in {"failed", "aborted"}:
-                message = str(progress_data.get("error_message") or "服务器处理文件失败")
+                message = str(
+                    progress_data.get("error_message") or "服务器处理文件失败"
+                )
                 raise MyObjHTTPError(message)
             if deadline is not None and time.monotonic() >= deadline:
                 raise TimeoutError("等待服务器处理文件超时")
@@ -879,9 +1030,7 @@ class MyObjClient:
                 deadline,
             )
 
-        response = self._request_binary(
-            "GET", f"/download/local/file/{task_id}"
-        )
+        response = self._request_binary("GET", f"/download/local/file/{task_id}")
 
         return self._save_binary_response(response, destination, progress=progress)
 

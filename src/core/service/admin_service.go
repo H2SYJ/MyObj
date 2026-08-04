@@ -22,7 +22,11 @@ import (
 type AdminService struct {
 	factory       *impl.RepositoryFactory
 	networkPolicy *download.NetworkPolicy
+	tagService    *TagService
 }
+
+func (a *AdminService) SetTagService(service *TagService) { a.tagService = service }
+func (a *AdminService) TagService() *TagService           { return a.tagService }
 
 func NewAdminService(factory *impl.RepositoryFactory, policies ...*download.NetworkPolicy) *AdminService {
 	networkPolicy := download.NewNetworkPolicy()

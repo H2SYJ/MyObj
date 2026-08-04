@@ -25,6 +25,12 @@
         </div>
 
         <div class="filter-sort-group">
+          <TagFilter
+            :model-value="tagIds"
+            :mode="tagMode"
+            @update:model-value="updateTagIds"
+            @update:mode="updateTagMode"
+          />
           <el-select
             v-model="sortBy"
             :placeholder="t('square.sortByPlaceholder')"
@@ -40,7 +46,7 @@
     </template>
 
     <!-- 文件网格视图 -->
-    <div v-if="viewMode === 'grid'" class="file-grid" v-loading="loading">
+    <div v-if="viewMode === 'grid'" v-loading="loading" class="file-grid">
       <el-card
         v-for="file in filteredFiles"
         :key="file.uf_id"
@@ -55,6 +61,7 @@
           </el-icon>
         </div>
         <file-name-tooltip :file-name="file.file_name" view-mode="grid" tag="div" custom-class="file-name" />
+        <FileTags :tags="file.tags" :limit="3" compact @tag-click="handleTagClick" />
         <div class="file-meta">
           <div class="file-info">
             <span>{{ formatFileSize(file.file_size) }}</span>
@@ -82,10 +89,10 @@
     <!-- PC端：表格布局 -->
     <el-table
       v-else-if="!isMobile"
-      :data="filteredFiles"
       v-loading="loading"
-      @row-click="handleFileClick"
+      :data="filteredFiles"
       style="width: 100%"
+      @row-click="handleFileClick"
     >
       <el-table-column :label="t('square.fileName')" min-width="300">
         <template #default="{ row }">
@@ -94,6 +101,7 @@
               <component :is="getFileIconName(row.mime_type)" />
             </el-icon>
             <file-name-tooltip :file-name="row.file_name" view-mode="table" />
+            <FileTags :tags="row.tags" :limit="3" compact @tag-click="handleTagClick" />
           </div>
         </template>
       </el-table-column>
@@ -118,7 +126,7 @@
     </el-table>
 
     <!-- 移动端：卡片列表布局 -->
-    <div v-else class="mobile-file-list" v-loading="loading">
+    <div v-else v-loading="loading" class="mobile-file-list">
       <div v-for="file in filteredFiles" :key="file.uf_id" class="mobile-file-item" @click="handleFileClick(file)">
         <div class="mobile-item-content">
           <div class="mobile-item-icon">
@@ -130,6 +138,7 @@
             <div class="mobile-item-name-row">
               <file-name-tooltip :file-name="file.file_name" view-mode="list" custom-class="mobile-item-name" />
             </div>
+            <FileTags :tags="file.tags" :limit="1" compact @tag-click="handleTagClick" />
             <div class="mobile-item-meta">
               <span class="mobile-item-size">{{ formatFileSize(file.file_size) }}</span>
               <span class="mobile-item-owner">{{ file.owner_name }}</span>
@@ -185,7 +194,13 @@
   import { Box, Document, Headset, Menu, MoreFilled, Picture, VideoPlay } from '@element-plus/icons-vue'
   import { formatSize, formatDate } from '@/utils'
   import { useResponsive } from '@/composables/ui/useResponsive'
-  import { getPublicFileList, searchPublicFiles, type PublicFileItem, type PublicFileListParams } from '@/api/file'
+  import {
+    getPublicFileList,
+    searchPublicFiles,
+    type PublicFileItem,
+    type PublicFileListParams,
+    type SearchFileItem
+  } from '@/api/file'
   import { useSearch } from '@/composables/business/useSearch'
   import { getFileIcon } from '@/utils/file/fileIcon'
   import { useFileDownload } from '@/composables/business/useFileDownload'
@@ -193,6 +208,9 @@
   import { MobileInfiniteList } from '@/components/mobile'
   import SegmentedControl from '@/components/SegmentedControl/index.vue'
   import WorkspacePage from '@/components/WorkspacePage/index.vue'
+  import TagFilter from '@/components/TagFilter/index.vue'
+  import FileTags from '@/components/FileTags/index.vue'
+  import type { CompactTag, FileItem } from '@/types'
 
   const { proxy } = getCurrentInstance() as ComponentInternalInstance
   const route = useRoute()
@@ -207,6 +225,19 @@
   const sortBy = ref('time')
   const loading = ref(false)
   const isSearchMode = ref(false) // 是否处于搜索模式
+  const parseTagIds = (value: unknown) =>
+    typeof value === 'string'
+      ? [
+          ...new Set(
+            value
+              .split(',')
+              .map(item => item.trim())
+              .filter(Boolean)
+          )
+        ]
+      : []
+  const tagIds = ref<string[]>(parseTagIds(route.query.tags))
+  const tagMode = ref<'all' | 'any'>(route.query.tagMode === 'any' ? 'any' : 'all')
 
   const filterTypeItems = computed(() => [
     { value: 'all', label: t('square.filterAll'), icon: Menu },
@@ -222,24 +253,35 @@
   const publicFiles = ref<PublicFileItem[]>([])
 
   // 使用通用搜索 composable
-  const transformResult = (files: any[]): PublicFileItem[] => {
-    return files.map((file: any) => ({
-      uf_id: file.uf_id || file.id || '',
-      file_name: file.file_name || file.name || '',
-      file_size: file.size || 0,
-      mime_type: file.mime || file.mime_type || '',
-      created_at: file.created_at || file.createdAt || '',
+  const transformResult = (files: SearchFileItem[]): PublicFileItem[] =>
+    files.map(file => ({
+      uf_id: file.uf_id || file.id,
+      file_name: file.file_name || file.name,
+      file_size: file.size,
+      mime_type: file.mime,
+      created_at: file.created_at,
       owner_name: file.owner_name || 'Unknown',
-      has_thumbnail: (file.thumbnail_img && file.thumbnail_img !== '') || false
+      has_thumbnail: Boolean(file.thumbnail_img),
+      tags: file.tags || []
     }))
-  }
 
-  const search = useSearch<PublicFileItem>(searchPublicFiles, transformResult, () => {
-    // 清空搜索时的回调：切换到正常模式
-    isSearchMode.value = false
-    currentPage.value = 1
-    loadPublicFiles()
-  })
+  const search = useSearch<PublicFileItem, SearchFileItem>(
+    searchPublicFiles,
+    transformResult,
+    () => {
+      // 清空搜索时的回调：切换到正常模式
+      isSearchMode.value = false
+      currentPage.value = 1
+      loadPublicFiles()
+    },
+    true,
+    () => ({
+      type: fileTypeFilter.value === 'all' ? undefined : fileTypeFilter.value,
+      sortBy: sortBy.value,
+      tag_ids: tagIds.value.join(',') || undefined,
+      tag_mode: tagIds.value.length ? tagMode.value : undefined
+    })
+  )
 
   // 兼容现有代码的变量
   const searchKeyword = search.searchKeyword
@@ -257,24 +299,18 @@
   })
 
   // 获取文件图标名称
-  const getFileIconName = (mimeType: string) => {
-    return getFileIcon(mimeType).icon
-  }
+  const getFileIconName = (mimeType: string) => getFileIcon(mimeType).icon
 
   // 获取文件图标颜色
-  const getFileIconColor = (mimeType: string) => {
-    return getFileIcon(mimeType).color
-  }
+  const getFileIconColor = (mimeType: string) => getFileIcon(mimeType).color
 
   const formatFileSize = formatSize
 
-  const formatTime = (time: string): string => {
-    return formatDate(time, { showTime: true })
-  }
+  const formatTime = (time: string): string => formatDate(time, { showTime: true })
 
   // 搜索处理（使用后端搜索 API）
   const performSearch = async (keyword: string, pageNum: number = 1, pageSizeNum: number = 20, append = false) => {
-    if (!keyword.trim()) {
+    if (!keyword.trim() && tagIds.value.length === 0) {
       // 如果关键词为空，切换到正常模式
       isSearchMode.value = false
       currentPage.value = 1
@@ -298,9 +334,27 @@
     loadPublicFiles()
   }
 
+  const pushTagRoute = (nextIds: string[], nextMode = tagMode.value) => {
+    router.push({
+      path: route.path,
+      query: {
+        ...route.query,
+        tags: nextIds.length ? nextIds.join(',') : undefined,
+        tagMode: nextIds.length && nextMode !== 'all' ? nextMode : undefined
+      }
+    })
+  }
+  const updateTagIds = (value: string[]) => pushTagRoute(value)
+  const updateTagMode = (value: 'all' | 'any') => pushTagRoute(tagIds.value, value)
+  const handleTagClick = (tag: CompactTag) => {
+    if (!tagIds.value.includes(tag.id)) {
+      pushTagRoute([...tagIds.value, tag.id])
+    }
+  }
+
   // 文件预览
   const previewVisible = ref(false)
-  const previewFile = ref<any>(null)
+  const previewFile = ref<FileItem | null>(null)
 
   // 文件下载
   const { handleDownload: handleFileDownload } = useFileDownload()
@@ -315,7 +369,9 @@
       mime_type: file.mime_type,
       is_enc: false,
       has_thumbnail: file.has_thumbnail,
-      created_at: file.created_at
+      created_at: file.created_at,
+      public: true,
+      tags: file.tags
     }
     previewVisible.value = true
   }
@@ -323,7 +379,7 @@
   // 下载文件
   const handleDownload = async (file: PublicFileItem) => {
     // 将 PublicFileItem 转换为 FileItem 格式
-    const fileItem = {
+    const fileItem: FileItem = {
       file_id: file.uf_id,
       file_name: file.file_name,
       file_size: file.file_size,
@@ -366,6 +422,10 @@
       if (fileTypeFilter.value !== 'all') {
         params.type = fileTypeFilter.value
       }
+      if (tagIds.value.length > 0) {
+        params.tag_ids = tagIds.value.join(',')
+        params.tag_mode = tagMode.value
+      }
 
       const response = await getPublicFileList(params)
 
@@ -390,9 +450,11 @@
   }
 
   const loadNextMobilePage = async () => {
-    if (!isMobile.value || loading.value || isSearching.value || filteredFiles.value.length >= total.value) return
+    if (!isMobile.value || loading.value || isSearching.value || filteredFiles.value.length >= total.value) {
+      return
+    }
     const nextPage = currentPage.value + 1
-    if (isSearchMode.value && searchKeyword.value.trim()) {
+    if (isSearchMode.value && (searchKeyword.value.trim() || tagIds.value.length > 0)) {
       await performSearch(searchKeyword.value, nextPage, pageSize.value, true)
     } else {
       currentPage.value = nextPage
@@ -447,6 +509,25 @@
         isSearchMode.value = false
         searchKeyword.value = ''
         loadPublicFiles()
+      }
+    }
+  )
+  watch(
+    () => [route.query.tags, route.query.tagMode],
+    async () => {
+      const nextIds = parseTagIds(route.query.tags)
+      const nextMode = route.query.tagMode === 'any' ? 'any' : 'all'
+      if (nextIds.join(',') === tagIds.value.join(',') && nextMode === tagMode.value) {
+        return
+      }
+      tagIds.value = nextIds
+      tagMode.value = nextMode
+      currentPage.value = 1
+      if (searchKeyword.value.trim()) {
+        await performSearch(searchKeyword.value, 1, pageSize.value)
+      } else {
+        isSearchMode.value = false
+        await loadPublicFiles()
       }
     }
   )

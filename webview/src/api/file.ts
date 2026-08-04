@@ -1,41 +1,50 @@
 import { get, post, upload } from '@/utils/network/request'
 import { filterParams } from '@/utils/common/params'
 import { API_ENDPOINTS, API_BASE_URL } from '@/config/api'
-import type { FileListRequest, FileListResponse, ApiResponse } from '@/types'
+import type { FileListRequest, FileListResponse, ApiResponse, CompactTag } from '@/types'
 import logger from '@/plugins/logger'
 import cache from '@/plugins/cache'
 
 // 文件搜索请求参数
 export interface FileSearchParams {
-  keyword: string
+  keyword?: string
   type?: string
   sortBy?: string
   sortOrder?: 'asc' | 'desc'
+  directory_id?: number
+  tag_ids?: string
+  tag_mode?: 'all' | 'any'
   page?: number
   pageSize?: number
 }
 
 // 文件信息
-export interface FileInfo {
+export interface SearchFileItem {
   id: string
   name: string
-  type: string
   size: number
   mime: string
-  ownerName?: string
-  viewCount?: number
-  downloadCount?: number
-  createdAt: string
-  updatedAt: string
+  owner_name?: string
+  created_at: string
+  updated_at: string
+  uf_id: string
+  file_name: string
+  public: boolean
+  is_enc: boolean
+  thumbnail_img?: string
+  tags?: CompactTag[]
+  tag_state?: string
 }
 
 // 搜索响应
-export interface SearchResponse {
+export interface SearchResponse<TFile = SearchFileItem> {
   code: number
   message: string
   data: {
-    files: FileInfo[]
+    files: TFile[]
     total: number
+    page?: number
+    page_size?: number
   }
 }
 
@@ -76,9 +85,7 @@ export const getThumbnail = async (fileId: string): Promise<string> => {
 /**
  * 获取文件缩略图URL
  */
-export const getThumbnailUrl = (fileId: string) => {
-  return `${API_ENDPOINTS.FILE.THUMBNAIL}/${fileId}`
-}
+export const getThumbnailUrl = (fileId: string) => `${API_ENDPOINTS.FILE.THUMBNAIL}/${fileId}`
 
 /**
  * 搜索当前用户的文件
@@ -99,11 +106,10 @@ export const searchPublicFiles = (params: FileSearchParams) => {
 /**
  * 下载文件
  */
-export const downloadFile = (fileId: string) => {
-  return get(`${API_ENDPOINTS.FILE.DOWNLOAD}/${fileId}`).then(() => {
+export const downloadFile = (fileId: string) =>
+  get(`${API_ENDPOINTS.FILE.DOWNLOAD}/${fileId}`).then(() => {
     // 处理下载逻辑
   })
-}
 
 /**
  * 移动文件请求参数
@@ -116,9 +122,7 @@ export interface MoveFileRequest {
 /**
  * 移动文件
  */
-export const moveFile = (data: MoveFileRequest) => {
-  return post<ApiResponse>(API_ENDPOINTS.FILE.MOVE, data)
-}
+export const moveFile = (data: MoveFileRequest) => post<ApiResponse>(API_ENDPOINTS.FILE.MOVE, data)
 
 export interface MoveItemsRequest {
   file_ids: string[]
@@ -126,9 +130,7 @@ export interface MoveItemsRequest {
   target_directory_id: number
 }
 
-export const moveItems = (data: MoveItemsRequest) => {
-  return post<ApiResponse>(API_ENDPOINTS.FILE.MOVE_BATCH, data)
-}
+export const moveItems = (data: MoveItemsRequest) => post<ApiResponse>(API_ENDPOINTS.FILE.MOVE_BATCH, data)
 
 /**
  * 获取虚拟目录树
@@ -142,9 +144,7 @@ export interface DirectoryItem {
   updated_at: string
 }
 
-export const getDirectories = () => {
-  return get<ApiResponse<DirectoryItem[]>>(API_ENDPOINTS.FILE.DIRECTORIES)
-}
+export const getDirectories = () => get<ApiResponse<DirectoryItem[]>>(API_ENDPOINTS.FILE.DIRECTORIES)
 
 /**
  * 删除文件请求参数
@@ -156,18 +156,14 @@ export interface DeleteFileRequest {
 /**
  * 删除文件（移动到回收站）
  */
-export const deleteFiles = (data: DeleteFileRequest) => {
-  return post<ApiResponse>(API_ENDPOINTS.FILE.DELETE, data)
-}
+export const deleteFiles = (data: DeleteFileRequest) => post<ApiResponse>(API_ENDPOINTS.FILE.DELETE, data)
 
 export interface DeleteItemsRequest {
   file_ids: string[]
   dir_ids: number[]
 }
 
-export const deleteItems = (data: DeleteItemsRequest) => {
-  return post<ApiResponse>(API_ENDPOINTS.FILE.DELETE_BATCH, data)
-}
+export const deleteItems = (data: DeleteItemsRequest) => post<ApiResponse>(API_ENDPOINTS.FILE.DELETE_BATCH, data)
 
 /**
  * 文件重命名请求参数
@@ -180,9 +176,7 @@ export interface RenameFileRequest {
 /**
  * 重命名文件
  */
-export const renameFile = (data: RenameFileRequest) => {
-  return post<ApiResponse>(API_ENDPOINTS.FILE.RENAME, data)
-}
+export const renameFile = (data: RenameFileRequest) => post<ApiResponse>(API_ENDPOINTS.FILE.RENAME, data)
 
 // 上传文件请求参数
 export interface uploadPrecheckParams {
@@ -196,9 +190,7 @@ export interface uploadPrecheckParams {
 /**
  * 上传文件预检
  */
-export const uploadPrecheck = (data: uploadPrecheckParams) => {
-  return post<ApiResponse>(API_ENDPOINTS.FILE.PRECHECK, data)
-}
+export const uploadPrecheck = (data: uploadPrecheckParams) => post<ApiResponse>(API_ENDPOINTS.FILE.PRECHECK, data)
 
 // 上传进度响应
 export interface UploadProgressResponse {
@@ -266,6 +258,8 @@ export const uploadFile = (
 export interface PublicFileListParams {
   type?: string
   sortBy?: string
+  tag_ids?: string
+  tag_mode?: 'all' | 'any'
   page: number
   pageSize: number
 }
@@ -279,6 +273,7 @@ export interface PublicFileItem {
   owner_name: string
   has_thumbnail: boolean
   created_at: string
+  tags?: CompactTag[]
 }
 
 // 公开文件列表响应
@@ -330,16 +325,13 @@ export interface UploadTaskListResponse {
 /**
  * 分页查询全部上传任务
  */
-export const listUploadTasks = (page: number, pageSize: number) => {
-  return get<ApiResponse<UploadTaskListResponse>>(API_ENDPOINTS.FILE.TASK_LIST, { page, pageSize })
-}
+export const listUploadTasks = (page: number, pageSize: number) =>
+  get<ApiResponse<UploadTaskListResponse>>(API_ENDPOINTS.FILE.TASK_LIST, { page, pageSize })
 
 /**
  * 查询未完成的上传任务列表
  */
-export const listUncompletedUploads = () => {
-  return get<ApiResponse<UncompletedUploadTask[]>>(API_ENDPOINTS.FILE.UNCOMPLETED)
-}
+export const listUncompletedUploads = () => get<ApiResponse<UncompletedUploadTask[]>>(API_ENDPOINTS.FILE.UNCOMPLETED)
 
 /**
  * 删除上传任务请求参数
@@ -351,25 +343,21 @@ export interface DeleteUploadTaskRequest {
 /**
  * 删除上传任务
  */
-export const deleteUploadTask = (taskId: string) => {
-  return post<ApiResponse>(API_ENDPOINTS.FILE.DELETE_UPLOAD_TASK, {
+export const deleteUploadTask = (taskId: string) =>
+  post<ApiResponse>(API_ENDPOINTS.FILE.DELETE_UPLOAD_TASK, {
     task_id: taskId
   })
-}
 
-export const retryUploadFinalize = (precheckId: string, filePassword?: string) => {
-  return post<ApiResponse<{ task_id: string; status: string }>>(API_ENDPOINTS.FILE.FINALIZE_RETRY, {
+export const retryUploadFinalize = (precheckId: string, filePassword?: string) =>
+  post<ApiResponse<{ task_id: string; status: string }>>(API_ENDPOINTS.FILE.FINALIZE_RETRY, {
     precheck_id: precheckId,
     file_password: filePassword || ''
   })
-}
 
 /**
  * 查询过期的上传任务列表
  */
-export const listExpiredUploads = () => {
-  return get<ApiResponse<UncompletedUploadTask[]>>(API_ENDPOINTS.FILE.EXPIRED)
-}
+export const listExpiredUploads = () => get<ApiResponse<UncompletedUploadTask[]>>(API_ENDPOINTS.FILE.EXPIRED)
 
 /**
  * 延期过期任务请求参数
@@ -382,19 +370,16 @@ export interface RenewExpiredTaskRequest {
 /**
  * 延期过期任务（恢复任务）
  */
-export const renewExpiredTask = (taskId: string, days?: number) => {
-  return post<ApiResponse<{ task_id: string; expire_time: string }>>(API_ENDPOINTS.FILE.RENEW_TASK, {
+export const renewExpiredTask = (taskId: string, days?: number) =>
+  post<ApiResponse<{ task_id: string; expire_time: string }>>(API_ENDPOINTS.FILE.RENEW_TASK, {
     task_id: taskId,
     days: days || 7
   })
-}
 
 /**
  * 清理过期的上传任务
  */
-export const cleanExpiredUploads = () => {
-  return post<ApiResponse<{ cleaned_count: number }>>(API_ENDPOINTS.FILE.CLEAN_EXPIRED)
-}
+export const cleanExpiredUploads = () => post<ApiResponse<{ cleaned_count: number }>>(API_ENDPOINTS.FILE.CLEAN_EXPIRED)
 
 /**
  * 设置文件公开状态请求参数
@@ -407,6 +392,4 @@ export interface SetFilePublicRequest {
 /**
  * 设置文件公开状态
  */
-export const setFilePublic = (data: SetFilePublicRequest) => {
-  return post<ApiResponse>(API_ENDPOINTS.FILE.SET_PUBLIC, data)
-}
+export const setFilePublic = (data: SetFilePublicRequest) => post<ApiResponse>(API_ENDPOINTS.FILE.SET_PUBLIC, data)
