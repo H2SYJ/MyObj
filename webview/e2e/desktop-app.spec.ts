@@ -50,6 +50,16 @@ const cinemaVideo = (id: number) => ({
 })
 
 const mockApi = async (page: Page) => {
+  let cinemaTags = [
+    {
+      id: 'cinema-tag-initial',
+      name: '初始标签',
+      category: { id: 'other', code: 'other', name: '其他', color: '#909399' },
+      sources: ['manual'],
+      visibility: 'private',
+      automatic: false
+    }
+  ]
   await page.route('**/dev-api/**', async route => {
     const url = new URL(route.request().url())
     const path = url.pathname.replace(/^\/dev-api/, '')
@@ -120,7 +130,22 @@ const mockApi = async (page: Page) => {
       }
     } else if (/^\/cinema\/7\/videos\/cinema-video-\d+$/.test(path)) {
       const id = Number(path.split('-').at(-1))
-      data = { root: { id: 7, name: '影视库', parent_id: 0, path: '影视库' }, video: cinemaVideo(id) }
+      data = {
+        root: { id: 7, name: '影视库', parent_id: 0, path: '影视库' },
+        video: {
+          ...cinemaVideo(id),
+          tags:
+            id === 1
+              ? cinemaTags.map(tag => ({
+                  id: tag.id,
+                  name: tag.name,
+                  category_code: tag.category.code,
+                  color: tag.category.color,
+                  visibility: tag.visibility
+                }))
+              : []
+        }
+      }
     } else if (/^\/cinema\/7\/videos\/cinema-video-\d+\/related$/.test(path)) {
       data = {
         videos: [cinemaVideo(6), cinemaVideo(5)],
@@ -131,6 +156,52 @@ const mockApi = async (page: Page) => {
       }
     } else if (path === '/file/search/user') {
       data = { files: [], total: 0 }
+    } else if (path === '/file/tag-categories') {
+      data = [
+        { id: 'other', code: 'other', name: '其他', color: '#909399' },
+        { id: 'title', code: 'title', name: '标题', color: '#67c23a' }
+      ]
+    } else if (/^\/file\/tags\/cinema-video-\d+$/.test(path)) {
+      data = {
+        file_id: path.split('/').at(-1),
+        tags: cinemaTags,
+        suppressed: [],
+        state: 'ready'
+      }
+    } else if (/^\/file\/tags\/cinema-video-\d+\/manual$/.test(path)) {
+      const body = route.request().postDataJSON() as {
+        add: Array<{ name: string; category_id: string; visibility: 'private' | 'public' }>
+        remove_tag_ids: string[]
+      }
+      cinemaTags = cinemaTags.filter(tag => !body.remove_tag_ids.includes(tag.id))
+      for (const input of body.add) {
+        cinemaTags.push({
+          id: `cinema-tag-${input.name}`,
+          name: input.name,
+          category: {
+            id: input.category_id,
+            code: input.category_id,
+            name: input.category_id === 'other' ? '其他' : '标题',
+            color: input.category_id === 'other' ? '#909399' : '#67c23a'
+          },
+          sources: ['manual'],
+          visibility: input.visibility,
+          automatic: false
+        })
+      }
+      data = {
+        file_id: path.split('/').at(-2),
+        tags: cinemaTags,
+        suppressed: [],
+        state: 'ready'
+      }
+    } else if (/^\/file\/tags\/cinema-video-\d+\/exclusions$/.test(path)) {
+      data = {
+        file_id: path.split('/').at(-2),
+        tags: cinemaTags,
+        suppressed: [],
+        state: 'ready'
+      }
     } else if (path === '/file/tags/suggestions') {
       data = [
         {
@@ -324,10 +395,32 @@ test('影视模式桌面布局、隐藏横向滚动条和路由前进后退', as
     expect(playerBox!.y).toBeLessThan(titleBox!.y)
   }
   expect(playerBox!.x + playerBox!.width / 2).toBeCloseTo(mainBox!.x + mainBox!.width / 2, 0)
+  expect(mainBox!.width).toBeCloseTo(relatedBox!.width, 0)
+  if ((page.viewportSize()?.width || 0) > 900) {
+    expect(playerBox!.width).toBeCloseTo(mainBox!.width - 42, 0)
+  } else {
+    expect(playerBox!.width).toBeCloseTo(mainBox!.width, 0)
+  }
   expect(relatedBox!.y).toBeGreaterThan(playerBox!.y + playerBox!.height)
   expect(await page.locator('.cinema-related__grid').evaluate(element => getComputedStyle(element).display)).toBe(
     'grid'
   )
+
+  const initialTag = page.locator('.editable-file-tags__tag', { hasText: '初始标签' })
+  await expect(initialTag).toBeVisible()
+  await initialTag.hover()
+  const removeTag = initialTag.locator('.editable-file-tags__remove')
+  await expect(removeTag).toBeVisible()
+  await removeTag.click()
+  await expect(initialTag).toHaveCount(0)
+
+  await page.locator('.editable-file-tags__add').click()
+  const addPanel = page.locator('.editable-file-tags__panel')
+  await expect(addPanel).toBeVisible()
+  await addPanel.locator('.el-select').first().click()
+  await page.getByRole('option', { name: '电影' }).click()
+  await addPanel.locator('.editable-file-tags__actions .el-button--primary').click()
+  await expect(page.locator('.editable-file-tags__tag', { hasText: '电影' })).toBeVisible()
 
   await page.goBack()
   await expect(page).toHaveURL(/\/cinema\/7$/)

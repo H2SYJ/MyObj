@@ -31,7 +31,14 @@ vi.mock('element-plus', () => ({ ElMessageBox: { prompt: api.prompt } }))
 vi.mock('@/components/XgPlayer/index.vue', () => ({
   default: { name: 'XgPlayer', props: ['src'], template: '<div class="xg-player-stub" />' }
 }))
-vi.mock('@/components/FileTags/index.vue', () => ({ default: { name: 'FileTags', template: '<div />' } }))
+vi.mock('@/components/EditableFileTags/index.vue', () => ({
+  default: {
+    name: 'EditableFileTags',
+    props: ['fileId', 'initialTags'],
+    emits: ['updated'],
+    template: '<div class="editable-file-tags-stub" />'
+  }
+}))
 vi.mock('./components/CinemaVideoCard.vue', () => ({
   default: { name: 'CinemaVideoCard', template: '<div class="cinema-video-card-stub" />' }
 }))
@@ -52,7 +59,12 @@ const globalOptions = {
   stubs: {
     XgPlayer: { name: 'XgPlayer', props: ['src'], template: '<div class="xg-player-stub" />' },
     CinemaVideoCard: passthrough('CinemaVideoCard'),
-    FileTags: passthrough('FileTags'),
+    EditableFileTags: {
+      name: 'EditableFileTags',
+      props: ['fileId', 'initialTags'],
+      emits: ['updated'],
+      template: '<div class="editable-file-tags-stub" />'
+    },
     ElEmpty: passthrough('ElEmpty'),
     ElIcon: passthrough('ElIcon'),
     VideoPlay: true,
@@ -140,6 +152,38 @@ describe('Cinema Watch', () => {
 
     expect(api.getRelatedCinemaVideos).toHaveBeenNthCalledWith(1, 7, 'video-1', 1, 20)
     expect(api.getRelatedCinemaVideos).toHaveBeenNthCalledWith(2, 7, 'video-1', 2, 20)
+    wrapper.unmount()
+  })
+
+  it('标签更新后保留播放器并从第一页刷新相关推荐', async () => {
+    const wrapper = mount(Watch, { global: globalOptions })
+    await flushPromises()
+    await wrapper.get('.cinema-poster').trigger('click')
+    await flushPromises()
+    expect(wrapper.find('.xg-player-stub').exists()).toBe(true)
+
+    const editor = wrapper.getComponent({ name: 'EditableFileTags' })
+    expect(editor.props('fileId')).toBe('video-1')
+    editor.vm.$emit('updated', {
+      file_id: 'video-1',
+      state: 'ready',
+      suppressed: [],
+      tags: [
+        {
+          id: 'tag-1',
+          name: '科幻',
+          category: { id: 'title', code: 'title', name: '标题', color: '#409eff' },
+          sources: ['manual'],
+          visibility: 'private',
+          automatic: false
+        }
+      ]
+    })
+    await flushPromises()
+
+    expect(api.getCinemaVideo).toHaveBeenCalledTimes(1)
+    expect(api.getRelatedCinemaVideos).toHaveBeenNthCalledWith(2, 7, 'video-1', 1, 20)
+    expect(wrapper.find('.xg-player-stub').exists()).toBe(true)
     wrapper.unmount()
   })
 })

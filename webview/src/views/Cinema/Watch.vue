@@ -17,7 +17,7 @@
       </div>
       <div class="cinema-watch__meta">
         <span>{{ video.directory.path }}</span>
-        <FileTags :tags="video.tags" :limit="6" />
+        <EditableFileTags :file-id="video.file_id" :initial-tags="video.tags" @updated="handleTagsUpdated" />
       </div>
     </article>
 
@@ -56,11 +56,12 @@
   import { Loading, Lock, VideoPlay } from '@element-plus/icons-vue'
   import { getCinemaVideo, getRelatedCinemaVideos, type CinemaVideo } from '@/api/cinema'
   import { getThumbnail } from '@/api/file'
+  import type { FileTagsData } from '@/api/tag'
   import { createVideoPlayPrecheck, getVideoStreamUrl } from '@/api/video'
   import cache from '@/plugins/cache'
   import CinemaVideoCard from './components/CinemaVideoCard.vue'
   import XgPlayer from '@/components/XgPlayer/index.vue'
-  import FileTags from '@/components/FileTags/index.vue'
+  import EditableFileTags from '@/components/EditableFileTags/index.vue'
 
   const route = useRoute()
   const router = useRouter()
@@ -79,6 +80,15 @@
   const sentinel = ref<HTMLElement>()
   let observer: IntersectionObserver | undefined
   let detailRequest = 0
+  let relatedGeneration = 0
+
+  const clearRelated = () => {
+    ++relatedGeneration
+    related.value = []
+    relatedPage.value = 1
+    relatedHasMore.value = true
+    relatedLoading.value = false
+  }
 
   const cleanupPoster = () => {
     if (posterUrl.value) {
@@ -115,10 +125,7 @@
     videoUrl.value = ''
     video.value = undefined
     cleanupPoster()
-    related.value = []
-    relatedPage.value = 1
-    relatedHasMore.value = true
-    relatedLoading.value = false
+    clearRelated()
     try {
       const response = await getCinemaVideo(requestedRootId, requestedFileId)
       if (response.code !== 200 || !response.data) {
@@ -208,26 +215,27 @@
     const requestedFileId = fileId.value
     const requestedPage = relatedPage.value
     const request = detailRequest
+    const generation = relatedGeneration
     relatedLoading.value = true
     try {
       const response = await getRelatedCinemaVideos(requestedRootId, requestedFileId, requestedPage, 20)
       if (response.code !== 200 || !response.data) {
         throw new Error(response.message || '加载相关视频失败')
       }
-      if (request !== detailRequest) {
+      if (request !== detailRequest || generation !== relatedGeneration) {
         return
       }
       related.value.push(...(response.data.videos || []))
       relatedHasMore.value = response.data.has_more
       relatedPage.value = requestedPage + 1
     } catch (error) {
-      if (request !== detailRequest) {
+      if (request !== detailRequest || generation !== relatedGeneration) {
         return
       }
       proxy?.$log.error('加载相关视频失败', error)
       relatedHasMore.value = false
     } finally {
-      if (request === detailRequest) {
+      if (request === detailRequest && generation === relatedGeneration) {
         relatedLoading.value = false
         await nextTick()
         const top = sentinel.value?.getBoundingClientRect().top
@@ -236,6 +244,21 @@
         }
       }
     }
+  }
+
+  const handleTagsUpdated = (details: FileTagsData) => {
+    if (!video.value || details.file_id !== video.value.file_id) {
+      return
+    }
+    video.value.tags = details.tags.map(tag => ({
+      id: tag.id,
+      name: tag.name,
+      category_code: tag.category.code,
+      color: tag.category.color,
+      visibility: tag.visibility
+    }))
+    clearRelated()
+    void loadRelated()
   }
 
   const openRelated = (nextFileId: string) => router.push(`/cinema/${rootId.value}/watch/${nextFileId}`)
@@ -273,8 +296,9 @@
     display: block;
   }
   .cinema-watch__main {
-    width: min(100%, 1180px);
+    width: 100%;
     min-width: 0;
+    box-sizing: border-box;
     display: flex;
     flex-direction: column;
     margin: 0 auto;
@@ -296,7 +320,7 @@
   }
   .cinema-player-frame {
     order: 2;
-    width: min(100%, 1100px);
+    width: 100%;
     aspect-ratio: 16 / 9;
     margin: 0 auto;
     overflow: hidden;
@@ -368,6 +392,8 @@
     font-weight: 700;
   }
   .cinema-related {
+    width: 100%;
+    box-sizing: border-box;
     margin-top: 30px;
     padding: 18px;
     border: 1px solid var(--cinema-border, #e8edf2);

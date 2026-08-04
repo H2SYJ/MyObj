@@ -44,9 +44,17 @@ describe('影视模式页面结构', () => {
   it('桌面播放页标题和播放器居中排列，相关推荐位于下方网格', () => {
     const source = readSource('./Watch.vue')
     expect(source).toMatch(/\.cinema-watch\s*\{\s*display: block/)
-    expect(source).toContain('width: min(100%, 1180px)')
+    expect(source).toMatch(/\.cinema-watch__main\s*\{[\s\S]*width: 100%/)
+    expect(source).toMatch(/\.cinema-player-frame\s*\{[\s\S]*width: 100%/)
     expect(source).toContain('margin: 0 auto')
     expect(source).toContain('class="cinema-related__grid"')
     expect(source).toMatch(/\.cinema-related__grid\s*\{[\s\S]*grid-template-columns: repeat\(auto-fill/)
+  })
+
+  it('播放页使用通用内联标签编辑器', () => {
+    const source = readSource('./Watch.vue')
+    expect(source).toContain('<EditableFileTags')
+    expect(source).toContain(':file-id="video.file_id"')
+    expect(source).toContain('@updated="handleTagsUpdated"')
   })
 })
