@@ -52,7 +52,13 @@
       <el-table-column type="selection" width="44" :reserve-selection="true" />
       <el-table-column :label="t('tasks.fileName')" min-width="180" class-name="mobile-name-column">
         <template #default="{ row }">
-          <div class="file-name-cell">
+          <component
+            :is="isTaskResultSearchable(row) ? 'button' : 'div'"
+            v-bind="isTaskResultSearchable(row) ? { type: 'button' } : {}"
+            class="file-name-cell"
+            :class="{ 'task-result-link': isTaskResultSearchable(row) }"
+            @click="navigateToTaskResult(row)"
+          >
             <el-icon :size="24" class="offline-icon"><Document /></el-icon>
             <div class="file-info">
               <file-name-tooltip
@@ -62,7 +68,7 @@
               />
               <div class="file-url mobile-hide" v-if="row.url">{{ truncateUrl(row.url) }}</div>
             </div>
-          </div>
+          </component>
         </template>
       </el-table-column>
 
@@ -185,28 +191,36 @@
               class="task-checkbox"
               @change="() => toggleMobileTaskSelection(row)"
             />
-            <el-icon :size="24" class="task-icon offline-icon"><Document /></el-icon>
-            <div class="task-name-wrapper">
-              <file-name-tooltip
-                :file-name="row.file_name || row.url || t('offline.unknownFile')"
-                view-mode="list"
-                custom-class="task-name"
-              />
-              <div class="task-meta">
-                <el-tag :type="getStatusType(row.state)" size="small" effect="plain">
-                  {{ row.state_text }}
-                </el-tag>
-                <span class="task-size">
-                  {{
-                    row.file_size > 0
-                      ? `${formatSize(row.downloaded_size)} / ${formatSize(row.file_size)}`
-                      : t('offline.downloadedOnly', { size: formatSize(row.downloaded_size) })
-                  }}
-                </span>
-                <span v-if="row.state === 1" class="task-speed">{{ formatSpeed(row.speed) }}</span>
+            <component
+              :is="isTaskResultSearchable(row) ? 'button' : 'div'"
+              v-bind="isTaskResultSearchable(row) ? { type: 'button' } : {}"
+              class="task-result-content"
+              :class="{ 'task-result-link': isTaskResultSearchable(row) }"
+              @click="navigateToTaskResult(row)"
+            >
+              <el-icon :size="24" class="task-icon offline-icon"><Document /></el-icon>
+              <div class="task-name-wrapper">
+                <file-name-tooltip
+                  :file-name="row.file_name || row.url || t('offline.unknownFile')"
+                  view-mode="list"
+                  custom-class="task-name"
+                />
+                <div class="task-meta">
+                  <el-tag :type="getStatusType(row.state)" size="small" effect="plain">
+                    {{ row.state_text }}
+                  </el-tag>
+                  <span class="task-size">
+                    {{
+                      row.file_size > 0
+                        ? `${formatSize(row.downloaded_size)} / ${formatSize(row.file_size)}`
+                        : t('offline.downloadedOnly', { size: formatSize(row.downloaded_size) })
+                    }}
+                  </span>
+                  <span v-if="row.state === 1" class="task-speed">{{ formatSpeed(row.speed) }}</span>
+                </div>
+                <div v-if="row.url" class="task-url">{{ truncateUrl(row.url, 40) }}</div>
               </div>
-              <div v-if="row.url" class="task-url">{{ truncateUrl(row.url, 40) }}</div>
-            </div>
+            </component>
           </div>
           <div class="task-actions">
             <el-button v-if="row.state === 1" link type="warning" @click.stop="pauseTask(row.id)" class="action-btn">
@@ -685,9 +699,11 @@
   import TableSelectionActions from '@/components/TableSelectionActions/index.vue'
   import WorkspacePage from '@/components/WorkspacePage/index.vue'
   import { taskEventClient, type TaskEvent } from '@/utils/taskEvents'
+  import { resolveOfflineTaskResultNavigation } from './taskResultNavigation'
 
   const { proxy } = getCurrentInstance() as ComponentInternalInstance
   const { t } = useI18n()
+  const router = useRouter()
 
   // 使用响应式检测 composable
   const { isHandheld: isMobile } = useResponsive()
@@ -974,6 +990,15 @@
   const clearTaskSelection = () => {
     selectedTaskIds.value = []
     void syncTaskTableSelection()
+  }
+
+  const isTaskResultSearchable = (task: OfflineDownloadTask) => {
+    return resolveOfflineTaskResultNavigation(task) !== null
+  }
+
+  const navigateToTaskResult = (task: OfflineDownloadTask) => {
+    const target = resolveOfflineTaskResultNavigation(task)
+    if (target) void router.push(target)
   }
 
   // 加载任务列表
@@ -1615,6 +1640,28 @@
     gap: 12px;
   }
 
+  .task-result-link {
+    appearance: none;
+    padding: 0;
+    border: 0;
+    border-radius: 4px;
+    background: transparent;
+    color: inherit;
+    font: inherit;
+    text-align: left;
+    cursor: pointer;
+  }
+
+  .task-result-link:hover :deep(.file-name-text),
+  .task-result-link:focus-visible :deep(.file-name-text) {
+    color: var(--el-color-primary);
+  }
+
+  .task-result-link:focus-visible {
+    outline: 2px solid var(--el-color-primary);
+    outline-offset: 2px;
+  }
+
   .file-info {
     flex: 1;
     overflow: hidden;
@@ -1743,6 +1790,14 @@
   .task-checkbox {
     flex-shrink: 0;
     margin-top: 2px;
+  }
+
+  .task-result-content {
+    display: flex;
+    align-items: flex-start;
+    gap: 12px;
+    flex: 1;
+    min-width: 0;
   }
 
   .task-icon {
