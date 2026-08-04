@@ -18,7 +18,8 @@ func TestMigrateTaggingSchemaIsIdempotentAndGrantsExistingPreviewGroups(t *testi
 	}
 	if err := db.AutoMigrate(
 		&models.SysConfig{}, &models.Power{}, &models.GroupPower{}, &models.UserFiles{},
-		&models.TagCategory{}, &models.TagDefinition{},
+		&models.TagCategory{}, &models.TagDefinition{}, &models.UserFileTag{},
+		&models.UserDirectoryTag{}, &models.UserFileTagExclusion{}, &models.RecycledDirectoryTag{},
 	); err != nil {
 		t.Fatal(err)
 	}
@@ -36,6 +37,23 @@ func TestMigrateTaggingSchemaIsIdempotentAndGrantsExistingPreviewGroups(t *testi
 	}
 	if err := db.Create(&preexistingCinemaTag).Error; err != nil {
 		t.Fatal(err)
+	}
+	numericTag := models.TagDefinition{
+		ID: "numeric", Name: "２０２３", NormalizedName: "2023",
+		CategoryID: customCategory.ID, CreatedAt: now,
+	}
+	if err := db.Create(&numericTag).Error; err != nil {
+		t.Fatal(err)
+	}
+	for _, record := range []interface{}{
+		&models.UserFileTag{ID: "numeric-file", UserID: "user-1", UFID: "uf-1", TagID: numericTag.ID, SourceType: models.TagSourceFilename, SourceKey: "gse", CreatedAt: now},
+		&models.UserDirectoryTag{ID: "numeric-directory", UserID: "user-1", DirectoryID: 1, TagID: numericTag.ID, CreatedBy: "user-1", CreatedAt: now},
+		&models.UserFileTagExclusion{UserID: "user-1", UFID: "uf-1", TagID: numericTag.ID, CreatedAt: now},
+		&models.RecycledDirectoryTag{RecycledID: "recycled-1", OriginalDirID: 1, TagID: numericTag.ID},
+	} {
+		if err := db.Create(record).Error; err != nil {
+			t.Fatal(err)
+		}
 	}
 	preview := models.Power{ID: 1, Name: "文件预览", Description: "", Characteristic: "file:preview", CreatedAt: custom_type.Now()}
 	if err := db.Create(&preview).Error; err != nil {
@@ -85,5 +103,30 @@ func TestMigrateTaggingSchemaIsIdempotentAndGrantsExistingPreviewGroups(t *testi
 	}
 	if cinemaTag.ID != preexistingCinemaTag.ID || cinemaTag.Name != models.TagNameCinemaMode || !cinemaTag.Builtin {
 		t.Fatalf("影视模式标签属性异常: %+v", cinemaTag)
+	}
+	var numericDefinitionCount int64
+	if err := db.Model(&models.TagDefinition{}).Where("id = ?", numericTag.ID).Count(&numericDefinitionCount).Error; err != nil {
+		t.Fatal(err)
+	}
+	if numericDefinitionCount != 0 {
+		t.Fatal("迁移后仍存在纯数字标签定义")
+	}
+	var cleanupMigrationCount int64
+	if err := db.Model(&schemaMigration{}).Where("version = ?", pureNumericTagCleanupVersion).Count(&cleanupMigrationCount).Error; err != nil {
+		t.Fatal(err)
+	}
+	if cleanupMigrationCount != 1 {
+		t.Fatalf("纯数字标签清理迁移记录数量异常: %d", cleanupMigrationCount)
+	}
+	for _, model := range []interface{}{
+		&models.UserFileTag{}, &models.UserDirectoryTag{}, &models.UserFileTagExclusion{}, &models.RecycledDirectoryTag{},
+	} {
+		var count int64
+		if err := db.Model(model).Where("tag_id = ?", numericTag.ID).Count(&count).Error; err != nil {
+			t.Fatal(err)
+		}
+		if count != 0 {
+			t.Fatalf("迁移后仍存在纯数字标签关联 %T", model)
+		}
 	}
 }

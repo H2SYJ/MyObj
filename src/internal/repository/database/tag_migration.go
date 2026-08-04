@@ -25,8 +25,11 @@ var builtinTagCategories = []models.TagCategory{
 	{ID: "other", Code: "other", Name: "其他", Color: "#909399", SortOrder: 90, Enabled: true, Builtin: true},
 }
 
+const pureNumericTagCleanupVersion = "20260804_pure_numeric_tag_cleanup"
+
 func migrateTaggingSchema(db *gorm.DB) error {
 	if err := db.AutoMigrate(
+		&schemaMigration{},
 		&models.TagCategory{},
 		&models.TagDefinition{},
 		&models.UserFileTag{},
@@ -56,6 +59,9 @@ func migrateTaggingSchema(db *gorm.DB) error {
 			}
 		}
 		if err := seedCinemaModeTag(tx, now); err != nil {
+			return err
+		}
+		if err := migratePureNumericTags(tx, now); err != nil {
 			return err
 		}
 
@@ -99,6 +105,49 @@ func migrateTaggingSchema(db *gorm.DB) error {
 		}
 		return nil
 	})
+}
+
+func migratePureNumericTags(tx *gorm.DB, now time.Time) error {
+	var applied int64
+	if err := tx.Model(&schemaMigration{}).Where("version = ?", pureNumericTagCleanupVersion).Count(&applied).Error; err != nil {
+		return fmt.Errorf("查询纯数字标签清理状态失败: %w", err)
+	}
+	if applied > 0 {
+		return nil
+	}
+
+	var definitions []models.TagDefinition
+	if err := tx.Select("id", "name").Find(&definitions).Error; err != nil {
+		return fmt.Errorf("查询纯数字标签失败: %w", err)
+	}
+	tagIDs := make([]string, 0)
+	for _, definition := range definitions {
+		if tagging.IsPureNumericTagName(definition.Name) {
+			tagIDs = append(tagIDs, definition.ID)
+		}
+	}
+	if len(tagIDs) > 0 {
+		for _, model := range []interface{}{
+			&models.UserFileTag{},
+			&models.UserDirectoryTag{},
+			&models.UserFileTagExclusion{},
+			&models.RecycledDirectoryTag{},
+		} {
+			if !tx.Migrator().HasTable(model) {
+				continue
+			}
+			if err := tx.Where("tag_id IN ?", tagIDs).Delete(model).Error; err != nil {
+				return fmt.Errorf("删除纯数字标签关联失败: %w", err)
+			}
+		}
+		if err := tx.Where("id IN ?", tagIDs).Delete(&models.TagDefinition{}).Error; err != nil {
+			return fmt.Errorf("删除纯数字标签定义失败: %w", err)
+		}
+	}
+	if err := tx.Create(&schemaMigration{Version: pureNumericTagCleanupVersion, AppliedAt: now}).Error; err != nil {
+		return fmt.Errorf("记录纯数字标签清理状态失败: %w", err)
+	}
+	return nil
 }
 
 func seedCinemaModeTag(tx *gorm.DB, now time.Time) error {

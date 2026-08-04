@@ -37,7 +37,7 @@ func TestGenerateFilenameAndMetadataTags(t *testing.T) {
 		MIME:     "video/x-matroska", Size: 2 * 1024 * 1024 * 1024,
 	})
 	assertTag(t, tags, "流浪地球", "title")
-	assertTag(t, tags, "2023", "year")
+	assertNoTag(t, tags, "2023")
 	assertTag(t, tags, "4K", "resolution")
 	assertTag(t, tags, "H265", "codec")
 	assertTag(t, tags, "视频", "file_type")
@@ -124,8 +124,36 @@ func TestNFKCAliasTieBreakStopWordUnionAndLimit(t *testing.T) {
 func TestNFKCIsAppliedBeforeExtensionAndRegexExtraction(t *testing.T) {
 	snapshot := testSnapshot(t)
 	tags := snapshot.Generate(Input{Filename: "电影．２０２３．ｍｋｖ", MIME: "video/x-matroska"})
-	assertTag(t, tags, "2023", "year")
+	assertNoTag(t, tags, "2023")
 	assertTag(t, tags, "MKV", "file_type")
+}
+
+func TestGenerateFiltersPureNumericTagsFromEveryAutomaticSource(t *testing.T) {
+	global := models.TagRuleSet{ScopeType: models.TagRuleScopeGlobal, Version: 1, Rules: []models.TagRule{
+		{ID: "word", Type: models.TagRuleTypeWord, Pattern: "１２３", CategoryID: "title", Enabled: true},
+		{ID: "regex", Type: models.TagRuleTypeRegex, TargetField: "basename", Pattern: `(2024)`, Replacement: "$1", CategoryID: "year", Enabled: true},
+	}}
+	snapshot, err := CompileSnapshot([]models.TagRuleSet{global}, 20)
+	if err != nil {
+		t.Fatal(err)
+	}
+	tags := snapshot.Generate(Input{Filename: "１２３.2024.mkv", Metadata: map[string]string{"year": "２０２５"}})
+	for _, name := range []string{"123", "2024", "2025"} {
+		assertNoTag(t, tags, name)
+	}
+}
+
+func TestIsPureNumericTagNameUsesNFKCAndUnicodeDigits(t *testing.T) {
+	for _, value := range []string{"123", "１２３", "١٢٣"} {
+		if !IsPureNumericTagName(value) {
+			t.Fatalf("应识别纯数字标签%q", value)
+		}
+	}
+	for _, value := range []string{"", "2024年", "S01E02", "1.5"} {
+		if IsPureNumericTagName(value) {
+			t.Fatalf("不应识别为纯数字标签%q", value)
+		}
+	}
 }
 
 func TestInvalidUTF8FilenameKeepsOnlyBasicMetadataTags(t *testing.T) {

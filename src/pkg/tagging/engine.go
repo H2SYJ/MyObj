@@ -408,7 +408,7 @@ func (s *Snapshot) finalize(input []Candidate) []Candidate {
 				candidate.CategoryID = alias.categoryID
 			}
 		}
-		if !ValidTagName(candidate.Name) {
+		if !ValidTagName(candidate.Name) || IsPureNumericTagName(candidate.Name) {
 			continue
 		}
 		if _, stopped := s.stopWords[candidate.Normalized]; stopped {
@@ -560,6 +560,20 @@ func ValidTagName(value string) bool {
 	}
 	for _, char := range runes {
 		if unicode.IsControl(char) || char == rune(0xFEFF) {
+			return false
+		}
+	}
+	return true
+}
+
+// IsPureNumericTagName 判断标签归一化后是否只包含数字。
+func IsPureNumericTagName(value string) bool {
+	runes := []rune(displayTagName(value))
+	if len(runes) == 0 {
+		return false
+	}
+	for _, char := range runes {
+		if !unicode.IsDigit(char) {
 			return false
 		}
 	}
