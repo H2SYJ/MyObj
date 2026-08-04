@@ -16,10 +16,16 @@ describe('影视模式页面结构', () => {
 
   it('首页横向分区隐藏滚动条并限制桌面六列', () => {
     const source = readSource('./Home.vue')
+    const shell = readSource('./components/CinemaShell.vue')
     expect(source).toContain('scrollbar-width: none')
     expect(source).toContain('.cinema-section__rail::-webkit-scrollbar')
     expect(source).toContain('calc((100% - 80px) / 6)')
     expect(source).toContain('@keydown="handleRailKeydown"')
+    expect(source).toContain('@wheel="handleRailWheel"')
+    expect(source).toContain('touch-action: pan-x pan-y')
+    expect(source).toContain('-webkit-overflow-scrolling: touch')
+    expect(shell).toContain('overflow-y: auto')
+    expect(shell).toContain('.cinema-shell::-webkit-scrollbar')
   })
 
   it('播放页先显示封面按钮，用户操作后才挂载播放器', () => {

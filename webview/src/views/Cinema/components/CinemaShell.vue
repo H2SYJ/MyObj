@@ -70,10 +70,20 @@
     --el-border-color-lighter: var(--cinema-border);
     --el-fill-color-light: var(--cinema-accent-soft);
     --el-color-primary: var(--cinema-accent);
-    min-height: 100vh;
+    width: 100%;
+    height: 100vh;
+    height: 100dvh;
+    overflow-x: hidden;
+    overflow-y: auto;
+    overscroll-behavior-y: contain;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: none;
     color: var(--cinema-text);
     background: #fff;
     color-scheme: light;
+  }
+  .cinema-shell::-webkit-scrollbar {
+    display: none;
   }
   header {
     position: sticky;

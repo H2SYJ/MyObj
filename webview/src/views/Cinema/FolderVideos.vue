@@ -4,10 +4,7 @@
       <button type="button" @click="router.back()">
         <el-icon><ArrowLeft /></el-icon>
       </button>
-      <div>
-        <h1>{{ directory?.name || '视频列表' }}</h1>
-        <p v-if="directory">{{ directory.path }} · {{ total }} 个视频</p>
-      </div>
+      <h1>{{ directory?.name || '视频列表' }}</h1>
     </div>
     <div class="cinema-video-grid">
       <CinemaVideoCard v-for="video in videos" :key="video.file_id" :video="video" @open="openVideo(video.file_id)" />
@@ -42,7 +39,6 @@
   const directoryId = computed(() => Number(route.params.directoryId))
   const directory = ref<CinemaDirectory>()
   const videos = ref<CinemaVideo[]>([])
-  const total = ref(0)
   const page = ref(1)
   const hasMore = ref(true)
   const loading = ref(false)
@@ -68,7 +64,6 @@
         throw new Error(response.message || '加载视频失败')
       }
       directory.value = response.data.directory
-      total.value = response.data.total
       videos.value.push(...(response.data.videos || []))
       hasMore.value = response.data.has_more
       page.value = requestedPage + 1
@@ -99,7 +94,6 @@
     loading.value = false
     directory.value = undefined
     videos.value = []
-    total.value = 0
     page.value = 1
     hasMore.value = true
     void loadMore()
@@ -156,11 +150,6 @@
     color: var(--cinema-text, #18191c);
     font-size: 28px;
     font-weight: 700;
-  }
-  p {
-    margin: 5px 0 0;
-    color: var(--cinema-muted, #6b7280);
-    font-size: 13px;
   }
   .cinema-video-grid {
     display: grid;

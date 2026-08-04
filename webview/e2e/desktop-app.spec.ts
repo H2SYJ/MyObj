@@ -92,15 +92,18 @@ const mockApi = async (page: Page) => {
     } else if (path === '/cinema/7/home') {
       data = {
         root: { id: 7, name: '影视库', parent_id: 0, path: '影视库' },
-        sections: [
-          {
-            directory: { id: 7, name: '影视库', parent_id: 0, path: '影视库' },
-            videos: Array.from({ length: 6 }, (_, index) => cinemaVideo(index + 1)),
-            total: 8,
-            has_more: true
-          }
-        ],
-        total: 1,
+        sections: Array.from({ length: 4 }, (_, sectionIndex) => ({
+          directory: {
+            id: 7 + sectionIndex,
+            name: sectionIndex === 0 ? '影视库' : `影视分区 ${sectionIndex}`,
+            parent_id: sectionIndex === 0 ? 0 : 7,
+            path: sectionIndex === 0 ? '影视库' : `影视库/影视分区 ${sectionIndex}`
+          },
+          videos: Array.from({ length: 6 }, (_, index) => cinemaVideo(index + 1)),
+          total: 8,
+          has_more: true
+        })),
+        total: 4,
         page: 1,
         page_size: Number(url.searchParams.get('page_size') || 20),
         has_more: false
@@ -282,7 +285,7 @@ test('影视模式桌面布局、隐藏横向滚动条和路由前进后退', as
   expect(await page.locator('.cinema-shell').evaluate(element => getComputedStyle(element).backgroundColor)).toBe(
     'rgb(255, 255, 255)'
   )
-  const rail = page.locator('.cinema-section__rail')
+  const rail = page.locator('.cinema-section__rail').first()
   await expect(rail.locator('.cinema-video-card')).toHaveCount(6)
   expect(await rail.evaluate(element => getComputedStyle(element).scrollbarWidth)).toBe('none')
   expect(
@@ -291,6 +294,17 @@ test('影视模式桌面布局、隐藏横向滚动条和路由前进后退', as
       .first()
       .evaluate(element => getComputedStyle(element).borderRadius)
   ).toBe('16px')
+
+  const shell = page.locator('.cinema-shell')
+  expect(await shell.evaluate(element => element.scrollHeight > element.clientHeight)).toBe(true)
+  await shell.evaluate(element => element.scrollTo({ top: 120 }))
+  await expect.poll(() => shell.evaluate(element => element.scrollTop)).toBeGreaterThan(0)
+
+  const canScrollRail = await rail.evaluate(element => element.scrollWidth > element.clientWidth)
+  if (canScrollRail) {
+    await rail.dispatchEvent('wheel', { deltaY: 240 })
+    await expect.poll(() => rail.evaluate(element => element.scrollLeft)).toBeGreaterThan(0)
+  }
 
   await rail.locator('.cinema-video-card').first().click()
   await expect(page).toHaveURL(/\/cinema\/7\/watch\/cinema-video-1$/)

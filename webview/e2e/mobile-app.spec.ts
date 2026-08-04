@@ -33,15 +33,18 @@ const mockApi = async (page: Page) => {
     else if (path === '/cinema/7/home') {
       data = {
         root: { id: 7, name: '移动影视库', parent_id: 0, path: '移动影视库' },
-        sections: [
-          {
-            directory: { id: 7, name: '移动影视库', parent_id: 0, path: '移动影视库' },
-            videos: Array.from({ length: 6 }, (_, index) => cinemaVideo(index + 1)),
-            total: 6,
-            has_more: false
-          }
-        ],
-        total: 1,
+        sections: Array.from({ length: 4 }, (_, sectionIndex) => ({
+          directory: {
+            id: 7 + sectionIndex,
+            name: sectionIndex === 0 ? '移动影视库' : `移动影视分区 ${sectionIndex}`,
+            parent_id: sectionIndex === 0 ? 0 : 7,
+            path: sectionIndex === 0 ? '移动影视库' : `移动影视库/移动影视分区 ${sectionIndex}`
+          },
+          videos: Array.from({ length: 6 }, (_, index) => cinemaVideo(index + 1)),
+          total: 6,
+          has_more: false
+        })),
+        total: 4,
         page: 1,
         page_size: Number(url.searchParams.get('page_size') || 20),
         has_more: false
@@ -171,6 +174,22 @@ test('影视播放页在移动端按播放器、标题、相关推荐单列排�
   expect(titleBox!.y).toBeLessThan(relatedBox!.y)
   expect(await page.locator('.cinema-watch').evaluate(element => getComputedStyle(element).display)).toBe('block')
   expect(await page.locator('.cinema-related').evaluate(element => getComputedStyle(element).borderRadius)).toBe('16px')
+})
+
+test('影视首页隐藏滚动条并保留横向和纵向滚动', async ({ page }) => {
+  await page.goto('/cinema/7')
+  const shell = page.locator('.cinema-shell')
+  const rail = page.locator('.cinema-section__rail').first()
+
+  await expect(rail.locator('.cinema-video-card')).toHaveCount(6)
+  expect(await rail.evaluate(element => getComputedStyle(element).scrollbarWidth)).toBe('none')
+  expect(await rail.evaluate(element => element.scrollWidth > element.clientWidth)).toBe(true)
+  await rail.evaluate(element => element.scrollTo({ left: 180 }))
+  await expect.poll(() => rail.evaluate(element => element.scrollLeft)).toBeGreaterThan(0)
+
+  expect(await shell.evaluate(element => element.scrollHeight > element.clientHeight)).toBe(true)
+  await shell.evaluate(element => element.scrollTo({ top: 120 }))
+  await expect.poll(() => shell.evaluate(element => element.scrollTop)).toBeGreaterThan(0)
 })
 
 test('五个主标签、无限滚动与二级页返回', async ({ page }) => {

@@ -2,15 +2,11 @@
   <div v-loading="loading && sections.length === 0" class="cinema-home">
     <div class="cinema-home__title">
       <h1>{{ root?.name || '影视库' }}</h1>
-      <p v-if="root">{{ root.path }}</p>
     </div>
 
     <section v-for="section in sections" :key="section.directory.id" class="cinema-section">
       <div class="cinema-section__header">
-        <div>
-          <h2>{{ section.directory.name }}</h2>
-          <p>{{ section.directory.path }}</p>
-        </div>
+        <h2>{{ section.directory.name }}</h2>
         <router-link :to="`/cinema/${rootId}/folder/${section.directory.id}`">更多 &gt;&gt;</router-link>
       </div>
       <div
@@ -18,6 +14,7 @@
         tabindex="0"
         :aria-label="`${section.directory.name}视频列表`"
         @keydown="handleRailKeydown"
+        @wheel="handleRailWheel"
       >
         <CinemaVideoCard
           v-for="video in section.videos"
@@ -117,6 +114,21 @@
     const rail = event.currentTarget as HTMLElement
     rail.scrollBy({ left: direction * 320, behavior: 'smooth' })
   }
+  const handleRailWheel = (event: WheelEvent) => {
+    const rail = event.currentTarget as HTMLElement
+    if (rail.scrollWidth <= rail.clientWidth) {
+      return
+    }
+
+    const delta = Math.abs(event.deltaX) > Math.abs(event.deltaY) ? event.deltaX : event.deltaY
+    const nextScrollLeft = Math.max(0, Math.min(rail.scrollWidth - rail.clientWidth, rail.scrollLeft + delta))
+    if (nextScrollLeft === rail.scrollLeft) {
+      return
+    }
+
+    event.preventDefault()
+    rail.scrollLeft = nextScrollLeft
+  }
 
   const reset = () => {
     generation++
@@ -152,12 +164,6 @@
     font-size: clamp(26px, 3vw, 34px);
     font-weight: 700;
     letter-spacing: -0.02em;
-  }
-  .cinema-home__title p,
-  .cinema-section__header p {
-    margin: 6px 0 0;
-    color: var(--cinema-muted, #6b7280);
-    font-size: 13px;
   }
   .cinema-section {
     margin-top: 34px;
@@ -200,7 +206,10 @@
     grid-template-rows: 1fr;
     gap: 16px;
     overflow-x: auto;
+    overflow-y: hidden;
     overscroll-behavior-inline: contain;
+    touch-action: pan-x pan-y;
+    -webkit-overflow-scrolling: touch;
     scroll-snap-type: inline proximity;
     scrollbar-width: none;
   }
