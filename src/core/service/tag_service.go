@@ -46,42 +46,74 @@ type tagRebuildGuard struct {
 
 // TagService 管理规则热更新、文件标签以及持久化重建任务。
 type TagService struct {
-	factory        *impl.RepositoryFactory
-	globalRuntime  atomic.Pointer[globalTagRuntime]
-	autoEnabled    atomic.Bool
-	autoLimit      atomic.Int64
-	userCacheMu    sync.RWMutex
-	userCache      map[string]cachedUserSnapshot
-	wake           chan struct{}
-	ctx            context.Context
-	cancel         context.CancelFunc
-	wg             sync.WaitGroup
-	started        atomic.Bool
-	degraded       atomic.Bool
-	degradedReason atomic.Value
+	factory          *impl.RepositoryFactory
+	globalRuntime    atomic.Pointer[globalTagRuntime]
+	runtimeMu        sync.Mutex
+	autoEnabled      atomic.Bool
+	autoLimit        atomic.Int64
+	runtimeReady     chan struct{}
+	runtimeReadyOnce sync.Once
+	userCacheMu      sync.RWMutex
+	userCache        map[string]cachedUserSnapshot
+	wake             chan struct{}
+	ctx              context.Context
+	cancel           context.CancelFunc
+	wg               sync.WaitGroup
+	started          atomic.Bool
+	degraded         atomic.Bool
+	degradedReason   atomic.Value
 }
 
 func NewTagService(factory *impl.RepositoryFactory) (*TagService, error) {
 	ctx, cancel := context.WithCancel(context.Background())
 	service := &TagService{
 		factory: factory, userCache: make(map[string]cachedUserSnapshot),
-		wake: make(chan struct{}, 1), ctx: ctx, cancel: cancel,
+		wake: make(chan struct{}, 1), runtimeReady: make(chan struct{}), ctx: ctx, cancel: cancel,
 	}
+	service.autoEnabled.Store(true)
+	service.autoLimit.Store(tagging.DefaultAutoTagLimit)
 	service.degradedReason.Store("")
-	if err := service.reloadSettings(context.Background()); err != nil {
-		cancel()
-		return nil, err
-	}
-	if err := service.reloadGlobalRules(context.Background(), true); err != nil {
-		if fallbackErr := service.installFallbackSnapshot(err); fallbackErr != nil {
-			cancel()
-			return nil, fallbackErr
-		}
-	}
 	return service, nil
 }
 
+func (s *TagService) initializeRuntime(ctx context.Context) error {
+	if err := s.reloadSettings(ctx); err != nil {
+		return err
+	}
+	if err := s.reloadGlobalRules(ctx, true); err != nil {
+		if fallbackErr := s.installFallbackSnapshot(err); fallbackErr != nil {
+			return fallbackErr
+		}
+	}
+	return nil
+}
+
+func (s *TagService) markRuntimeReady() {
+	if s == nil || s.runtimeReady == nil {
+		return
+	}
+	s.runtimeReadyOnce.Do(func() { close(s.runtimeReady) })
+}
+
+func (s *TagService) waitForRuntime() bool {
+	if s == nil {
+		return false
+	}
+	if s.runtimeReady == nil {
+		return s.globalRuntime.Load() != nil
+	}
+	select {
+	case <-s.runtimeReady:
+		return true
+	case <-s.ctx.Done():
+		return false
+	}
+}
+
 func (s *TagService) installFallbackSnapshot(cause error) error {
+	if s.globalRuntime.Load() != nil {
+		return nil
+	}
 	now := time.Now()
 	ruleSet := &models.TagRuleSet{
 		ID: "builtin-fallback", ScopeType: models.TagRuleScopeGlobal, ScopeID: "",
@@ -92,9 +124,16 @@ func (s *TagService) installFallbackSnapshot(cause error) error {
 	if err != nil {
 		return fmt.Errorf("编译内置基础标签规则失败: %w", err)
 	}
+	s.runtimeMu.Lock()
+	if s.globalRuntime.Load() != nil {
+		s.runtimeMu.Unlock()
+		return nil
+	}
 	s.globalRuntime.Store(&globalTagRuntime{ruleSet: ruleSet, snapshot: snapshot})
 	s.degraded.Store(true)
 	s.degradedReason.Store(cause.Error())
+	s.runtimeMu.Unlock()
+	s.markRuntimeReady()
 	logger.LOG.Error("活动标签规则损坏，已启用内置基础规则", "error", cause)
 	return nil
 }
@@ -112,11 +151,13 @@ func (s *TagService) Start() {
 }
 
 func (s *TagService) Close() {
-	if s == nil || !s.started.Load() {
+	if s == nil {
 		return
 	}
 	s.cancel()
-	s.wg.Wait()
+	if s.started.Load() {
+		s.wg.Wait()
+	}
 }
 
 func (s *TagService) Notify() {
@@ -203,7 +244,7 @@ func (s *TagService) reloadGlobalRules(ctx context.Context, force bool) error {
 		return fmt.Errorf("加载活动全局标签规则失败: %w", err)
 	}
 	current := s.globalRuntime.Load()
-	if !force && current != nil && current.snapshot.GlobalVersion == ruleSet.Version && current.snapshot.Limit == int(s.autoLimit.Load()) {
+	if !force && !s.degraded.Load() && current != nil && current.snapshot.GlobalVersion == ruleSet.Version && current.snapshot.Limit == int(s.autoLimit.Load()) {
 		return nil
 	}
 	started := time.Now()
@@ -211,10 +252,18 @@ func (s *TagService) reloadGlobalRules(ctx context.Context, force bool) error {
 	if err != nil {
 		return err
 	}
+	s.runtimeMu.Lock()
+	current = s.globalRuntime.Load()
+	if current != nil && current.snapshot != nil && current.snapshot.GlobalVersion > snapshot.GlobalVersion {
+		s.runtimeMu.Unlock()
+		return nil
+	}
 	s.globalRuntime.Store(&globalTagRuntime{ruleSet: ruleSet, snapshot: snapshot})
 	s.degraded.Store(false)
 	s.degradedReason.Store("")
+	s.runtimeMu.Unlock()
 	s.clearUserCache()
+	s.markRuntimeReady()
 	logger.LOG.Info("标签规则快照已加载", "version", snapshot.GlobalVersion, "duration", time.Since(started))
 	return nil
 }

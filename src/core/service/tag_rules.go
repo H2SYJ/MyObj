@@ -241,8 +241,13 @@ func (s *TagService) PublishGlobalDraft(ctx context.Context, id, adminID string)
 	}
 	draft.Status = models.TagRuleSetActive
 	draft.PublishedAt = &now
+	s.runtimeMu.Lock()
 	s.globalRuntime.Store(&globalTagRuntime{ruleSet: draft, snapshot: snapshot})
+	s.degraded.Store(false)
+	s.degradedReason.Store("")
+	s.runtimeMu.Unlock()
 	s.clearUserCache()
+	s.markRuntimeReady()
 	s.Notify()
 	return draft, job, nil
 }
@@ -435,6 +440,7 @@ func (s *TagService) TagSettings(ctx context.Context) (map[string]interface{}, e
 	return map[string]interface{}{
 		"enabled": s.autoEnabled.Load(), "limit": s.autoLimit.Load(),
 		"active_version": version, "degraded": s.degraded.Load(),
+		"initializing":    runtime == nil,
 		"degraded_reason": s.degradedReason.Load().(string),
 		"providers": map[string]interface{}{
 			"basic":   map[string]interface{}{"available": true},

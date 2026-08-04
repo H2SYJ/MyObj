@@ -19,6 +19,9 @@ const (
 
 func (s *TagService) runPendingWorker() {
 	defer s.wg.Done()
+	if !s.waitForRuntime() {
+		return
+	}
 	ticker := time.NewTicker(2 * time.Second)
 	defer ticker.Stop()
 	for {
@@ -119,6 +122,9 @@ func (s *TagService) failPendingState(state *models.UserFileTagState, generation
 
 func (s *TagService) runRebuildWorker() {
 	defer s.wg.Done()
+	if !s.waitForRuntime() {
+		return
+	}
 	ticker := time.NewTicker(3 * time.Second)
 	defer ticker.Stop()
 	for {
@@ -396,6 +402,11 @@ func (s *TagService) resolveQueuedRebuildFailures(ufID string) {
 
 func (s *TagService) runRulePoller() {
 	defer s.wg.Done()
+	if err := s.initializeRuntime(s.ctx); err != nil {
+		s.degraded.Store(true)
+		s.degradedReason.Store(err.Error())
+		logger.LOG.Error("异步加载标签规则失败，将继续重试", "error", err)
+	}
 	ticker := time.NewTicker(5 * time.Second)
 	defer ticker.Stop()
 	for {
@@ -403,6 +414,14 @@ func (s *TagService) runRulePoller() {
 		case <-s.ctx.Done():
 			return
 		case <-ticker.C:
+			if s.globalRuntime.Load() == nil {
+				if err := s.initializeRuntime(s.ctx); err != nil {
+					s.degraded.Store(true)
+					s.degradedReason.Store(err.Error())
+					logger.LOG.Error("重试加载标签规则失败", "error", err)
+				}
+				continue
+			}
 			if err := s.reloadSettings(s.ctx); err != nil {
 				logger.LOG.Warn("刷新标签配置失败", "error", err)
 				continue
