@@ -79,6 +79,23 @@ const mockApi = async (page: Page) => {
       }
     } else if (path === '/file/search/user') {
       data = { files: [], total: 0 }
+    } else if (path === '/file/tags/suggestions') {
+      data = [
+        {
+          id: 'tag-4k',
+          name: '4K',
+          category_code: 'resolution',
+          color: '#409eff',
+          visibility: 'inherit'
+        },
+        {
+          id: 'tag-movie',
+          name: '电影',
+          category_code: 'title',
+          color: '#67c23a',
+          visibility: 'inherit'
+        }
+      ]
     } else if (path === '/file/search/public' || path === '/file/public/list') {
       data = { files: [], total: 0 }
     } else if (path === '/admin/user/list') {
@@ -233,6 +250,43 @@ test('固定侧栏、路由搜索恢复与无横向滚动', async ({ page }) => 
   await page.locator('.file-view-toolbar .el-button-group button').nth(1).click()
   await expect(page.locator('.file-list')).toBeVisible()
   await expect(page).toHaveScreenshot('desktop-files-list.png', { fullPage: true, maxDiffPixelRatio: 0.03 })
+})
+
+test('桌面搜索栏通过井号选择标签并在提交后跨目录任一匹配', async ({ page }) => {
+  const searchRequests: URL[] = []
+  page.on('request', request => {
+    const url = new URL(request.url())
+    if (url.pathname.endsWith('/file/search/user')) searchRequests.push(url)
+  })
+  await page.goto('/files?directoryId=12')
+  const search = page.locator('.desktop-header__search input')
+  await search.fill('#4')
+  await expect(page.getByRole('option', { name: /#4K/ })).toBeVisible()
+  await page.getByRole('option', { name: /#4K/ }).click()
+  await expect(page.locator('.desktop-header__search .file-search-input__tag')).toContainText('#4K')
+  await expect(page).not.toHaveURL(/tags=/)
+
+  await search.fill('#电')
+  await expect(page.getByRole('option', { name: /#电影/ })).toBeVisible()
+  await page.getByRole('option', { name: /#电影/ }).click()
+  await expect(page.locator('.desktop-header__search .file-search-input__tag')).toHaveCount(2)
+  await expect(page).not.toHaveURL(/tags=/)
+
+  await search.fill('报告')
+  await search.press('Enter')
+  await expect(page).toHaveURL(/tags=tag-4k,tag-movie/)
+  await expect(page).toHaveURL(/search=%E6%8A%A5%E5%91%8A/)
+  await expect.poll(() => searchRequests.length).toBeGreaterThan(0)
+  const request = searchRequests[searchRequests.length - 1]
+  expect(request.searchParams.get('tag_ids')).toBe('tag-4k,tag-movie')
+  expect(request.searchParams.has('tag_mode')).toBe(false)
+  expect(request.searchParams.has('directory_id')).toBe(false)
+
+  await page.reload()
+  await expect(page.locator('.desktop-header__search .file-search-input__tag')).toHaveCount(2)
+  await expect(page.locator('.desktop-header__search .file-search-input__tag')).toContainText(['#4K', '#电影'])
+  await page.locator('.desktop-header__search .file-search-input__clear').click()
+  await expect(page).not.toHaveURL(/(?:search|tags)=/)
 })
 
 test('任务查询参数、账户概览和设置分区可直接访问', async ({ page }, testInfo) => {

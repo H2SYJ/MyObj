@@ -103,7 +103,10 @@ export const get = <T = any>(
   params: Record<string, any> = {},
   options: RequestConfig = {}
 ): Promise<T> => {
-  const queryString = new URLSearchParams(params).toString()
+  const definedParams = Object.fromEntries(
+    Object.entries(params).filter(([, value]) => value !== undefined && value !== null)
+  )
+  const queryString = new URLSearchParams(definedParams).toString()
   const fullUrl = queryString ? `${url}?${queryString}` : url
 
   return request<T>(fullUrl, {

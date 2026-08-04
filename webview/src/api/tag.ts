@@ -136,8 +136,22 @@ export const batchUpdateTags = (fileIds: string[], add: ManualTagInput[], remove
     remove_tag_ids: removeTagIds
   })
 
-export const getTagSuggestions = (keyword = '', limit = 30) =>
-  get<ApiResponse<CompactTag[]>>(API_ENDPOINTS.FILE.TAG_SUGGESTIONS, { keyword, limit })
+export type TagSuggestionScope = 'user' | 'public'
+
+export interface TagSuggestionParams {
+  keyword?: string
+  tagIds?: string[]
+  scope?: TagSuggestionScope
+  limit?: number
+}
+
+export const getTagSuggestions = (params: TagSuggestionParams = {}) =>
+  get<ApiResponse<CompactTag[]>>(API_ENDPOINTS.FILE.TAG_SUGGESTIONS, {
+    keyword: params.keyword || undefined,
+    tag_ids: params.tagIds?.join(',') || undefined,
+    scope: params.scope || 'user',
+    limit: params.limit || 30
+  })
 
 export const getEnabledTagCategories = () => get<ApiResponse<TagCategory[]>>(API_ENDPOINTS.FILE.TAG_CATEGORIES)
 

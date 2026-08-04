@@ -53,8 +53,8 @@ const mockApi = async (page: Page) => {
       }
     } else if (path === '/file/tags/suggestions') {
       data = [
-        { id: 'tag-4k', name: '4K', category_code: 'resolution', color: '#409eff' },
-        { id: 'tag-movie', name: '电影', category_code: 'title', color: '#67c23a' }
+        { id: 'tag-4k', name: '4K', category_code: 'resolution', color: '#409eff', visibility: 'inherit' },
+        { id: 'tag-movie', name: '电影', category_code: 'title', color: '#67c23a', visibility: 'inherit' }
       ]
     } else if (path === '/file/search/user') data = { files: [], total: 0, page: 1, page_size: 20 }
     else if (path === '/file/search/public') data = { files: [], total: 0 }
@@ -155,17 +155,39 @@ test('订阅全屏层、浏览器返回与管理中心', async ({ page }) => {
   await expect(page.locator('html')).toHaveClass(/dark/)
 })
 
-test('移动端显示单标签摘要并可打开标签筛选', async ({ page }) => {
+test('移动端显示单标签摘要并通过搜索层提交标签', async ({ page }) => {
+  const searchRequests: URL[] = []
+  page.on('request', request => {
+    const url = new URL(request.url())
+    if (url.pathname.endsWith('/file/search/user')) searchRequests.push(url)
+  })
   await page.goto('/files')
   const firstFile = page.locator('.file-card').first()
   await expect(firstFile.locator('.file-tags')).toContainText('4K')
   await expect(firstFile.locator('.file-tags')).toContainText('+2')
 
-  await page.getByRole('button', { name: '标签筛选' }).click()
-  await expect(page.locator('.el-drawer .tag-filter')).toBeVisible()
-  await page.locator('.el-drawer .tag-filter__select').click()
-  await page.getByRole('option', { name: '4K', exact: true }).click()
-  await expect(page).toHaveURL(/tags=tag-4k/)
+  await page.getByRole('button', { name: '搜索' }).first().click()
+  const searchLayer = page.locator('.full-screen-layer')
+  const search = searchLayer.locator('input')
+  await search.fill('#4')
+  await expect(searchLayer.getByRole('option', { name: /#4K/ })).toBeVisible()
+  await searchLayer.getByRole('option', { name: /#4K/ }).click()
+  await expect(searchLayer.locator('.file-search-input__tag')).toContainText('#4K')
+  await expect(page).not.toHaveURL(/tags=/)
+
+  await search.fill('#电')
+  await expect(searchLayer.getByRole('option', { name: /#电影/ })).toBeVisible()
+  await searchLayer.getByRole('option', { name: /#电影/ }).click()
+  await expect(searchLayer.locator('.file-search-input__tag')).toHaveCount(2)
+  await expect(page).not.toHaveURL(/tags=/)
+
+  await searchLayer.getByRole('button', { name: '搜索', exact: true }).click()
+  await expect(page).toHaveURL(/tags=tag-4k,tag-movie/)
+  await expect.poll(() => searchRequests.length).toBeGreaterThan(0)
+  const request = searchRequests[searchRequests.length - 1]
+  expect(request.searchParams.get('tag_ids')).toBe('tag-4k,tag-movie')
+  expect(request.searchParams.has('tag_mode')).toBe(false)
+  expect(request.searchParams.has('directory_id')).toBe(false)
 })
 
 test('公开分享页适配手机安全区', async ({ page }) => {

@@ -20,24 +20,17 @@
       </div>
     </div>
 
-    <div ref="searchWrapperRef" class="desktop-header__search">
-      <el-input
+    <div class="desktop-header__search">
+      <FileSearchInput
         v-model="searchKeyword"
+        v-model:tags="searchTags"
         :placeholder="t('files.searchPlaceholder')"
-        prefix-icon="Search"
-        clearable
-        @keyup.enter="submitSearch"
-        @focus="showSuggestions = true"
-        @blur="handleSearchBlur"
-        @clear="submitSearch"
-      />
-      <SearchSuggestions
-        v-if="showSuggestions"
-        :suggestions="searchSuggestions"
-        :visible="searchSuggestions.length > 0"
-        @select="selectSuggestion"
-        @clear="clearHistory"
-        @delete="removeHistory"
+        :scope="searchScope"
+        :history="searchHistory"
+        @submit="submitSearch"
+        @clear="clearSearch"
+        @clear-history="clearHistory"
+        @delete-history="removeHistory"
       />
     </div>
 
@@ -72,6 +65,9 @@
 <script setup lang="ts">
   import { useFullscreen } from '@vueuse/core'
   import { useI18n, useSearchHistory, useTheme } from '@/composables'
+  import { extractSearchHistoryKeyword, useFileSearchDraft } from '@/composables/business/useFileSearchDraft'
+  import FileSearchInput from '@/components/FileSearchInput/index.vue'
+  import type { CompactTag } from '@/types'
   import { useAuthStore, useLayoutStore, useUserStore } from '@/stores'
   import { resolveDesktopSearchNavigation } from '@/utils/desktop/routeSearch'
 
@@ -85,10 +81,8 @@
   const { isFullscreen, toggle: toggleFullscreen } = useFullscreen()
   const { searchHistory, addHistory, clearHistory, removeHistory } = useSearchHistory()
 
-  const searchKeyword = ref('')
-  const showSuggestions = ref(false)
-  const searchWrapperRef = ref<HTMLElement>()
-  let searchBlurTimer: number | null = null
+  const searchScope = computed(() => (route.path === '/square' ? 'public' : 'user'))
+  const { keyword: searchKeyword, tags: searchTags } = useFileSearchDraft(searchScope)
   const sidebarCollapsed = computed(() => layoutStore.sidebarCollapsed)
   const displayName = computed(() => userStore.nickname || userStore.username || 'MyObj')
   const avatarText = computed(() => displayName.value.charAt(0).toUpperCase())
@@ -102,34 +96,19 @@
   const routeDescription = computed(() =>
     route.meta.desktopSearch ? t(`desktop.searchScope.${route.meta.desktopSearch}`) : ''
   )
-  const searchSuggestions = computed(() => {
-    const keyword = searchKeyword.value.trim().toLowerCase()
-    const source = keyword
-      ? searchHistory.value.filter(item => item.toLowerCase().includes(keyword))
-      : searchHistory.value
-    return source.slice(0, 5)
-  })
-
-  const submitSearch = async () => {
-    const keyword = searchKeyword.value.trim()
-    if (keyword) addHistory(keyword)
-    const location = resolveDesktopSearchNavigation(route.path, route.query, route.meta.desktopSearch, keyword)
+  const submitSearch = async ({ keyword, tags }: { keyword: string; tags: CompactTag[] }) => {
+    const historyKeyword = extractSearchHistoryKeyword(keyword)
+    if (historyKeyword) addHistory(historyKeyword)
+    const location = resolveDesktopSearchNavigation(
+      route.path,
+      route.query,
+      route.meta.desktopSearch,
+      keyword,
+      tags.map(tag => tag.id)
+    )
     await router.push(location)
-    showSuggestions.value = false
   }
-
-  const selectSuggestion = (keyword: string) => {
-    searchKeyword.value = keyword
-    void submitSearch()
-  }
-
-  const handleSearchBlur = () => {
-    if (searchBlurTimer) window.clearTimeout(searchBlurTimer)
-    searchBlurTimer = window.setTimeout(() => {
-      searchBlurTimer = null
-      showSuggestions.value = false
-    }, 160)
-  }
+  const clearSearch = () => submitSearch({ keyword: '', tags: [] })
   const handleCommand = async (command: string) => {
     if (command === 'settings') await router.push('/settings')
     if (command === 'fullscreen') await toggleFullscreen()
@@ -138,17 +117,6 @@
       await router.replace('/login')
     }
   }
-
-  watch(
-    () => [route.path, route.query.search],
-    () => {
-      searchKeyword.value = route.meta.desktopSearch ? String(route.query.search || '') : ''
-    },
-    { immediate: true }
-  )
-  onBeforeUnmount(() => {
-    if (searchBlurTimer) window.clearTimeout(searchBlurTimer)
-  })
 </script>
 
 <style scoped>

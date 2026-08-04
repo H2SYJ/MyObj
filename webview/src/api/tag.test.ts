@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import {
   getTagRebuildFailures,
+  getTagSuggestions,
   publishGlobalDraft,
   retryTagRebuildFailure,
   rollbackGlobalRuleSet,
@@ -50,5 +51,18 @@ describe('标签管理 API', () => {
       limit: 25
     })
     expect(network.post).toHaveBeenCalledWith('/admin/tag/rebuild-jobs/job-1/failures/uf-1/retry')
+  })
+
+  it('标签建议支持模糊搜索、公开范围和按ID回填', async () => {
+    network.get.mockResolvedValue({ code: 200 })
+
+    await getTagSuggestions({ keyword: '科幻', tagIds: ['tag-1', 'tag-2'], scope: 'public', limit: 2 })
+
+    expect(network.get).toHaveBeenCalledWith('/file/tags/suggestions', {
+      keyword: '科幻',
+      tag_ids: 'tag-1,tag-2',
+      scope: 'public',
+      limit: 2
+    })
   })
 })

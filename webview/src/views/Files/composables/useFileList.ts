@@ -1,7 +1,6 @@
 import { getFileList, getThumbnail } from '@/api/file'
 import { useI18n } from '@/composables'
 import type { FileItem, FileListResponse } from '@/types'
-import type { Ref } from 'vue'
 import cache from '@/plugins/cache'
 
 export type FileSortBy = 'name' | 'size' | 'time'
@@ -10,7 +9,7 @@ export type FileSortOrder = 'asc' | 'desc'
 const SORT_BY_KEY = 'files.sortBy'
 const SORT_ORDER_KEY = 'files.sortOrder'
 
-export function useFileList(tagIds?: Ref<string[]>, tagMode?: Ref<'all' | 'any'>) {
+export function useFileList() {
   const { proxy } = getCurrentInstance() as ComponentInternalInstance
   const router = useRouter()
   const route = useRoute()
@@ -81,8 +80,6 @@ export function useFileList(tagIds?: Ref<string[]>, tagMode?: Ref<'all' | 'any'>
         directory_id: currentDirectoryId.value,
         sortBy: sortBy.value,
         sortOrder: sortOrder.value,
-        tag_ids: tagIds?.value.join(',') || undefined,
-        tag_mode: tagIds?.value.length ? tagMode?.value || 'all' : undefined,
         page: currentPage.value,
         pageSize: pageSize.value
       })

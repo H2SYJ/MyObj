@@ -20,6 +20,16 @@ func TestNormalizeTagFilter(t *testing.T) {
 	}
 }
 
+func TestNormalizeTagFilterDefaultsToAny(t *testing.T) {
+	tags, mode, err := normalizeTagFilter("tag-1,tag-2", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(tags) != 2 || mode != "any" {
+		t.Fatalf("未指定匹配模式时应默认任一匹配: tags=%v mode=%s", tags, mode)
+	}
+}
+
 func TestNormalizeTagFilterRejectsTooManyTags(t *testing.T) {
 	values := make([]string, maxFileTagFilterCount+1)
 	for index := range values {

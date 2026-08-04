@@ -701,8 +701,21 @@ func (s *TagService) UpdateExclusions(ctx context.Context, userID, ufID string, 
 	return err
 }
 
-func (s *TagService) Suggestions(ctx context.Context, userID, keyword string, limit int) ([]response.CompactTagView, error) {
-	if limit < 1 || limit > 50 {
+func (s *TagService) Suggestions(ctx context.Context, userID, keyword string, tagIDs []string, scope string, limit int) ([]response.CompactTagView, error) {
+	scope = strings.ToLower(strings.TrimSpace(scope))
+	if scope == "" {
+		scope = "user"
+	}
+	if scope != "user" && scope != "public" {
+		return nil, errors.New("标签建议范围仅支持 user 或 public")
+	}
+	tagIDs = uniqueTagStrings(tagIDs)
+	if len(tagIDs) > maxFileTagFilterCount {
+		return nil, fmt.Errorf("标签ID最多允许%d项", maxFileTagFilterCount)
+	}
+	if len(tagIDs) > 0 {
+		limit = len(tagIDs)
+	} else if limit < 1 || limit > 50 {
 		limit = 20
 	}
 	type suggestionRow struct {
@@ -717,9 +730,17 @@ func (s *TagService) Suggestions(ctx context.Context, userID, keyword string, li
 		Joins("JOIN user_file_tag uft ON uft.tag_id = td.id").
 		Joins("JOIN user_files uf ON uf.user_id = uft.user_id AND uf.uf_id = uft.uf_id").
 		Where("tc.enabled = ? AND uf.deleted_at IS NULL", true).
-		Where("uft.user_id = ? OR (uf.public = ? AND (uft.source_type <> ? OR uft.visibility = ?))",
-			userID, true, models.TagSourceManual, models.TagVisibilityPublic).
 		Where("NOT EXISTS (SELECT 1 FROM user_file_tag_exclusion e WHERE e.user_id = uft.user_id AND e.uf_id = uft.uf_id AND e.tag_id = uft.tag_id)")
+	if scope == "public" {
+		query = query.Where("uf.public = ? AND (uft.source_type <> ? OR uft.visibility = ?)",
+			true, models.TagSourceManual, models.TagVisibilityPublic)
+	} else {
+		query = query.Where("uft.user_id = ? OR (uf.public = ? AND (uft.source_type <> ? OR uft.visibility = ?))",
+			userID, true, models.TagSourceManual, models.TagVisibilityPublic)
+	}
+	if len(tagIDs) > 0 {
+		query = query.Where("td.id IN ?", tagIDs)
+	}
 	if keyword = strings.TrimSpace(keyword); keyword != "" {
 		query = query.Where("td.normalized_name LIKE ?", "%"+tagging.Normalize(keyword)+"%")
 	}

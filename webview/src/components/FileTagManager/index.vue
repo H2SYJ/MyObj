@@ -257,7 +257,7 @@
   const loadSuggestions = async (keyword: string) => {
     suggestionsLoading.value = true
     try {
-      const response = await getTagSuggestions(keyword, 50)
+      const response = await getTagSuggestions({ keyword, limit: 50 })
       if (response.code === 200) {
         suggestions.value = response.data || []
       }

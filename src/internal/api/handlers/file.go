@@ -12,6 +12,7 @@ import (
 	"net/http"
 	"path/filepath"
 	"strconv"
+	"strings"
 
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
@@ -257,12 +258,21 @@ func (f *FileHandler) BatchUpdateTags(c *gin.Context) {
 // @Produce json
 // @Security BearerAuth
 // @Param keyword query string false "标签关键词"
+// @Param tag_ids query string false "逗号分隔的标签ID，用于回填已选标签"
+// @Param scope query string false "建议范围" Enums(user,public) default(user)
 // @Param limit query int false "返回数量，1到50" default(20)
 // @Success 200 {object} models.JsonResponse{data=[]response.CompactTagView}
 // @Router /file/tags/suggestions [get]
 func (f *FileHandler) TagSuggestions(c *gin.Context) {
 	limit, _ := strconv.Atoi(c.Query("limit"))
-	result, err := f.service.TagService().Suggestions(c.Request.Context(), c.GetString("userID"), c.Query("keyword"), limit)
+	result, err := f.service.TagService().Suggestions(
+		c.Request.Context(),
+		c.GetString("userID"),
+		c.Query("keyword"),
+		strings.Split(c.Query("tag_ids"), ","),
+		c.Query("scope"),
+		limit,
+	)
 	if err != nil {
 		c.JSON(200, models.NewJsonResponse(400, err.Error(), nil))
 		return
@@ -372,7 +382,7 @@ func (f *FileHandler) Precheck(c *gin.Context) {
 // @Param keyword query string false "搜索关键词"
 // @Param directory_id query int false "限制在当前目录"
 // @Param tag_ids query string false "逗号分隔的标签ID"
-// @Param tag_mode query string false "标签匹配模式" Enums(all,any) default(all)
+// @Param tag_mode query string false "标签匹配模式，省略时按任一标签匹配" Enums(all,any) default(any)
 // @Param page query int false "页码" default(1)
 // @Param pageSize query int false "每页数量" default(20)
 // @Success 200 {object} models.JsonResponse{data=object} "搜索结果"
@@ -405,7 +415,7 @@ func (f *FileHandler) SearchUserFiles(c *gin.Context) {
 // @Security BearerAuth
 // @Param keyword query string false "搜索关键词"
 // @Param tag_ids query string false "逗号分隔的标签ID"
-// @Param tag_mode query string false "标签匹配模式" Enums(all,any) default(all)
+// @Param tag_mode query string false "标签匹配模式，省略时按任一标签匹配" Enums(all,any) default(any)
 // @Param page query int false "页码" default(1)
 // @Param pageSize query int false "每页数量" default(20)
 // @Success 200 {object} models.JsonResponse{data=object}
@@ -438,7 +448,7 @@ func (f *FileHandler) SearchPublicFiles(c *gin.Context) {
 // @Security BearerAuth
 // @Param directory_id query int false "目录ID，0表示用户根目录"
 // @Param tag_ids query string false "逗号分隔的标签ID"
-// @Param tag_mode query string false "标签匹配模式" Enums(all,any) default(all)
+// @Param tag_mode query string false "标签匹配模式，省略时按任一标签匹配" Enums(all,any) default(any)
 // @Param page query int true "页码" minimum(1)
 // @Param pageSize query int true "每页数量" minimum(1) maximum(100)
 // @Success 200 {object} models.JsonResponse{data=response.FileListResponse} "文件列表"
@@ -980,7 +990,7 @@ func (f *FileHandler) GetUploadTaskList(c *gin.Context) {
 // @Produce json
 // @Param type query string false "文件类型"
 // @Param tag_ids query string false "逗号分隔的标签ID"
-// @Param tag_mode query string false "标签匹配模式" Enums(all,any) default(all)
+// @Param tag_mode query string false "标签匹配模式，省略时按任一标签匹配" Enums(all,any) default(any)
 // @Param page query int false "页码" default(1)
 // @Param pageSize query int false "每页数量" default(20)
 // @Success 200 {object} models.JsonResponse{data=object} "成功"

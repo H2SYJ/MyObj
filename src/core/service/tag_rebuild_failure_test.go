@@ -350,7 +350,7 @@ func TestTagSuggestionsIncludeOnlyOwnedOrPubliclyAllowedTags(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	suggestions, err := service.Suggestions(context.Background(), "user-1", "", 20)
+	suggestions, err := service.Suggestions(context.Background(), "user-1", "", nil, "user", 20)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -360,5 +360,29 @@ func TestTagSuggestionsIncludeOnlyOwnedOrPubliclyAllowedTags(t *testing.T) {
 	}
 	if !found["own"] || !found["auto"] || !found["public"] || found["private"] {
 		t.Fatalf("标签建议公开范围错误: %+v", suggestions)
+	}
+
+	publicSuggestions, err := service.Suggestions(context.Background(), "user-1", "", nil, "public", 20)
+	if err != nil {
+		t.Fatal(err)
+	}
+	publicFound := make(map[string]bool, len(publicSuggestions))
+	for _, item := range publicSuggestions {
+		publicFound[item.ID] = true
+	}
+	if publicFound["own"] || !publicFound["auto"] || !publicFound["public"] || publicFound["private"] {
+		t.Fatalf("文件广场标签建议范围错误: %+v", publicSuggestions)
+	}
+
+	resolved, err := service.Suggestions(context.Background(), "user-1", "", []string{"own", "auto", "missing"}, "user", 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	resolvedFound := make(map[string]bool, len(resolved))
+	for _, item := range resolved {
+		resolvedFound[item.ID] = true
+	}
+	if !resolvedFound["own"] || !resolvedFound["auto"] || resolvedFound["missing"] || len(resolvedFound) != 2 {
+		t.Fatalf("按ID回填标签结果错误: %+v", resolved)
 	}
 }

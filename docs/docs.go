@@ -26,6 +26,11 @@ const docTemplate = `{
     "paths": {
         "/admin/tag/categories": {
             "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
                 "produces": [
                     "application/json"
                 ],
@@ -55,14 +60,14 @@ const docTemplate = `{
                             ]
                         }
                     }
-                },
+                }
+            },
+            "post": {
                 "security": [
                     {
                         "BearerAuth": []
                     }
-                ]
-            },
-            "post": {
+                ],
                 "consumes": [
                     "application/json"
                 ],
@@ -109,16 +114,16 @@ const docTemplate = `{
                             "$ref": "#/definitions/models.JsonResponse"
                         }
                     }
-                },
-                "security": [
-                    {
-                        "BearerAuth": []
-                    }
-                ]
+                }
             }
         },
         "/admin/tag/categories/{id}": {
             "delete": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
                 "produces": [
                     "application/json"
                 ],
@@ -148,16 +153,16 @@ const docTemplate = `{
                             "$ref": "#/definitions/models.JsonResponse"
                         }
                     }
-                },
-                "security": [
-                    {
-                        "BearerAuth": []
-                    }
-                ]
+                }
             }
         },
         "/admin/tag/drafts": {
             "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
                 "produces": [
                     "application/json"
                 ],
@@ -184,16 +189,16 @@ const docTemplate = `{
                             ]
                         }
                     }
-                },
-                "security": [
-                    {
-                        "BearerAuth": []
-                    }
-                ]
+                }
             }
         },
         "/admin/tag/drafts/{id}": {
             "put": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
                 "description": "revision 不一致时返回 HTTP 409",
                 "consumes": [
                     "application/json"
@@ -248,16 +253,16 @@ const docTemplate = `{
                             "$ref": "#/definitions/models.JsonResponse"
                         }
                     }
-                },
-                "security": [
-                    {
-                        "BearerAuth": []
-                    }
-                ]
+                }
             }
         },
         "/admin/tag/drafts/{id}/import": {
             "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
                 "description": "仅接受 UTF-8 无 BOM 的 JSON 或 CSV，不会自动发布",
                 "consumes": [
                     "application/json"
@@ -336,16 +341,16 @@ const docTemplate = `{
                             "$ref": "#/definitions/models.JsonResponse"
                         }
                     }
-                },
-                "security": [
-                    {
-                        "BearerAuth": []
-                    }
-                ]
+                }
             }
         },
         "/admin/tag/drafts/{id}/preview": {
             "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
                 "consumes": [
                     "application/json"
                 ],
@@ -402,16 +407,16 @@ const docTemplate = `{
                             "$ref": "#/definitions/models.JsonResponse"
                         }
                     }
-                },
-                "security": [
-                    {
-                        "BearerAuth": []
-                    }
-                ]
+                }
             }
         },
         "/admin/tag/drafts/{id}/publish": {
             "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
                 "description": "完整编译后原子热替换，并创建全量重建任务",
                 "produces": [
                     "application/json"
@@ -442,16 +447,16 @@ const docTemplate = `{
                             "$ref": "#/definitions/models.JsonResponse"
                         }
                     }
-                },
-                "security": [
-                    {
-                        "BearerAuth": []
-                    }
-                ]
+                }
             }
         },
         "/admin/tag/rebuild-jobs": {
             "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
                 "produces": [
                     "application/json"
                 ],
@@ -490,16 +495,16 @@ const docTemplate = `{
                             ]
                         }
                     }
-                },
-                "security": [
-                    {
-                        "BearerAuth": []
-                    }
-                ]
+                }
             }
         },
         "/admin/tag/rebuild-jobs/{id}": {
             "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
                 "produces": [
                     "application/json"
                 ],
@@ -541,16 +546,16 @@ const docTemplate = `{
                             "$ref": "#/definitions/models.JsonResponse"
                         }
                     }
-                },
-                "security": [
-                    {
-                        "BearerAuth": []
-                    }
-                ]
+                }
             }
         },
         "/admin/tag/rebuild-jobs/{id}/cancel": {
             "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
                 "produces": [
                     "application/json"
                 ],
@@ -574,16 +579,16 @@ const docTemplate = `{
                             "$ref": "#/definitions/models.JsonResponse"
                         }
                     }
-                },
-                "security": [
-                    {
-                        "BearerAuth": []
-                    }
-                ]
+                }
             }
         },
         "/admin/tag/rebuild-jobs/{id}/failures": {
             "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
                 "produces": [
                     "application/json"
                 ],
@@ -640,16 +645,16 @@ const docTemplate = `{
                             ]
                         }
                     }
-                },
-                "security": [
-                    {
-                        "BearerAuth": []
-                    }
-                ]
+                }
             }
         },
         "/admin/tag/rebuild-jobs/{id}/failures/{uf_id}/retry": {
             "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
                 "produces": [
                     "application/json"
                 ],
@@ -686,16 +691,16 @@ const docTemplate = `{
                             "$ref": "#/definitions/models.JsonResponse"
                         }
                     }
-                },
-                "security": [
-                    {
-                        "BearerAuth": []
-                    }
-                ]
+                }
             }
         },
         "/admin/tag/rebuild-jobs/{id}/retry": {
             "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
                 "produces": [
                     "application/json"
                 ],
@@ -725,16 +730,16 @@ const docTemplate = `{
                             "$ref": "#/definitions/models.JsonResponse"
                         }
                     }
-                },
-                "security": [
-                    {
-                        "BearerAuth": []
-                    }
-                ]
+                }
             }
         },
         "/admin/tag/rule-sets": {
             "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
                 "produces": [
                     "application/json"
                 ],
@@ -764,16 +769,16 @@ const docTemplate = `{
                             ]
                         }
                     }
-                },
-                "security": [
-                    {
-                        "BearerAuth": []
-                    }
-                ]
+                }
             }
         },
         "/admin/tag/rule-sets/{id}": {
             "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
                 "produces": [
                     "application/json"
                 ],
@@ -815,16 +820,16 @@ const docTemplate = `{
                             "$ref": "#/definitions/models.JsonResponse"
                         }
                     }
-                },
-                "security": [
-                    {
-                        "BearerAuth": []
-                    }
-                ]
+                }
             }
         },
         "/admin/tag/rule-sets/{id}/diff": {
             "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
                 "produces": [
                     "application/json"
                 ],
@@ -848,16 +853,16 @@ const docTemplate = `{
                             "$ref": "#/definitions/models.JsonResponse"
                         }
                     }
-                },
-                "security": [
-                    {
-                        "BearerAuth": []
-                    }
-                ]
+                }
             }
         },
         "/admin/tag/rule-sets/{id}/export": {
             "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
                 "produces": [
                     "application/json"
                 ],
@@ -892,16 +897,16 @@ const docTemplate = `{
                             "type": "string"
                         }
                     }
-                },
-                "security": [
-                    {
-                        "BearerAuth": []
-                    }
-                ]
+                }
             }
         },
         "/admin/tag/rule-sets/{id}/rollback": {
             "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
                 "description": "复制旧内容生成单调递增的新版本并发布",
                 "produces": [
                     "application/json"
@@ -926,16 +931,16 @@ const docTemplate = `{
                             "$ref": "#/definitions/models.JsonResponse"
                         }
                     }
-                },
-                "security": [
-                    {
-                        "BearerAuth": []
-                    }
-                ]
+                }
             }
         },
         "/admin/tag/settings": {
             "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
                 "produces": [
                     "application/json"
                 ],
@@ -950,14 +955,14 @@ const docTemplate = `{
                             "$ref": "#/definitions/models.JsonResponse"
                         }
                     }
-                },
+                }
+            },
+            "put": {
                 "security": [
                     {
                         "BearerAuth": []
                     }
-                ]
-            },
-            "put": {
+                ],
                 "consumes": [
                     "application/json"
                 ],
@@ -992,16 +997,16 @@ const docTemplate = `{
                             "$ref": "#/definitions/models.JsonResponse"
                         }
                     }
-                },
-                "security": [
-                    {
-                        "BearerAuth": []
-                    }
-                ]
+                }
             }
         },
         "/download/local/create": {
             "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
                 "description": "创建网盘文件下载任务，支持加密文件和分片文件",
                 "consumes": [
                     "application/json"
@@ -1056,16 +1061,16 @@ const docTemplate = `{
                             "$ref": "#/definitions/models.JsonResponse"
                         }
                     }
-                },
-                "security": [
-                    {
-                        "BearerAuth": []
-                    }
-                ]
+                }
             }
         },
         "/download/local/file/{taskID}": {
             "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
                 "description": "下载已准备完成的网盘文件，支持HTTP Range断点续传",
                 "produces": [
                     "application/octet-stream"
@@ -1114,16 +1119,16 @@ const docTemplate = `{
                             "$ref": "#/definitions/models.JsonResponse"
                         }
                     }
-                },
-                "security": [
-                    {
-                        "BearerAuth": []
-                    }
-                ]
+                }
             }
         },
         "/download/preview": {
             "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
                 "description": "直接预览文件（用于图片、视频、PDF等预览场景），支持HTTP Range断点续传，不创建下载任务",
                 "produces": [
                     "application/octet-stream"
@@ -1184,16 +1189,16 @@ const docTemplate = `{
                             "$ref": "#/definitions/models.JsonResponse"
                         }
                     }
-                },
-                "security": [
-                    {
-                        "BearerAuth": []
-                    }
-                ]
+                }
             }
         },
         "/download/torrent/parse": {
             "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
                 "description": "解析种子文件或磁力链接，返回文件列表供用户选择 种子文件内容（Base64编码）或磁力链接（magnet:开头）",
                 "consumes": [
                     "application/json"
@@ -1247,16 +1252,16 @@ const docTemplate = `{
                             "$ref": "#/definitions/models.JsonResponse"
                         }
                     }
-                },
-                "security": [
-                    {
-                        "BearerAuth": []
-                    }
-                ]
+                }
             }
         },
         "/download/torrent/start": {
             "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
                 "description": "根据用户选择的文件索引，创建下载任务并开始下载 种子文件内容（Base64编码）或磁力链接（magnet:开头）",
                 "consumes": [
                     "application/json"
@@ -1310,16 +1315,16 @@ const docTemplate = `{
                             "$ref": "#/definitions/models.JsonResponse"
                         }
                     }
-                },
-                "security": [
-                    {
-                        "BearerAuth": []
-                    }
-                ]
+                }
             }
         },
         "/file/delete": {
             "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
                 "description": "将文件移动到回收站（软删除）",
                 "consumes": [
                     "application/json"
@@ -1367,16 +1372,16 @@ const docTemplate = `{
                             "$ref": "#/definitions/models.JsonResponse"
                         }
                     }
-                },
-                "security": [
-                    {
-                        "BearerAuth": []
-                    }
-                ]
+                }
             }
         },
         "/file/deleteDir": {
             "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
                 "description": "删除目录及其下的所有文件和子目录（文件会移动到回收站）",
                 "consumes": [
                     "application/json"
@@ -1436,16 +1441,16 @@ const docTemplate = `{
                             "$ref": "#/definitions/models.JsonResponse"
                         }
                     }
-                },
-                "security": [
-                    {
-                        "BearerAuth": []
-                    }
-                ]
+                }
             }
         },
         "/file/directories": {
             "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
                 "produces": [
                     "application/json"
                 ],
@@ -1475,16 +1480,16 @@ const docTemplate = `{
                             ]
                         }
                     }
-                },
-                "security": [
-                    {
-                        "BearerAuth": []
-                    }
-                ]
+                }
             }
         },
         "/file/list": {
             "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
                 "description": "获取当前用户指定目录下的文件列表",
                 "consumes": [
                     "application/json"
@@ -1515,8 +1520,8 @@ const docTemplate = `{
                             "any"
                         ],
                         "type": "string",
-                        "default": "all",
-                        "description": "标签匹配模式",
+                        "default": "any",
+                        "description": "标签匹配模式，省略时按任一标签匹配",
                         "name": "tag_mode",
                         "in": "query"
                     },
@@ -1563,16 +1568,16 @@ const docTemplate = `{
                             "$ref": "#/definitions/models.JsonResponse"
                         }
                     }
-                },
-                "security": [
-                    {
-                        "BearerAuth": []
-                    }
-                ]
+                }
             }
         },
         "/file/makeDir": {
             "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
                 "consumes": [
                     "application/json"
                 ],
@@ -1613,16 +1618,16 @@ const docTemplate = `{
                             ]
                         }
                     }
-                },
-                "security": [
-                    {
-                        "BearerAuth": []
-                    }
-                ]
+                }
             }
         },
         "/file/move": {
             "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
                 "consumes": [
                     "application/json"
                 ],
@@ -1651,16 +1656,16 @@ const docTemplate = `{
                             "$ref": "#/definitions/models.JsonResponse"
                         }
                     }
-                },
-                "security": [
-                    {
-                        "BearerAuth": []
-                    }
-                ]
+                }
             }
         },
         "/file/moveBatch": {
             "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
                 "consumes": [
                     "application/json"
                 ],
@@ -1689,12 +1694,7 @@ const docTemplate = `{
                             "$ref": "#/definitions/models.JsonResponse"
                         }
                     }
-                },
-                "security": [
-                    {
-                        "BearerAuth": []
-                    }
-                ]
+                }
             }
         },
         "/file/public/list": {
@@ -1726,8 +1726,8 @@ const docTemplate = `{
                             "any"
                         ],
                         "type": "string",
-                        "default": "all",
-                        "description": "标签匹配模式",
+                        "default": "any",
+                        "description": "标签匹配模式，省略时按任一标签匹配",
                         "name": "tag_mode",
                         "in": "query"
                     },
@@ -1776,6 +1776,11 @@ const docTemplate = `{
         },
         "/file/rename": {
             "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
                 "description": "重命名用户文件",
                 "consumes": [
                     "application/json"
@@ -1829,16 +1834,16 @@ const docTemplate = `{
                             "$ref": "#/definitions/models.JsonResponse"
                         }
                     }
-                },
-                "security": [
-                    {
-                        "BearerAuth": []
-                    }
-                ]
+                }
             }
         },
         "/file/renameDir": {
             "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
                 "description": "重命名用户目录，并自动更新子目录和文件的路径",
                 "consumes": [
                     "application/json"
@@ -1898,16 +1903,16 @@ const docTemplate = `{
                             "$ref": "#/definitions/models.JsonResponse"
                         }
                     }
-                },
-                "security": [
-                    {
-                        "BearerAuth": []
-                    }
-                ]
+                }
             }
         },
         "/file/search/public": {
             "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
                 "description": "关键词和标签筛选至少提供一项；私有手工标签不参与搜索",
                 "produces": [
                     "application/json"
@@ -1935,8 +1940,8 @@ const docTemplate = `{
                             "any"
                         ],
                         "type": "string",
-                        "default": "all",
-                        "description": "标签匹配模式",
+                        "default": "any",
+                        "description": "标签匹配模式，省略时按任一标签匹配",
                         "name": "tag_mode",
                         "in": "query"
                     },
@@ -1980,16 +1985,16 @@ const docTemplate = `{
                             "$ref": "#/definitions/models.JsonResponse"
                         }
                     }
-                },
-                "security": [
-                    {
-                        "BearerAuth": []
-                    }
-                ]
+                }
             }
         },
         "/file/search/user": {
             "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
                 "description": "关键词和标签筛选至少提供一项；每个关键词可由文件名或标签命中",
                 "consumes": [
                     "application/json"
@@ -2026,8 +2031,8 @@ const docTemplate = `{
                             "any"
                         ],
                         "type": "string",
-                        "default": "all",
-                        "description": "标签匹配模式",
+                        "default": "any",
+                        "description": "标签匹配模式，省略时按任一标签匹配",
                         "name": "tag_mode",
                         "in": "query"
                     },
@@ -2071,16 +2076,16 @@ const docTemplate = `{
                             "$ref": "#/definitions/models.JsonResponse"
                         }
                     }
-                },
-                "security": [
-                    {
-                        "BearerAuth": []
-                    }
-                ]
+                }
             }
         },
         "/file/setPublic": {
             "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
                 "description": "设置文件是否公开（加密文件不能设置为公开）",
                 "consumes": [
                     "application/json"
@@ -2134,16 +2139,16 @@ const docTemplate = `{
                             "$ref": "#/definitions/models.JsonResponse"
                         }
                     }
-                },
-                "security": [
-                    {
-                        "BearerAuth": []
-                    }
-                ]
+                }
             }
         },
         "/file/tag-categories": {
             "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
                 "produces": [
                     "application/json"
                 ],
@@ -2173,16 +2178,16 @@ const docTemplate = `{
                             ]
                         }
                     }
-                },
-                "security": [
-                    {
-                        "BearerAuth": []
-                    }
-                ]
+                }
             }
         },
         "/file/tag-dictionary": {
             "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
                 "produces": [
                     "application/json"
                 ],
@@ -2209,14 +2214,14 @@ const docTemplate = `{
                             ]
                         }
                     }
-                },
+                }
+            },
+            "put": {
                 "security": [
                     {
                         "BearerAuth": []
                     }
-                ]
-            },
-            "put": {
+                ],
                 "description": "保存个人词语、停用词和别名，并创建用户范围历史重建任务",
                 "consumes": [
                     "application/json"
@@ -2252,16 +2257,16 @@ const docTemplate = `{
                             "$ref": "#/definitions/models.JsonResponse"
                         }
                     }
-                },
-                "security": [
-                    {
-                        "BearerAuth": []
-                    }
-                ]
+                }
             }
         },
         "/file/tag-dictionary/preview": {
             "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
                 "consumes": [
                     "application/json"
                 ],
@@ -2311,16 +2316,16 @@ const docTemplate = `{
                             "$ref": "#/definitions/models.JsonResponse"
                         }
                     }
-                },
-                "security": [
-                    {
-                        "BearerAuth": []
-                    }
-                ]
+                }
             }
         },
         "/file/tags/batch": {
             "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
                 "description": "先校验全部文件归属，再对最多100个文件原子更新",
                 "consumes": [
                     "application/json"
@@ -2356,16 +2361,16 @@ const docTemplate = `{
                             "$ref": "#/definitions/models.JsonResponse"
                         }
                     }
-                },
-                "security": [
-                    {
-                        "BearerAuth": []
-                    }
-                ]
+                }
             }
         },
         "/file/tags/suggestions": {
             "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
                 "description": "仅返回当前用户使用过的标签和允许公开的全局建议",
                 "produces": [
                     "application/json"
@@ -2379,6 +2384,23 @@ const docTemplate = `{
                         "type": "string",
                         "description": "标签关键词",
                         "name": "keyword",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "逗号分隔的标签ID，用于回填已选标签",
+                        "name": "tag_ids",
+                        "in": "query"
+                    },
+                    {
+                        "enum": [
+                            "user",
+                            "public"
+                        ],
+                        "type": "string",
+                        "default": "user",
+                        "description": "建议范围",
+                        "name": "scope",
                         "in": "query"
                     },
                     {
@@ -2411,16 +2433,16 @@ const docTemplate = `{
                             ]
                         }
                     }
-                },
-                "security": [
-                    {
-                        "BearerAuth": []
-                    }
-                ]
+                }
             }
         },
         "/file/tags/{uf_id}": {
             "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
                 "description": "获取当前用户文件的有效标签、已屏蔽自动标签及生成状态",
                 "produces": [
                     "application/json"
@@ -2463,16 +2485,16 @@ const docTemplate = `{
                             "$ref": "#/definitions/models.JsonResponse"
                         }
                     }
-                },
-                "security": [
-                    {
-                        "BearerAuth": []
-                    }
-                ]
+                }
             }
         },
         "/file/tags/{uf_id}/exclusions": {
             "put": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
                 "consumes": [
                     "application/json"
                 ],
@@ -2526,16 +2548,16 @@ const docTemplate = `{
                             "$ref": "#/definitions/models.JsonResponse"
                         }
                     }
-                },
-                "security": [
-                    {
-                        "BearerAuth": []
-                    }
-                ]
+                }
             }
         },
         "/file/tags/{uf_id}/manual": {
             "put": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
                 "description": "原子增加或删除手工标签，并设置公开性",
                 "consumes": [
                     "application/json"
@@ -2590,16 +2612,16 @@ const docTemplate = `{
                             "$ref": "#/definitions/models.JsonResponse"
                         }
                     }
-                },
-                "security": [
-                    {
-                        "BearerAuth": []
-                    }
-                ]
+                }
             }
         },
         "/file/tags/{uf_id}/retry": {
             "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
                 "produces": [
                     "application/json"
                 ],
@@ -2629,16 +2651,16 @@ const docTemplate = `{
                             "$ref": "#/definitions/models.JsonResponse"
                         }
                     }
-                },
-                "security": [
-                    {
-                        "BearerAuth": []
-                    }
-                ]
+                }
             }
         },
         "/file/thumbnail/{fileId}": {
             "put": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
                 "description": "修改当前用户文件的缩略图，仅支持 JPEG，最大1MB，宽高不超过1000像素",
                 "consumes": [
                     "multipart/form-data"
@@ -2709,16 +2731,16 @@ const docTemplate = `{
                             "$ref": "#/definitions/models.JsonResponse"
                         }
                     }
-                },
-                "security": [
-                    {
-                        "BearerAuth": []
-                    }
-                ]
+                }
             }
         },
         "/file/upload": {
             "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
                 "description": "支持小文件直传和大文件分片上传",
                 "consumes": [
                     "multipart/form-data"
@@ -2807,16 +2829,16 @@ const docTemplate = `{
                             "$ref": "#/definitions/models.JsonResponse"
                         }
                     }
-                },
-                "security": [
-                    {
-                        "BearerAuth": []
-                    }
-                ]
+                }
             }
         },
         "/file/upload/clean-expired": {
             "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
                 "description": "清理过期的未完成上传任务。如果提供 userID 参数，则只清理该用户的过期任务；如果不提供，则清理所有用户的过期任务（系统自动清理）",
                 "consumes": [
                     "application/json"
@@ -2861,16 +2883,16 @@ const docTemplate = `{
                             "$ref": "#/definitions/models.JsonResponse"
                         }
                     }
-                },
-                "security": [
-                    {
-                        "BearerAuth": []
-                    }
-                ]
+                }
             }
         },
         "/file/upload/delete": {
             "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
                 "description": "删除指定的上传任务（从数据库中删除记录）",
                 "consumes": [
                     "application/json"
@@ -2912,16 +2934,16 @@ const docTemplate = `{
                             "$ref": "#/definitions/models.JsonResponse"
                         }
                     }
-                },
-                "security": [
-                    {
-                        "BearerAuth": []
-                    }
-                ]
+                }
             }
         },
         "/file/upload/expired": {
             "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
                 "description": "查询当前用户所有过期的上传任务",
                 "consumes": [
                     "application/json"
@@ -2961,16 +2983,16 @@ const docTemplate = `{
                             "$ref": "#/definitions/models.JsonResponse"
                         }
                     }
-                },
-                "security": [
-                    {
-                        "BearerAuth": []
-                    }
-                ]
+                }
             }
         },
         "/file/upload/precheck": {
             "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
                 "description": "上传前的预检查，检查空间、秒传可能性，返回预检ID",
                 "consumes": [
                     "application/json"
@@ -3018,16 +3040,16 @@ const docTemplate = `{
                             "$ref": "#/definitions/models.JsonResponse"
                         }
                     }
-                },
-                "security": [
-                    {
-                        "BearerAuth": []
-                    }
-                ]
+                }
             }
         },
         "/file/upload/progress": {
             "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
                 "description": "根据预检ID查询文件上传进度",
                 "consumes": [
                     "application/json"
@@ -3079,16 +3101,16 @@ const docTemplate = `{
                             "$ref": "#/definitions/models.JsonResponse"
                         }
                     }
-                },
-                "security": [
-                    {
-                        "BearerAuth": []
-                    }
-                ]
+                }
             }
         },
         "/file/upload/renew": {
             "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
                 "description": "延期过期的上传任务，延长过期时间使其可以继续上传",
                 "consumes": [
                     "application/json"
@@ -3154,16 +3176,16 @@ const docTemplate = `{
                             "$ref": "#/definitions/models.JsonResponse"
                         }
                     }
-                },
-                "security": [
-                    {
-                        "BearerAuth": []
-                    }
-                ]
+                }
             }
         },
         "/file/upload/taskList": {
             "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
                 "description": "分页获取用户上传任务列表，不返回敏感信息（如临时目录路径）",
                 "consumes": [
                     "application/json"
@@ -3225,16 +3247,16 @@ const docTemplate = `{
                             "$ref": "#/definitions/models.JsonResponse"
                         }
                     }
-                },
-                "security": [
-                    {
-                        "BearerAuth": []
-                    }
-                ]
+                }
             }
         },
         "/file/upload/uncompleted": {
             "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
                 "description": "查询当前用户所有未完成的上传任务（用于断点续传）",
                 "consumes": [
                     "application/json"
@@ -3274,16 +3296,16 @@ const docTemplate = `{
                             "$ref": "#/definitions/models.JsonResponse"
                         }
                     }
-                },
-                "security": [
-                    {
-                        "BearerAuth": []
-                    }
-                ]
+                }
             }
         },
         "/recycled/delete": {
             "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
                 "description": "从回收站永久删除文件，不可恢复",
                 "consumes": [
                     "application/json"
@@ -3319,16 +3341,16 @@ const docTemplate = `{
                             "$ref": "#/definitions/models.JsonResponse"
                         }
                     }
-                },
-                "security": [
-                    {
-                        "BearerAuth": []
-                    }
-                ]
+                }
             }
         },
         "/recycled/empty": {
             "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
                 "description": "清空当前用户回收站中的所有文件",
                 "produces": [
                     "application/json"
@@ -3350,16 +3372,16 @@ const docTemplate = `{
                             "$ref": "#/definitions/models.JsonResponse"
                         }
                     }
-                },
-                "security": [
-                    {
-                        "BearerAuth": []
-                    }
-                ]
+                }
             }
         },
         "/recycled/list": {
             "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
                 "description": "获取当前用户回收站中的文件列表",
                 "consumes": [
                     "application/json"
@@ -3415,16 +3437,16 @@ const docTemplate = `{
                             "$ref": "#/definitions/models.JsonResponse"
                         }
                     }
-                },
-                "security": [
-                    {
-                        "BearerAuth": []
-                    }
-                ]
+                }
             }
         },
         "/recycled/restore": {
             "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
                 "description": "从回收站还原文件到原位置",
                 "consumes": [
                     "application/json"
@@ -3460,16 +3482,16 @@ const docTemplate = `{
                             "$ref": "#/definitions/models.JsonResponse"
                         }
                     }
-                },
-                "security": [
-                    {
-                        "BearerAuth": []
-                    }
-                ]
+                }
             }
         },
         "/user/apiKey/delete": {
             "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
                 "description": "删除指定的API Key",
                 "consumes": [
                     "application/json"
@@ -3517,16 +3539,16 @@ const docTemplate = `{
                             "$ref": "#/definitions/models.JsonResponse"
                         }
                     }
-                },
-                "security": [
-                    {
-                        "BearerAuth": []
-                    }
-                ]
+                }
             }
         },
         "/user/apiKey/generate": {
             "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
                 "description": "为用户生成新的API Key，用于API调用认证",
                 "consumes": [
                     "application/json"
@@ -3574,16 +3596,16 @@ const docTemplate = `{
                             "$ref": "#/definitions/models.JsonResponse"
                         }
                     }
-                },
-                "security": [
-                    {
-                        "BearerAuth": []
-                    }
-                ]
+                }
             }
         },
         "/user/apiKey/list": {
             "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
                 "description": "获取当前用户的所有API Key列表（Key已掩码）",
                 "produces": [
                     "application/json"
@@ -3620,12 +3642,7 @@ const docTemplate = `{
                             "$ref": "#/definitions/models.JsonResponse"
                         }
                     }
-                },
-                "security": [
-                    {
-                        "BearerAuth": []
-                    }
-                ]
+                }
             }
         },
         "/user/challenge": {
@@ -3668,6 +3685,11 @@ const docTemplate = `{
         },
         "/user/info": {
             "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
                 "description": "获取当前用户的信息",
                 "produces": [
                     "application/json"
@@ -3701,12 +3723,7 @@ const docTemplate = `{
                             "$ref": "#/definitions/models.JsonResponse"
                         }
                     }
-                },
-                "security": [
-                    {
-                        "BearerAuth": []
-                    }
-                ]
+                }
             }
         },
         "/user/login": {
@@ -3803,6 +3820,11 @@ const docTemplate = `{
         },
         "/user/setFilePassword": {
             "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
                 "description": "设置用户文件加密密码（首次设置）",
                 "consumes": [
                     "application/json"
@@ -3838,12 +3860,7 @@ const docTemplate = `{
                             "$ref": "#/definitions/models.JsonResponse"
                         }
                     }
-                },
-                "security": [
-                    {
-                        "BearerAuth": []
-                    }
-                ]
+                }
             }
         },
         "/user/sysInfo": {
@@ -3874,6 +3891,11 @@ const docTemplate = `{
         },
         "/user/updateFilePassword": {
             "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
                 "description": "修改用户文件加密密码",
                 "consumes": [
                     "application/json"
@@ -3909,16 +3931,16 @@ const docTemplate = `{
                             "$ref": "#/definitions/models.JsonResponse"
                         }
                     }
-                },
-                "security": [
-                    {
-                        "BearerAuth": []
-                    }
-                ]
+                }
             }
         },
         "/user/updatePassword": {
             "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
                 "description": "修改用户登录密码",
                 "consumes": [
                     "application/json"
@@ -3954,16 +3976,16 @@ const docTemplate = `{
                             "$ref": "#/definitions/models.JsonResponse"
                         }
                     }
-                },
-                "security": [
-                    {
-                        "BearerAuth": []
-                    }
-                ]
+                }
             }
         },
         "/user/updateUser": {
             "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
                 "description": "更新当前用户的基本信息",
                 "consumes": [
                     "application/json"
@@ -3999,16 +4021,16 @@ const docTemplate = `{
                             "$ref": "#/definitions/models.JsonResponse"
                         }
                     }
-                },
-                "security": [
-                    {
-                        "BearerAuth": []
-                    }
-                ]
+                }
             }
         },
         "/video/play/precheck": {
             "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
                 "description": "验证权限并生成24小时有效的播放 Token",
                 "consumes": [
                     "application/json"
@@ -4068,12 +4090,7 @@ const docTemplate = `{
                             "$ref": "#/definitions/models.JsonResponse"
                         }
                     }
-                },
-                "security": [
-                    {
-                        "BearerAuth": []
-                    }
-                ]
+                }
             }
         },
         "/video/stream": {

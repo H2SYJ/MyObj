@@ -11,10 +11,7 @@ export function useFileSearch(
   sortBy: Ref<FileSortBy>,
   sortOrder: Ref<FileSortOrder>,
   loadThumbnails: (files: FileItem[]) => Promise<void>,
-  tagIds: Ref<string[]> = ref([]),
-  tagMode: Ref<'all' | 'any'> = ref('all'),
-  currentDirectoryId: Ref<number> = ref(0),
-  currentDirectoryOnly: Ref<boolean> = ref(false)
+  tagIds: Ref<string[]> = ref([])
 ) {
   // 结果转换函数：将后端返回的文件转换为 FileItem 格式
   const transformResult = (files: SearchFileItem[]): FileItem[] =>
@@ -37,9 +34,7 @@ export function useFileSearch(
     undefined,
     true,
     () => ({
-      tag_ids: tagIds.value.join(',') || undefined,
-      tag_mode: tagIds.value.length ? tagMode.value : undefined,
-      directory_id: currentDirectoryOnly.value && currentDirectoryId.value > 0 ? currentDirectoryId.value : undefined
+      tag_ids: tagIds.value.join(',') || undefined
     })
   )
 
@@ -70,8 +65,6 @@ export function useFileSearch(
     clearSearch: search.clearSearch,
     hasSearchKeyword: search.hasSearchKeyword,
     clearSearchResults: search.clearSearchResults,
-    hasActiveSearch: computed(
-      () => search.hasSearchKeyword.value || (tagIds.value.length > 0 && !currentDirectoryOnly.value)
-    )
+    hasActiveSearch: computed(() => search.hasSearchKeyword.value || tagIds.value.length > 0)
   }
 }

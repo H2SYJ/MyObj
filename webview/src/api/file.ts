@@ -13,7 +13,6 @@ export interface FileSearchParams {
   sortOrder?: 'asc' | 'desc'
   directory_id?: number
   tag_ids?: string
-  tag_mode?: 'all' | 'any'
   page?: number
   pageSize?: number
 }
@@ -259,7 +258,6 @@ export interface PublicFileListParams {
   type?: string
   sortBy?: string
   tag_ids?: string
-  tag_mode?: 'all' | 'any'
   page: number
   pageSize: number
 }

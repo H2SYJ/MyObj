@@ -33,27 +33,7 @@
           :current-path="currentPath"
           @navigate="navigateToPath"
         />
-        <el-button
-          v-if="isMobile"
-          class="mobile-tag-filter-trigger"
-          :type="tagIds.length ? 'primary' : 'default'"
-          plain
-          icon="PriceTag"
-          :aria-label="t('tags.filterTitle')"
-          @click="showMobileTagFilter = true"
-        >
-          {{ t('tags.filterTitle') }}<span v-if="tagIds.length"> · {{ tagIds.length }}</span>
-        </el-button>
         <div v-if="!isMobile" class="file-view-toolbar">
-          <TagFilter
-            :model-value="tagIds"
-            :mode="tagMode"
-            :scope="tagScope"
-            show-scope
-            @update:model-value="updateTagIds"
-            @update:mode="updateTagMode"
-            @update:scope="updateTagScope"
-          />
           <el-dropdown trigger="click">
             <el-button icon="Sort">{{
               t(`files.sort${sortBy === 'name' ? 'Name' : sortBy === 'size' ? 'Size' : 'Time'}`)
@@ -208,24 +188,6 @@
         @action="handleMenuAction"
         @close="closeContextMenu"
       />
-
-      <el-drawer
-        v-model="showMobileTagFilter"
-        :title="t('tags.filterTitle')"
-        direction="btt"
-        size="330px"
-        append-to-body
-      >
-        <TagFilter
-          :model-value="tagIds"
-          :mode="tagMode"
-          :scope="tagScope"
-          show-scope
-          @update:model-value="updateTagIds"
-          @update:mode="updateTagMode"
-          @update:scope="updateTagScope"
-        />
-      </el-drawer>
 
       <el-dialog v-model="showNewFolderDialog" :title="t('files.newFolder')" width="500px" @close="handleDialogClose">
         <el-form ref="folderFormRef" :model="folderForm" :rules="folderRules" label-width="100px">
@@ -428,9 +390,9 @@
   import { useRename } from './composables/useRename'
   import { useMoveFile } from './composables/useMoveFile'
   import { useFileSearch } from './composables/useFileSearch'
+  import { parseSearchTagIds } from '@/composables/business/useFileSearchDraft'
   import { useFileViewMode } from './composables/useFileViewMode'
   import WorkspacePage from '@/components/WorkspacePage/index.vue'
-  import TagFilter from '@/components/TagFilter/index.vue'
   import FileTagManager from '@/components/FileTagManager/index.vue'
 
   const { t } = useI18n()
@@ -441,22 +403,7 @@
   const { isHandheld, hasCoarsePointer } = useResponsive()
   const isMobile = isHandheld
   const { viewMode, setViewMode } = useFileViewMode(isMobile)
-  const parseTagIds = (value: unknown) =>
-    typeof value === 'string'
-      ? [
-          ...new Set(
-            value
-              .split(',')
-              .map(item => item.trim())
-              .filter(Boolean)
-          )
-        ]
-      : []
-  const tagIds = ref<string[]>(parseTagIds(route.query.tags))
-  const tagMode = ref<'all' | 'any'>(route.query.tagMode === 'any' ? 'any' : 'all')
-  const tagScope = ref<'current' | 'all'>(route.query.tagScope === 'all' ? 'all' : 'current')
-  const currentDirectoryOnly = computed(() => tagScope.value === 'current')
-  const showMobileTagFilter = ref(false)
+  const tagIds = computed(() => parseSearchTagIds(route.query.tags))
 
   const {
     fileListData,
@@ -473,7 +420,7 @@
     sortBy,
     sortOrder,
     setSorting
-  } = useFileList(tagIds, tagMode)
+  } = useFileList()
 
   const {
     searchKeyword,
@@ -484,7 +431,7 @@
     clearSearchResults,
     hasSearchKeyword,
     hasActiveSearch
-  } = useFileSearch(sortBy, sortOrder, loadThumbnails, tagIds, tagMode, currentPath, currentDirectoryOnly)
+  } = useFileSearch(sortBy, sortOrder, loadThumbnails, tagIds)
   const displayData = computed<FileListResponse>(() =>
     hasActiveSearch.value ? searchResults.value : fileListData.value
   )
@@ -892,38 +839,18 @@
     navigator.vibrate?.(25)
   }
 
-  const pushTagRoute = (updates: { tags?: string[]; mode?: 'all' | 'any'; scope?: 'current' | 'all' }) => {
-    const nextTags = updates.tags ?? tagIds.value
-    const nextMode = updates.mode ?? tagMode.value
-    const nextScope = updates.scope ?? tagScope.value
+  const handleTagClick = (tag: CompactTag) => {
+    const nextTags = tagIds.value.includes(tag.id) ? tagIds.value : [...tagIds.value, tag.id]
     router.push({
       path: route.path,
       query: {
         ...route.query,
         tags: nextTags.length ? nextTags.join(',') : undefined,
-        tagMode: nextTags.length && nextMode !== 'all' ? nextMode : undefined,
-        tagScope: nextTags.length && nextScope !== 'current' ? nextScope : undefined
+        tagMode: undefined,
+        tagScope: undefined,
+        page: undefined
       }
     })
-  }
-  const updateTagIds = (value: string[]) => pushTagRoute({ tags: value })
-  const updateTagMode = (value: 'all' | 'any') => pushTagRoute({ mode: value })
-  const updateTagScope = (value: 'current' | 'all') => pushTagRoute({ scope: value })
-  const handleTagClick = (tag: CompactTag) => {
-    if (!tagIds.value.includes(tag.id)) {
-      pushTagRoute({ tags: [...tagIds.value, tag.id] })
-    }
-  }
-
-  const applyTagFilters = async () => {
-    clearCurrentSelection()
-    currentPage.value = 1
-    if (hasSearchKeyword.value || (tagIds.value.length > 0 && tagScope.value === 'all')) {
-      await performSearch(searchKeyword.value, 1, pageSize.value)
-    } else {
-      clearSearchResults()
-      await loadFileList()
-    }
   }
 
   const startBoxSelection = (event: PointerEvent) => {
@@ -1116,7 +1043,6 @@
       showRenameFileDialog.value,
       showRenameDirDialog.value,
       showTagManager.value,
-      showMobileTagFilter.value,
       previewVisible.value
     ].some(Boolean)
   )
@@ -1125,8 +1051,11 @@
     () => route.query.directoryId,
     () => {
       clearCurrentSelection()
-      if (hasSearchKeyword.value) {
-        clearSearch()
+      if (hasActiveSearch.value) {
+        router.replace({
+          path: route.path,
+          query: { ...route.query, search: undefined, tags: undefined, page: undefined }
+        })
       }
     }
   )
@@ -1136,68 +1065,28 @@
     }
   })
 
-  const handleGlobalSearch = (event: Event) => {
-    const keyword = (event as CustomEvent<{ keyword: string }>).detail.keyword.trim()
-    clearCurrentSelection()
-    if (keyword) {
-      searchKeyword.value = keyword
-      performSearch(keyword, 1, pageSize.value)
-    } else if (hasSearchKeyword.value) {
-      clearSearch()
-      if (tagIds.value.length > 0 && tagScope.value === 'all') {
-        performSearch('', 1, pageSize.value)
-      } else {
-        loadFileList()
-      }
-    }
-  }
-
   onMounted(() => {
     window.addEventListener('keydown', handleGlobalKeydown)
-    window.addEventListener('files-search', handleGlobalSearch)
-    if (route.query.search && typeof route.query.search === 'string') {
-      searchKeyword.value = route.query.search
-      performSearch(route.query.search, 1, pageSize.value)
-    } else if (tagIds.value.length > 0 && tagScope.value === 'all') {
-      performSearch('', 1, pageSize.value)
-    }
   })
   onBeforeUnmount(() => {
     window.removeEventListener('keydown', handleGlobalKeydown)
-    window.removeEventListener('files-search', handleGlobalSearch)
   })
   watch(
-    () => route.query.search,
-    value => {
-      const keyword = typeof value === 'string' ? value.trim() : ''
-      if (keyword === searchKeyword.value.trim()) {
-        return
-      }
-      clearCurrentSelection()
-      if (keyword) {
-        searchKeyword.value = keyword
-        performSearch(keyword, 1, pageSize.value)
-      } else if (hasSearchKeyword.value) {
-        clearSearch()
-        currentPage.value = 1
-        loadFileList()
-      }
-    }
-  )
-  watch(
-    () => [route.query.tags, route.query.tagMode, route.query.tagScope],
+    () => [route.query.search, route.query.tags],
     async () => {
-      const nextIds = parseTagIds(route.query.tags)
-      const nextMode = route.query.tagMode === 'any' ? 'any' : 'all'
-      const nextScope = route.query.tagScope === 'all' ? 'all' : 'current'
-      if (nextIds.join(',') === tagIds.value.join(',') && nextMode === tagMode.value && nextScope === tagScope.value) {
+      const keyword = typeof route.query.search === 'string' ? route.query.search.trim() : ''
+      clearCurrentSelection()
+      currentPage.value = 1
+      if (keyword || tagIds.value.length > 0) {
+        searchKeyword.value = keyword
+        await performSearch(keyword, 1, pageSize.value)
         return
       }
-      tagIds.value = nextIds
-      tagMode.value = nextMode
-      tagScope.value = nextScope
-      await applyTagFilters()
-    }
+      clearSearch()
+      clearSearchResults()
+      await loadFileList()
+    },
+    { immediate: true }
   )
 </script>
 
@@ -1375,10 +1264,6 @@
   @media (max-width: 767px) {
     .file-workspace-toolbar {
       min-height: 28px;
-    }
-
-    .mobile-tag-filter-trigger {
-      flex: 0 0 auto;
     }
 
     .file-content-area {

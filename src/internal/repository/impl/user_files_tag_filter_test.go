@@ -81,6 +81,27 @@ func TestUserFileListAndCountWithoutTagFilter(t *testing.T) {
 	}
 }
 
+func TestUserFileKeywordAndAnyTagFiltersAreCombined(t *testing.T) {
+	db := openUserFileFilterDB(t)
+	insertFilterFixture(t, db)
+	repo := NewUserFilesRepository(db)
+	query := repository.UserFileQuery{
+		UserID:      "user-a",
+		SearchTerms: []string{"private-manual"},
+		TagIDs:      []string{"tag-auto", "tag-excluded"},
+		TagMode:     "any",
+		Limit:       20,
+	}
+
+	files, err := repo.ListFiltered(context.Background(), query)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(files) != 1 || files[0].UfID != "uf-private-manual" {
+		t.Fatalf("关键词与任一标签组合筛选结果错误: %+v", files)
+	}
+}
+
 func TestUserFileOtherTypeExcludesKnownTypes(t *testing.T) {
 	db := openUserFileFilterDB(t)
 	for _, item := range []struct{ ufID, fileID, mime string }{

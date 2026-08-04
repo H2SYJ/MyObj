@@ -123,7 +123,6 @@ export interface FileListRequest {
   sortBy?: string
   sortOrder?: 'asc' | 'desc'
   tag_ids?: string
-  tag_mode?: 'all' | 'any'
   page: number
   pageSize: number
 }

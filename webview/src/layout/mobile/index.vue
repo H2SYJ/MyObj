@@ -19,15 +19,18 @@
     <MobileBottomNav v-if="showBottomNav" :items="navItems" />
 
     <MobileFullScreenLayer v-model="searchVisible" title="搜索" history-key="global-search">
-      <form class="mobile-search-form" @submit.prevent="submitSearch">
-        <el-input
+      <form class="mobile-search-form" @submit.prevent="submitCurrentSearch">
+        <FileSearchInput
           ref="searchInputRef"
           v-model="searchKeyword"
-          size="large"
-          clearable
-          autofocus
-          placeholder="搜索文件"
-          prefix-icon="Search"
+          v-model:tags="searchTags"
+          :scope="searchScope"
+          :history="searchHistory"
+          :placeholder="t('files.searchPlaceholder')"
+          @submit="submitSearch"
+          @clear="clearSearch"
+          @clear-history="clearHistory"
+          @delete-history="removeHistory"
         />
         <el-button type="primary" size="large" native-type="submit">搜索</el-button>
       </form>
@@ -37,14 +40,20 @@
 
 <script setup lang="ts">
   import { MobileBottomNav, MobileFullScreenLayer, MobileTopBar, type MobileNavItem } from '@/components/mobile'
-  import { useI18n } from '@/composables'
+  import { useI18n, useSearchHistory } from '@/composables'
+  import { extractSearchHistoryKeyword, useFileSearchDraft } from '@/composables/business/useFileSearchDraft'
+  import FileSearchInput from '@/components/FileSearchInput/index.vue'
+  import { resolveDesktopSearchNavigation } from '@/utils/desktop/routeSearch'
+  import type { CompactTag } from '@/types'
 
   const route = useRoute()
   const router = useRouter()
   const { t } = useI18n()
   const mainRef = ref<HTMLElement>()
   const searchVisible = ref(false)
-  const searchKeyword = ref('')
+  const searchScope = computed(() => (route.path === '/square' ? 'public' : 'user'))
+  const { keyword: searchKeyword, tags: searchTags, syncFromRoute } = useFileSearchDraft(searchScope)
+  const { searchHistory, addHistory, clearHistory, removeHistory } = useSearchHistory()
   const searchInputRef = ref()
   const scrollPositions = new Map<string, number>()
 
@@ -65,18 +74,47 @@
 
   const handleBack = () => router.push(String(route.meta.mobileParent || '/me'))
 
-  const submitSearch = async () => {
-    const keyword = searchKeyword.value.trim()
-    const path = route.path === '/square' ? '/square' : '/files'
-    const queryKey = path === '/square' ? 'keyword' : 'search'
+  const closeSearchLayerForNavigation = async () => {
+    if (!searchVisible.value) return
+    if (window.history.state?.__myobjMobileLayer === 'global-search') {
+      await new Promise<void>(resolve => {
+        window.addEventListener('popstate', () => nextTick(resolve), { once: true })
+        window.history.back()
+      })
+      return
+    }
     searchVisible.value = false
-    await router.push({ path, query: keyword ? { [queryKey]: keyword } : {} })
+    await nextTick()
+  }
+
+  const submitSearch = async (
+    payload: { keyword: string; tags: CompactTag[] } = { keyword: searchKeyword.value.trim(), tags: searchTags.value }
+  ) => {
+    const historyKeyword = extractSearchHistoryKeyword(payload.keyword)
+    if (historyKeyword) addHistory(historyKeyword)
+    const location = resolveDesktopSearchNavigation(
+      route.path,
+      route.query,
+      route.meta.desktopSearch,
+      payload.keyword,
+      payload.tags.map(tag => tag.id)
+    )
+    await closeSearchLayerForNavigation()
+    await router.push(location)
+  }
+
+  const clearSearch = () => submitSearch({ keyword: '', tags: [] })
+  const submitCurrentSearch = () => {
+    if (searchInputRef.value?.submit) {
+      searchInputRef.value.submit()
+      return
+    }
+    void submitSearch()
   }
 
   watch(searchVisible, visible => {
     if (visible) {
-      searchKeyword.value = String(route.query.search || route.query.keyword || '')
-      nextTick(() => searchInputRef.value?.focus?.())
+      void syncFromRoute().then(() => nextTick(() => searchInputRef.value?.focus?.()))
     }
   })
 
@@ -117,7 +155,7 @@
     gap: 16px;
   }
 
-  .mobile-search-form :deep(.el-input__wrapper) {
+  .mobile-search-form :deep(.file-search-input__control) {
     min-height: 52px;
     border-radius: 16px;
   }
@@ -128,12 +166,24 @@
   }
 
   .mobile-page-fade-enter-active,
-  .mobile-page-fade-leave-active { transition: opacity 180ms ease, transform 180ms ease; }
-  .mobile-page-fade-enter-from { opacity: 0; transform: translateY(6px); }
-  .mobile-page-fade-leave-to { opacity: 0; transform: translateY(-4px); }
+  .mobile-page-fade-leave-active {
+    transition:
+      opacity 180ms ease,
+      transform 180ms ease;
+  }
+  .mobile-page-fade-enter-from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  .mobile-page-fade-leave-to {
+    opacity: 0;
+    transform: translateY(-4px);
+  }
 
   @media (prefers-reduced-motion: reduce) {
     .mobile-page-fade-enter-active,
-    .mobile-page-fade-leave-active { transition: none; }
+    .mobile-page-fade-leave-active {
+      transition: none;
+    }
   }
 </style>

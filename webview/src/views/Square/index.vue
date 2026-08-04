@@ -25,12 +25,6 @@
         </div>
 
         <div class="filter-sort-group">
-          <TagFilter
-            :model-value="tagIds"
-            :mode="tagMode"
-            @update:model-value="updateTagIds"
-            @update:mode="updateTagMode"
-          />
           <el-select
             v-model="sortBy"
             :placeholder="t('square.sortByPlaceholder')"
@@ -208,8 +202,8 @@
   import { MobileInfiniteList } from '@/components/mobile'
   import SegmentedControl from '@/components/SegmentedControl/index.vue'
   import WorkspacePage from '@/components/WorkspacePage/index.vue'
-  import TagFilter from '@/components/TagFilter/index.vue'
   import FileTags from '@/components/FileTags/index.vue'
+  import { parseSearchTagIds } from '@/composables/business/useFileSearchDraft'
   import type { CompactTag, FileItem } from '@/types'
 
   const { proxy } = getCurrentInstance() as ComponentInternalInstance
@@ -225,19 +219,7 @@
   const sortBy = ref('time')
   const loading = ref(false)
   const isSearchMode = ref(false) // 是否处于搜索模式
-  const parseTagIds = (value: unknown) =>
-    typeof value === 'string'
-      ? [
-          ...new Set(
-            value
-              .split(',')
-              .map(item => item.trim())
-              .filter(Boolean)
-          )
-        ]
-      : []
-  const tagIds = ref<string[]>(parseTagIds(route.query.tags))
-  const tagMode = ref<'all' | 'any'>(route.query.tagMode === 'any' ? 'any' : 'all')
+  const tagIds = computed(() => parseSearchTagIds(route.query.tags))
 
   const filterTypeItems = computed(() => [
     { value: 'all', label: t('square.filterAll'), icon: Menu },
@@ -278,8 +260,7 @@
     () => ({
       type: fileTypeFilter.value === 'all' ? undefined : fileTypeFilter.value,
       sortBy: sortBy.value,
-      tag_ids: tagIds.value.join(',') || undefined,
-      tag_mode: tagIds.value.length ? tagMode.value : undefined
+      tag_ids: tagIds.value.join(',') || undefined
     })
   )
 
@@ -334,18 +315,18 @@
     loadPublicFiles()
   }
 
-  const pushTagRoute = (nextIds: string[], nextMode = tagMode.value) => {
+  const pushTagRoute = (nextIds: string[]) => {
     router.push({
       path: route.path,
       query: {
         ...route.query,
         tags: nextIds.length ? nextIds.join(',') : undefined,
-        tagMode: nextIds.length && nextMode !== 'all' ? nextMode : undefined
+        tagMode: undefined,
+        tagScope: undefined,
+        page: undefined
       }
     })
   }
-  const updateTagIds = (value: string[]) => pushTagRoute(value)
-  const updateTagMode = (value: 'all' | 'any') => pushTagRoute(tagIds.value, value)
   const handleTagClick = (tag: CompactTag) => {
     if (!tagIds.value.includes(tag.id)) {
       pushTagRoute([...tagIds.value, tag.id])
@@ -394,7 +375,7 @@
 
   // 分页处理
   const handlePagination = ({ page, limit }: { page: number; limit: number }) => {
-    if (isSearchMode.value && searchKeyword.value.trim()) {
+    if (isSearchMode.value) {
       // 搜索模式下的分页
       performSearch(searchKeyword.value, page, limit)
     } else {
@@ -422,11 +403,6 @@
       if (fileTypeFilter.value !== 'all') {
         params.type = fileTypeFilter.value
       }
-      if (tagIds.value.length > 0) {
-        params.tag_ids = tagIds.value.join(',')
-        params.tag_mode = tagMode.value
-      }
-
       const response = await getPublicFileList(params)
 
       if (response.code === 200 && response.data) {
@@ -462,74 +438,21 @@
     }
   }
 
-  onMounted(() => {
-    // 监听全局搜索事件
-    const handleGlobalSearch = (event: Event) => {
-      const customEvent = event as CustomEvent<{ keyword: string }>
-      const keyword = customEvent.detail.keyword.trim()
-
-      if (keyword) {
-        // 只有当关键词变化时才执行搜索，避免重复请求
-        if (searchKeyword.value !== keyword) {
-          searchKeyword.value = keyword
-          performSearch(keyword, 1, pageSize.value)
-        }
-      } else {
-        // 清空搜索
-        search.clearSearch()
-      }
-    }
-
-    window.addEventListener('square-search', handleGlobalSearch)
-
-    // 检查路由参数中是否有搜索关键词
-    const keyword = route.query.search as string
-    if (keyword) {
-      searchKeyword.value = keyword
-      performSearch(keyword, 1, pageSize.value)
-    } else {
-      loadPublicFiles()
-    }
-
-    // 清理事件监听
-    onBeforeUnmount(() => {
-      window.removeEventListener('square-search', handleGlobalSearch)
-    })
-  })
-
-  // 监听路由参数变化
   watch(
-    () => route.query.search,
-    newKeyword => {
-      if (newKeyword) {
-        searchKeyword.value = newKeyword as string
-        performSearch(newKeyword as string, 1, pageSize.value)
-      } else if (isSearchMode.value) {
-        // 如果路由参数被清空，且当前在搜索模式，则切换到正常模式
-        isSearchMode.value = false
-        searchKeyword.value = ''
-        loadPublicFiles()
-      }
-    }
-  )
-  watch(
-    () => [route.query.tags, route.query.tagMode],
+    () => [route.query.search, route.query.tags],
     async () => {
-      const nextIds = parseTagIds(route.query.tags)
-      const nextMode = route.query.tagMode === 'any' ? 'any' : 'all'
-      if (nextIds.join(',') === tagIds.value.join(',') && nextMode === tagMode.value) {
+      const keyword = typeof route.query.search === 'string' ? route.query.search.trim() : ''
+      currentPage.value = 1
+      searchKeyword.value = keyword
+      if (keyword || tagIds.value.length > 0) {
+        await performSearch(keyword, 1, pageSize.value)
         return
       }
-      tagIds.value = nextIds
-      tagMode.value = nextMode
-      currentPage.value = 1
-      if (searchKeyword.value.trim()) {
-        await performSearch(searchKeyword.value, 1, pageSize.value)
-      } else {
-        isSearchMode.value = false
-        await loadPublicFiles()
-      }
-    }
+      isSearchMode.value = false
+      search.clearSearchResults()
+      await loadPublicFiles()
+    },
+    { immediate: true }
   )
 </script>
 

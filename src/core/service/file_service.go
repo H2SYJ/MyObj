@@ -704,7 +704,7 @@ func normalizeFilePage(page, pageSize int) (int, int) {
 func normalizeTagFilter(raw, mode string) ([]string, string, error) {
 	mode = strings.ToLower(strings.TrimSpace(mode))
 	if mode == "" {
-		mode = "all"
+		mode = "any"
 	}
 	if mode != "all" && mode != "any" {
 		return nil, "", fmt.Errorf("%w: tag_mode 仅支持 all 或 any", ErrInvalidFileSearch)

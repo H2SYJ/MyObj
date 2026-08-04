@@ -1803,8 +1803,8 @@ paths:
         in: query
         name: tag_ids
         type: string
-      - default: all
-        description: 标签匹配模式
+      - default: any
+        description: 标签匹配模式，省略时按任一标签匹配
         enum:
         - all
         - any
@@ -1931,8 +1931,8 @@ paths:
         in: query
         name: tag_ids
         type: string
-      - default: all
-        description: 标签匹配模式
+      - default: any
+        description: 标签匹配模式，省略时按任一标签匹配
         enum:
         - all
         - any
@@ -2058,8 +2058,8 @@ paths:
         in: query
         name: tag_ids
         type: string
-      - default: all
-        description: 标签匹配模式
+      - default: any
+        description: 标签匹配模式，省略时按任一标签匹配
         enum:
         - all
         - any
@@ -2115,8 +2115,8 @@ paths:
         in: query
         name: tag_ids
         type: string
-      - default: all
-        description: 标签匹配模式
+      - default: any
+        description: 标签匹配模式，省略时按任一标签匹配
         enum:
         - all
         - any
@@ -2456,6 +2456,18 @@ paths:
       - description: 标签关键词
         in: query
         name: keyword
+        type: string
+      - description: 逗号分隔的标签ID，用于回填已选标签
+        in: query
+        name: tag_ids
+        type: string
+      - default: user
+        description: 建议范围
+        enum:
+        - user
+        - public
+        in: query
+        name: scope
         type: string
       - default: 20
         description: 返回数量，1到50
