@@ -61,11 +61,11 @@ func (s *TagService) seedMissingMetadataStates() {
 func (s *TagService) claimMetadataState() (*models.FileMetadataState, bool) {
 	now := time.Now()
 	var state models.FileMetadataState
-	err := s.factory.DB().WithContext(s.ctx).
+	query := s.factory.DB().WithContext(s.ctx).
 		Where("status = ? OR (status = ? AND next_retry_at <= ?) OR (status = ? AND lease_expires_at < ?)",
 			models.TagStatePending, models.TagStateFailed, now, models.TagStateRunning, now).
-		Order("updated_at ASC").First(&state).Error
-	if err != nil {
+		Order("updated_at ASC").Limit(1).Find(&state)
+	if query.Error != nil || query.RowsAffected == 0 {
 		return nil, false
 	}
 	token := uuid.NewString()

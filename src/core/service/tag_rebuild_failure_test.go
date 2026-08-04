@@ -8,6 +8,7 @@ import (
 
 	"github.com/glebarez/sqlite"
 	"gorm.io/gorm"
+	gormlogger "gorm.io/gorm/logger"
 
 	"myobj/src/internal/repository/impl"
 	"myobj/src/pkg/models"
@@ -36,6 +37,56 @@ func newTagFailureTestService(t *testing.T, modelsToMigrate ...interface{}) (*Ta
 		t.Fatal(err)
 	}
 	return &TagService{factory: impl.NewRepositoryFactory(db), wake: make(chan struct{}, 1)}, db
+}
+
+type tagWorkerTraceRecorder struct {
+	errors []error
+}
+
+func (r *tagWorkerTraceRecorder) LogMode(gormlogger.LogLevel) gormlogger.Interface { return r }
+func (r *tagWorkerTraceRecorder) Info(context.Context, string, ...interface{})     {}
+func (r *tagWorkerTraceRecorder) Warn(context.Context, string, ...interface{})     {}
+func (r *tagWorkerTraceRecorder) Error(context.Context, string, ...interface{})    {}
+func (r *tagWorkerTraceRecorder) Trace(_ context.Context, _ time.Time, fc func() (string, int64), err error) {
+	if err != nil {
+		r.errors = append(r.errors, err)
+	}
+	_, _ = fc()
+}
+
+func TestEmptyTagWorkerQueuesDoNotEmitRecordNotFound(t *testing.T) {
+	recorder := &tagWorkerTraceRecorder{}
+	db, err := gorm.Open(sqlite.Open("file:"+t.Name()+"?mode=memory&cache=shared"), &gorm.Config{Logger: recorder})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := db.AutoMigrate(&models.UserFileTagState{}, &models.TagRebuildJob{}, &models.FileMetadataState{}); err != nil {
+		t.Fatal(err)
+	}
+	recorder.errors = nil
+	service := &TagService{factory: impl.NewRepositoryFactory(db), ctx: context.Background(), wake: make(chan struct{}, 1)}
+
+	if state, ok := service.claimPendingState(); ok || state != nil {
+		t.Fatalf("空自动标签队列不应领取到任务: state=%+v ok=%v", state, ok)
+	}
+	if job, ok := service.claimRebuildJob(); ok || job != nil {
+		t.Fatalf("空重建队列不应领取到任务: job=%+v ok=%v", job, ok)
+	}
+	if state, ok := service.claimMetadataState(); ok || state != nil {
+		t.Fatalf("空元数据队列不应领取到任务: state=%+v ok=%v", state, ok)
+	}
+	if err := db.Create(&models.FileMetadataState{
+		FileID: "file-1", Status: models.TagStatePending, UpdatedAt: time.Now(),
+	}).Error; err != nil {
+		t.Fatal(err)
+	}
+	state, ok := service.claimMetadataState()
+	if !ok || state.FileID != "file-1" || state.Status != models.TagStateRunning || state.RunToken == "" {
+		t.Fatalf("元数据队列没有正确领取待处理任务: state=%+v ok=%v", state, ok)
+	}
+	if len(recorder.errors) != 0 {
+		t.Fatalf("空 Worker 队列不应产生数据库错误日志: %v", recorder.errors)
+	}
 }
 
 func TestRetryRebuildFailureQueuesSingleFile(t *testing.T) {

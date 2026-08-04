@@ -71,11 +71,11 @@ func (s *TagService) releasePendingState(state *models.UserFileTagState) {
 func (s *TagService) claimPendingState() (*models.UserFileTagState, bool) {
 	now := time.Now()
 	var state models.UserFileTagState
-	err := s.factory.DB().WithContext(s.ctx).
+	query := s.factory.DB().WithContext(s.ctx).
 		Where("(status = ?) OR (status = ? AND (next_retry_at IS NULL OR next_retry_at <= ?)) OR (status = ? AND lease_expires_at < ?)",
 			models.TagStatePending, models.TagStateFailed, now, models.TagStateRunning, now).
-		Order("updated_at ASC").First(&state).Error
-	if err != nil {
+		Order("updated_at ASC").Limit(1).Find(&state)
+	if query.Error != nil || query.RowsAffected == 0 {
 		return nil, false
 	}
 	token := uuid.NewString()
@@ -142,10 +142,10 @@ func (s *TagService) runRebuildWorker() {
 func (s *TagService) claimRebuildJob() (*models.TagRebuildJob, bool) {
 	now := time.Now()
 	var job models.TagRebuildJob
-	err := s.factory.DB().WithContext(s.ctx).
+	query := s.factory.DB().WithContext(s.ctx).
 		Where("status = ? OR (status = ? AND lease_expires_at < ?)", "pending", "running", now).
-		Order("created_at ASC").First(&job).Error
-	if err != nil {
+		Order("created_at ASC").Limit(1).Find(&job)
+	if query.Error != nil || query.RowsAffected == 0 {
 		return nil, false
 	}
 	token := uuid.NewString()
