@@ -82,6 +82,7 @@ func migrateRecycledSchema(db *gorm.DB) error {
 		&models.Recycled{},
 		&models.RecycledDirectoryNode{},
 		&models.RecycledDirectoryFile{},
+		&models.RecycledDirectoryTag{},
 	); err != nil {
 		return err
 	}

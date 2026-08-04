@@ -42,11 +42,11 @@
           <file-name-tooltip v-if="entry.type === 'file'" :file-name="entry.file.file_name" view-mode="table" />
           <span v-else class="folder-name">{{ entry.folder.name }}</span>
           <FileTags
-            v-if="entry.type === 'file'"
-            :tags="entry.file.tags"
+            v-if="entry.type === 'file' || entry.folder.tags?.length"
+            :tags="entry.type === 'file' ? entry.file.tags : entry.folder.tags"
             :limit="tagLimit"
             compact
-            @tag-click="tag => $emit('tag-click', tag)"
+            @tag-click="tag => entry.type === 'file' && $emit('tag-click', tag)"
           />
           <span v-if="entry.type === 'file'" class="mobile-meta">
             {{ formatSize(entry.file.file_size) }} · {{ formatDate(entry.file.created_at) }}

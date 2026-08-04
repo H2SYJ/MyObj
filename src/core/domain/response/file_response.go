@@ -34,6 +34,8 @@ type FolderItem struct {
 	ParentID     int                  `json:"parent_id"`
 	AbsolutePath string               `json:"absolute_path"`
 	CreatedAt    custom_type.JsonTime `json:"created_at"`
+	Tags         []CompactTagView     `json:"tags,omitempty"`
+	CinemaMode   bool                 `json:"cinema_mode"`
 }
 
 // DirectoryItem 是目录树接口返回的规范目录节点。

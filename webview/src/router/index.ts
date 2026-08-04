@@ -18,6 +18,31 @@ export const routes: RouteRecordRaw[] = [
     meta: { requiresAuth: false }
   },
   {
+    path: '/cinema/:rootDirectoryId',
+    component: () => import('@/views/Cinema/components/CinemaShell.vue'),
+    meta: { requiresAuth: true, title: '影视模式' },
+    children: [
+      {
+        path: '',
+        name: 'CinemaHome',
+        component: () => import('@/views/Cinema/Home.vue'),
+        meta: { requiresAuth: true, title: '影视模式' }
+      },
+      {
+        path: 'folder/:directoryId',
+        name: 'CinemaFolder',
+        component: () => import('@/views/Cinema/FolderVideos.vue'),
+        meta: { requiresAuth: true, title: '影视视频列表' }
+      },
+      {
+        path: 'watch/:fileId',
+        name: 'CinemaWatch',
+        component: () => import('@/views/Cinema/Watch.vue'),
+        meta: { requiresAuth: true, title: '播放视频' }
+      }
+    ]
+  },
+  {
     path: '/',
     name: 'Layout',
     component: () => import('@/layout/index.vue'),

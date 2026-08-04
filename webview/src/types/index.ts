@@ -92,6 +92,8 @@ export interface FolderItem {
   parent_id: number
   absolute_path: string
   created_at: string
+  tags?: CompactTag[]
+  cinema_mode?: boolean
 }
 
 // 文件项
@@ -114,6 +116,7 @@ export interface CompactTag {
   category_code: string
   color: string
   visibility: 'inherit' | 'private' | 'public' | string
+  system_code?: string
 }
 
 // 文件列表请求

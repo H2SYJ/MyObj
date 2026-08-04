@@ -37,6 +37,18 @@ const offlineTask = {
   finish_time: ''
 }
 
+const cinemaVideo = (id: number) => ({
+  file_id: `cinema-video-${id}`,
+  file_name: `影视验收视频 ${id}.mp4`,
+  file_size: 1048576,
+  mime_type: 'video/mp4',
+  is_enc: false,
+  has_thumbnail: false,
+  created_at: `2026-08-04T0${Math.min(id, 9)}:00:00Z`,
+  directory: { id: 7, name: '影视库', parent_id: 0, path: '影视库' },
+  tags: []
+})
+
 const mockApi = async (page: Page) => {
   await page.route('**/dev-api/**', async route => {
     const url = new URL(route.request().url())
@@ -76,6 +88,43 @@ const mockApi = async (page: Page) => {
         total: 2,
         page: 1,
         page_size: 20
+      }
+    } else if (path === '/cinema/7/home') {
+      data = {
+        root: { id: 7, name: '影视库', parent_id: 0, path: '影视库' },
+        sections: [
+          {
+            directory: { id: 7, name: '影视库', parent_id: 0, path: '影视库' },
+            videos: Array.from({ length: 6 }, (_, index) => cinemaVideo(index + 1)),
+            total: 8,
+            has_more: true
+          }
+        ],
+        total: 1,
+        page: 1,
+        page_size: Number(url.searchParams.get('page_size') || 20),
+        has_more: false
+      }
+    } else if (path === '/cinema/7/folders/7/videos') {
+      data = {
+        root: { id: 7, name: '影视库', parent_id: 0, path: '影视库' },
+        directory: { id: 7, name: '影视库', parent_id: 0, path: '影视库' },
+        videos: Array.from({ length: 8 }, (_, index) => cinemaVideo(index + 1)),
+        total: 8,
+        page: 1,
+        page_size: 24,
+        has_more: false
+      }
+    } else if (/^\/cinema\/7\/videos\/cinema-video-\d+$/.test(path)) {
+      const id = Number(path.split('-').at(-1))
+      data = { root: { id: 7, name: '影视库', parent_id: 0, path: '影视库' }, video: cinemaVideo(id) }
+    } else if (/^\/cinema\/7\/videos\/cinema-video-\d+\/related$/.test(path)) {
+      data = {
+        videos: [cinemaVideo(6), cinemaVideo(5)],
+        total: 2,
+        page: 1,
+        page_size: 20,
+        has_more: false
       }
     } else if (path === '/file/search/user') {
       data = { files: [], total: 0 }
@@ -224,6 +273,42 @@ test.beforeEach(async ({ page }, testInfo) => {
     { info: userInfo, preferences }
   )
   await mockApi(page)
+})
+
+test('影视模式桌面布局、隐藏横向滚动条和路由前进后退', async ({ page }, testInfo) => {
+  await page.goto('/cinema/7')
+  await expect(page.locator('.cinema-brand')).toContainText('影视库')
+  await expect(page.locator('.layout-sidebar')).toHaveCount(0)
+  expect(await page.locator('.cinema-shell').evaluate(element => getComputedStyle(element).backgroundColor)).toBe(
+    'rgb(255, 255, 255)'
+  )
+  const rail = page.locator('.cinema-section__rail')
+  await expect(rail.locator('.cinema-video-card')).toHaveCount(6)
+  expect(await rail.evaluate(element => getComputedStyle(element).scrollbarWidth)).toBe('none')
+  expect(
+    await rail
+      .locator('.cinema-video-card')
+      .first()
+      .evaluate(element => getComputedStyle(element).borderRadius)
+  ).toBe('16px')
+
+  await rail.locator('.cinema-video-card').first().click()
+  await expect(page).toHaveURL(/\/cinema\/7\/watch\/cinema-video-1$/)
+  await expect(page.locator('.cinema-watch h1')).toContainText('影视验收视频 1')
+  const watchDisplay = await page.locator('.cinema-watch').evaluate(element => getComputedStyle(element).display)
+  if (testInfo.project.name === 'chromium-desktop-1440' || testInfo.project.name === 'chromium-desktop-1024') {
+    expect(watchDisplay).toBe('grid')
+    expect(
+      await page.locator('.cinema-watch').evaluate(element => getComputedStyle(element).gridTemplateColumns)
+    ).toContain('340px')
+  } else {
+    expect(watchDisplay).toBe('block')
+  }
+
+  await page.goBack()
+  await expect(page).toHaveURL(/\/cinema\/7$/)
+  await page.goForward()
+  await expect(page).toHaveURL(/\/cinema\/7\/watch\/cinema-video-1$/)
 })
 
 test('固定侧栏、路由搜索恢复与无横向滚动', async ({ page }) => {

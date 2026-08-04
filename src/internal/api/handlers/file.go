@@ -95,6 +95,8 @@ func (f *FileHandler) Router(c *gin.RouterGroup) {
 		fileGroup.POST("/setPublic", f.SetFilePublic)
 		// 获取虚拟目录
 		fileGroup.GET("/directories", middleware.PowerVerify("file:preview"), f.GetDirectories)
+		fileGroup.GET("/directories/:directory_id/tags", middleware.PowerVerify("file:preview"), f.GetDirectoryTags)
+		fileGroup.PUT("/directories/:directory_id/tags/manual", middleware.PowerVerify("file:tag"), f.UpdateDirectoryTags)
 		fileGroup.GET("/tag-categories", middleware.PowerVerify("file:tag"), f.ListTagCategories)
 		fileGroup.GET("/tags/suggestions", middleware.PowerVerify("file:tag"), f.TagSuggestions)
 		fileGroup.GET("/tags/:uf_id", middleware.PowerVerify("file:preview"), f.GetFileTags)
@@ -112,6 +114,43 @@ func (f *FileHandler) Router(c *gin.RouterGroup) {
 	}
 
 	logger.LOG.Info("[路由] 文件路由注册完成✔️")
+}
+
+func (f *FileHandler) GetDirectoryTags(c *gin.Context) {
+	directoryID, err := strconv.Atoi(c.Param("directory_id"))
+	if err != nil || directoryID <= 0 {
+		c.JSON(http.StatusOK, models.NewJsonResponse(400, "文件夹ID无效", nil))
+		return
+	}
+	result, err := f.service.TagService().GetDirectoryTags(c.Request.Context(), c.GetString("userID"), directoryID)
+	if err != nil {
+		c.JSON(http.StatusOK, models.NewJsonResponse(400, err.Error(), nil))
+		return
+	}
+	c.JSON(http.StatusOK, models.NewJsonResponse(200, "查询成功", result))
+}
+
+func (f *FileHandler) UpdateDirectoryTags(c *gin.Context) {
+	directoryID, err := strconv.Atoi(c.Param("directory_id"))
+	if err != nil || directoryID <= 0 {
+		c.JSON(http.StatusOK, models.NewJsonResponse(400, "文件夹ID无效", nil))
+		return
+	}
+	var req request.UpdateDirectoryTagsRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, models.NewJsonResponse(400, "参数错误", nil))
+		return
+	}
+	if err := f.service.TagService().UpdateDirectoryTags(c.Request.Context(), c.GetString("userID"), directoryID, req.Add, req.RemoveTagIDs); err != nil {
+		c.JSON(http.StatusOK, models.NewJsonResponse(400, err.Error(), nil))
+		return
+	}
+	result, err := f.service.TagService().GetDirectoryTags(c.Request.Context(), c.GetString("userID"), directoryID)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, models.NewJsonResponse(500, err.Error(), nil))
+		return
+	}
+	c.JSON(http.StatusOK, models.NewJsonResponse(200, "文件夹标签已更新", result))
 }
 
 // GetFileTags godoc
@@ -265,12 +304,13 @@ func (f *FileHandler) BatchUpdateTags(c *gin.Context) {
 // @Router /file/tags/suggestions [get]
 func (f *FileHandler) TagSuggestions(c *gin.Context) {
 	limit, _ := strconv.Atoi(c.Query("limit"))
-	result, err := f.service.TagService().Suggestions(
+	result, err := f.service.TagService().SuggestionsForTarget(
 		c.Request.Context(),
 		c.GetString("userID"),
 		c.Query("keyword"),
 		strings.Split(c.Query("tag_ids"), ","),
 		c.Query("scope"),
+		c.Query("target"),
 		limit,
 	)
 	if err != nil {

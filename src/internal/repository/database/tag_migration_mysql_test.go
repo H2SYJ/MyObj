@@ -4,6 +4,7 @@ import (
 	"os"
 	"strings"
 	"testing"
+	"time"
 
 	"gorm.io/driver/mysql"
 	"gorm.io/gorm"
@@ -29,14 +30,30 @@ func TestMigrateTaggingSchemaMySQL(t *testing.T) {
 	for _, table := range []string{
 		"tag_rebuild_failure", "tag_rebuild_job", "tag_rule", "tag_rule_set",
 		"file_metadata_state", "file_metadata", "user_file_tag_state",
-		"user_file_tag_exclusion", "user_file_tag", "tag_definition", "tag_category",
+		"user_file_tag_exclusion", "user_directory_tag", "user_file_tag", "tag_definition", "tag_category",
 		"group_power", "power", "sys_config", "user_files",
 	} {
 		if err := db.Exec("DROP TABLE IF EXISTS " + table).Error; err != nil {
 			t.Fatal(err)
 		}
 	}
-	if err := db.AutoMigrate(&models.SysConfig{}, &models.Power{}, &models.GroupPower{}, &models.UserFiles{}); err != nil {
+	if err := db.AutoMigrate(
+		&models.SysConfig{}, &models.Power{}, &models.GroupPower{}, &models.UserFiles{},
+		&models.TagCategory{}, &models.TagDefinition{},
+	); err != nil {
+		t.Fatal(err)
+	}
+	now := time.Now()
+	if err := db.Create(&models.TagCategory{
+		ID: "custom", Code: "custom", Name: "自定义", Color: "#123456", Enabled: true,
+		CreatedAt: now, UpdatedAt: now,
+	}).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Create(&models.TagDefinition{
+		ID: "existing-cinema", Name: models.TagNameCinemaMode, NormalizedName: models.TagNameCinemaMode,
+		CategoryID: "custom", CreatedAt: now,
+	}).Error; err != nil {
 		t.Fatal(err)
 	}
 	preview := models.Power{ID: 1, Name: "文件预览", Characteristic: "file:preview", CreatedAt: custom_type.Now()}
@@ -52,7 +69,8 @@ func TestMigrateTaggingSchemaMySQL(t *testing.T) {
 		}
 	}
 	for model, indexes := range map[interface{}][]string{
-		&models.TagDefinition{}:     {"uk_tag_definition"},
+		&models.TagDefinition{}:     {"uk_tag_definition", "idx_tag_definition_system_code"},
+		&models.UserDirectoryTag{}:  {"uk_user_directory_tag"},
 		&models.UserFileTag{}:       {"idx_user_tag_file", "idx_uf_source"},
 		&models.FileMetadata{}:      {"uk_file_metadata"},
 		&models.TagRuleSet{}:        {"idx_tag_rule_scope"},
@@ -64,5 +82,12 @@ func TestMigrateTaggingSchemaMySQL(t *testing.T) {
 				t.Fatalf("MySQL标签迁移缺少索引%s", index)
 			}
 		}
+	}
+	var cinemaTag models.TagDefinition
+	if err := db.Where("system_code = ?", models.TagSystemCodeCinemaMode).First(&cinemaTag).Error; err != nil {
+		t.Fatal(err)
+	}
+	if cinemaTag.ID != "existing-cinema" || !cinemaTag.Builtin {
+		t.Fatalf("MySQL迁移未复用已有影视模式标签: %+v", cinemaTag)
 	}
 }

@@ -33,6 +33,9 @@ const (
 	TagRebuildFailureFailed   = "failed"
 	TagRebuildFailureRetrying = "retrying"
 	TagRebuildFailureResolved = "resolved"
+
+	TagSystemCodeCinemaMode = "cinema_mode"
+	TagNameCinemaMode       = "影视模式"
 )
 
 // TagCategory 定义标签的业务分类和展示样式。
@@ -56,6 +59,8 @@ type TagDefinition struct {
 	Name           string    `gorm:"column:name;type:varchar(255);not null" json:"name"`
 	NormalizedName string    `gorm:"column:normalized_name;type:varchar(191);not null;uniqueIndex:uk_tag_definition,priority:1" json:"normalized_name"`
 	CategoryID     string    `gorm:"column:category_id;type:varchar(64);not null;uniqueIndex:uk_tag_definition,priority:2;index" json:"category_id"`
+	SystemCode     *string   `gorm:"column:system_code;type:varchar(64);uniqueIndex" json:"system_code,omitempty"`
+	Builtin        bool      `gorm:"column:builtin;type:boolean;not null;default:false" json:"builtin"`
 	CreatedAt      time.Time `gorm:"column:created_at;type:datetime;not null" json:"created_at"`
 }
 
@@ -76,6 +81,18 @@ type UserFileTag struct {
 }
 
 func (UserFileTag) TableName() string { return "user_file_tag" }
+
+// UserDirectoryTag 保存用户目录与手工标签的关联。目录标签不参与自动生成和公开范围。
+type UserDirectoryTag struct {
+	ID          string    `gorm:"column:id;type:varchar(64);primaryKey" json:"id"`
+	UserID      string    `gorm:"column:user_id;type:varchar(64);not null;index:idx_user_directory_tag,priority:1;uniqueIndex:uk_user_directory_tag,priority:1" json:"user_id"`
+	DirectoryID int       `gorm:"column:directory_id;not null;index:idx_user_directory_tag,priority:2;uniqueIndex:uk_user_directory_tag,priority:2" json:"directory_id"`
+	TagID       string    `gorm:"column:tag_id;type:varchar(64);not null;index;uniqueIndex:uk_user_directory_tag,priority:3" json:"tag_id"`
+	CreatedBy   string    `gorm:"column:created_by;type:varchar(64);not null" json:"created_by"`
+	CreatedAt   time.Time `gorm:"column:created_at;type:datetime;not null" json:"created_at"`
+}
+
+func (UserDirectoryTag) TableName() string { return "user_directory_tag" }
 
 // UserFileTagExclusion 记录用户不希望自动标签再次出现的覆盖项。
 type UserFileTagExclusion struct {

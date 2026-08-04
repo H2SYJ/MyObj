@@ -33,4 +33,12 @@ describe('桌面路由元数据', () => {
     expect(zhCN.route.tasks).toBe('传输列表')
     expect(enUS.route.tasks).toBe('Transfer List')
   })
+
+  it('影视模式使用独立鉴权路由并提供首页、目录和播放页', () => {
+    const cinema = routes.find(record => record.path === '/cinema/:rootDirectoryId')
+    expect(cinema?.meta?.requiresAuth).toBe(true)
+    expect(cinema?.children?.map(record => record.path)).toEqual(['', 'folder/:directoryId', 'watch/:fileId'])
+    const appLayout = routes.find(record => record.name === 'Layout')
+    expect(appLayout?.children?.some(record => String(record.path).startsWith('/cinema'))).toBe(false)
+  })
 })

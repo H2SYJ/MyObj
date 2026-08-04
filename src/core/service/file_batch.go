@@ -226,6 +226,22 @@ func recycleDirectoryTree(ctx context.Context, factory *impl.RepositoryFactory, 
 			return nil, err
 		}
 	}
+	var directoryTags []models.UserDirectoryTag
+	if err := tx.Where("user_id = ? AND directory_id IN ?", userID, dirIDs).Find(&directoryTags).Error; err != nil {
+		return nil, err
+	}
+	for _, tag := range directoryTags {
+		if err := tx.Create(&models.RecycledDirectoryTag{
+			RecycledID: recycledID, OriginalDirID: tag.DirectoryID, TagID: tag.TagID,
+		}).Error; err != nil {
+			return nil, err
+		}
+	}
+	if len(dirIDs) > 0 {
+		if err := tx.Where("user_id = ? AND directory_id IN ?", userID, dirIDs).Delete(&models.UserDirectoryTag{}).Error; err != nil {
+			return nil, err
+		}
+	}
 	memberIDs := make([]string, 0, len(files))
 	for _, file := range files {
 		if err := tx.Create(&models.RecycledDirectoryFile{

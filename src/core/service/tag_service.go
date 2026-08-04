@@ -476,6 +476,43 @@ func ensureTagDefinition(tx *gorm.DB, name, categoryID string) (*models.TagDefin
 	return &existing, nil
 }
 
+func ensureDirectoryTagDefinition(tx *gorm.DB, name, categoryID string) (*models.TagDefinition, error) {
+	if tagging.Normalize(name) != tagging.Normalize(models.TagNameCinemaMode) {
+		return ensureTagDefinition(tx, name, categoryID)
+	}
+	var existing models.TagDefinition
+	err := tx.Where("system_code = ?", models.TagSystemCodeCinemaMode).First(&existing).Error
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		err = tx.Where("normalized_name = ?", tagging.Normalize(models.TagNameCinemaMode)).
+			Order("CASE WHEN category_id = 'other' THEN 0 ELSE 1 END, created_at ASC, id ASC").First(&existing).Error
+	}
+	if err == nil {
+		if updateErr := tx.Model(&models.TagDefinition{}).Where("id = ?", existing.ID).
+			Updates(map[string]interface{}{"system_code": models.TagSystemCodeCinemaMode, "builtin": true}).Error; updateErr != nil {
+			return nil, updateErr
+		}
+		code := models.TagSystemCodeCinemaMode
+		existing.SystemCode = &code
+		existing.Builtin = true
+		return &existing, nil
+	}
+	if !errors.Is(err, gorm.ErrRecordNotFound) {
+		return nil, err
+	}
+	created, err := ensureTagDefinition(tx, models.TagNameCinemaMode, "other")
+	if err != nil {
+		return nil, err
+	}
+	if err := tx.Model(&models.TagDefinition{}).Where("id = ?", created.ID).
+		Updates(map[string]interface{}{"system_code": models.TagSystemCodeCinemaMode, "builtin": true}).Error; err != nil {
+		return nil, err
+	}
+	code := models.TagSystemCodeCinemaMode
+	created.SystemCode = &code
+	created.Builtin = true
+	return created, nil
+}
+
 type compactTagRow struct {
 	UFID         string
 	ID           string
@@ -484,6 +521,7 @@ type compactTagRow struct {
 	Color        string
 	Visibility   string
 	SourceType   string
+	SystemCode   string
 }
 
 func (s *TagService) CompactTags(ctx context.Context, userID string, ufIDs []string, publicOnly bool) (map[string][]response.CompactTagView, error) {
@@ -492,7 +530,7 @@ func (s *TagService) CompactTags(ctx context.Context, userID string, ufIDs []str
 		return result, nil
 	}
 	query := s.factory.DB().WithContext(ctx).Table("user_file_tag AS uft").
-		Select("uft.uf_id, td.id, td.name, tc.code AS category_code, tc.color, uft.visibility, uft.source_type").
+		Select("uft.uf_id, td.id, td.name, tc.code AS category_code, tc.color, uft.visibility, uft.source_type, td.system_code").
 		Joins("JOIN tag_definition td ON td.id = uft.tag_id").
 		Joins("JOIN tag_category tc ON tc.id = td.category_id").
 		Where("uft.uf_id IN ?", ufIDs).
@@ -516,10 +554,123 @@ func (s *TagService) CompactTags(ctx context.Context, userID string, ufIDs []str
 		seen[key] = struct{}{}
 		result[row.UFID] = append(result[row.UFID], response.CompactTagView{
 			ID: row.ID, Name: row.Name, CategoryCode: row.CategoryCode,
-			Color: row.Color, Visibility: row.Visibility,
+			Color: row.Color, Visibility: row.Visibility, SystemCode: row.SystemCode,
 		})
 	}
 	return result, nil
+}
+
+type compactDirectoryTagRow struct {
+	DirectoryID  int
+	ID           string
+	Name         string
+	CategoryCode string
+	Color        string
+	SystemCode   string
+}
+
+func (s *TagService) CompactDirectoryTags(ctx context.Context, userID string, directoryIDs []int) (map[int][]response.CompactTagView, error) {
+	result := make(map[int][]response.CompactTagView, len(directoryIDs))
+	if len(directoryIDs) == 0 {
+		return result, nil
+	}
+	var rows []compactDirectoryTagRow
+	err := s.factory.DB().WithContext(ctx).Table("user_directory_tag AS udt").
+		Select("udt.directory_id, td.id, td.name, tc.code AS category_code, tc.color, td.system_code").
+		Joins("JOIN tag_definition td ON td.id = udt.tag_id").
+		Joins("JOIN tag_category tc ON tc.id = td.category_id").
+		Where("udt.user_id = ? AND udt.directory_id IN ?", userID, directoryIDs).
+		Order("tc.sort_order ASC, td.name ASC").Scan(&rows).Error
+	if err != nil {
+		return nil, err
+	}
+	for _, row := range rows {
+		result[row.DirectoryID] = append(result[row.DirectoryID], response.CompactTagView{
+			ID: row.ID, Name: row.Name, CategoryCode: row.CategoryCode,
+			Color: row.Color, Visibility: models.TagVisibilityPrivate, SystemCode: row.SystemCode,
+		})
+	}
+	return result, nil
+}
+
+func (s *TagService) GetDirectoryTags(ctx context.Context, userID string, directoryID int) (*response.DirectoryTagsResponse, error) {
+	if err := s.ensureDirectoryOwnership(ctx, userID, directoryID); err != nil {
+		return nil, err
+	}
+	var rows []detailedTagRow
+	err := s.factory.DB().WithContext(ctx).Table("user_directory_tag AS udt").
+		Select("td.id, td.name, tc.id AS category_id, tc.code AS category_code, tc.name AS category_name, tc.color").
+		Joins("JOIN tag_definition td ON td.id = udt.tag_id").
+		Joins("JOIN tag_category tc ON tc.id = td.category_id").
+		Where("udt.user_id = ? AND udt.directory_id = ?", userID, directoryID).
+		Order("tc.sort_order ASC, td.name ASC").Scan(&rows).Error
+	if err != nil {
+		return nil, err
+	}
+	result := &response.DirectoryTagsResponse{DirectoryID: directoryID, Tags: make([]response.TagView, 0, len(rows))}
+	for _, row := range rows {
+		result.Tags = append(result.Tags, response.TagView{
+			ID: row.ID, Name: row.Name, Sources: []string{models.TagSourceManual}, Visibility: models.TagVisibilityPrivate,
+			Category: response.TagCategoryView{ID: row.CategoryID, Code: row.CategoryCode, Name: row.CategoryName, Color: row.Color},
+		})
+	}
+	return result, nil
+}
+
+func (s *TagService) UpdateDirectoryTags(ctx context.Context, userID string, directoryID int, add []request.ManualTagInput, removeTagIDs []string) error {
+	if err := s.ensureDirectoryOwnership(ctx, userID, directoryID); err != nil {
+		return err
+	}
+	return s.factory.DB().WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if len(removeTagIDs) > 0 {
+			if err := tx.Where("user_id = ? AND directory_id = ? AND tag_id IN ?", userID, directoryID, uniqueTagStrings(removeTagIDs)).
+				Delete(&models.UserDirectoryTag{}).Error; err != nil {
+				return err
+			}
+		}
+		for _, input := range add {
+			tag, err := ensureDirectoryTagDefinition(tx, input.Name, input.CategoryID)
+			if err != nil {
+				return err
+			}
+			binding := models.UserDirectoryTag{
+				ID: uuid.NewString(), UserID: userID, DirectoryID: directoryID, TagID: tag.ID,
+				CreatedBy: userID, CreatedAt: time.Now(),
+			}
+			if err := tx.Clauses(clause.OnConflict{DoNothing: true}).Create(&binding).Error; err != nil {
+				return err
+			}
+		}
+		var count int64
+		if err := tx.Model(&models.UserDirectoryTag{}).Where("user_id = ? AND directory_id = ?", userID, directoryID).Count(&count).Error; err != nil {
+			return err
+		}
+		if count > 100 {
+			return errors.New("每个文件夹最多允许100个手工标签")
+		}
+		return nil
+	})
+}
+
+func (s *TagService) ensureDirectoryOwnership(ctx context.Context, userID string, directoryID int) error {
+	var count int64
+	if err := s.factory.DB().WithContext(ctx).Model(&models.VirtualDirectory{}).
+		Where("id = ? AND user_id = ?", directoryID, userID).Count(&count).Error; err != nil {
+		return err
+	}
+	if count != 1 {
+		return errors.New("文件夹不存在或无权访问")
+	}
+	return nil
+}
+
+func (s *TagService) IsCinemaDirectory(ctx context.Context, userID string, directoryID int) (bool, error) {
+	var count int64
+	err := s.factory.DB().WithContext(ctx).Table("user_directory_tag AS udt").
+		Joins("JOIN tag_definition td ON td.id = udt.tag_id").
+		Where("udt.user_id = ? AND udt.directory_id = ? AND td.system_code = ?", userID, directoryID, models.TagSystemCodeCinemaMode).
+		Count(&count).Error
+	return count > 0, err
 }
 
 func (s *TagService) TagStates(ctx context.Context, ufIDs []string) (map[string]string, error) {
@@ -702,12 +853,22 @@ func (s *TagService) UpdateExclusions(ctx context.Context, userID, ufID string, 
 }
 
 func (s *TagService) Suggestions(ctx context.Context, userID, keyword string, tagIDs []string, scope string, limit int) ([]response.CompactTagView, error) {
+	return s.SuggestionsForTarget(ctx, userID, keyword, tagIDs, scope, "file", limit)
+}
+
+func (s *TagService) SuggestionsForTarget(ctx context.Context, userID, keyword string, tagIDs []string, scope, target string, limit int) ([]response.CompactTagView, error) {
 	scope = strings.ToLower(strings.TrimSpace(scope))
 	if scope == "" {
 		scope = "user"
 	}
 	if scope != "user" && scope != "public" {
 		return nil, errors.New("标签建议范围仅支持 user 或 public")
+	}
+	if target == "" {
+		target = "file"
+	}
+	if target != "file" && target != "directory" {
+		return nil, errors.New("标签建议目标仅支持 file 或 directory")
 	}
 	tagIDs = uniqueTagStrings(tagIDs)
 	if len(tagIDs) > maxFileTagFilterCount {
@@ -723,18 +884,30 @@ func (s *TagService) Suggestions(ctx context.Context, userID, keyword string, ta
 		Name         string
 		CategoryCode string
 		Color        string
+		SystemCode   string
 	}
 	query := s.factory.DB().WithContext(ctx).Table("tag_definition td").Distinct().
-		Select("td.id, td.name, tc.code AS category_code, tc.color").
-		Joins("JOIN tag_category tc ON tc.id = td.category_id").
-		Joins("JOIN user_file_tag uft ON uft.tag_id = td.id").
-		Joins("JOIN user_files uf ON uf.user_id = uft.user_id AND uf.uf_id = uft.uf_id").
-		Where("tc.enabled = ? AND uf.deleted_at IS NULL", true).
-		Where("NOT EXISTS (SELECT 1 FROM user_file_tag_exclusion e WHERE e.user_id = uft.user_id AND e.uf_id = uft.uf_id AND e.tag_id = uft.tag_id)")
-	if scope == "public" {
+		Select("td.id, td.name, tc.code AS category_code, tc.color, td.system_code").
+		Joins("JOIN tag_category tc ON tc.id = td.category_id").Where("tc.enabled = ?", true)
+	if target == "directory" {
+		query = query.Where(`td.builtin = ? OR EXISTS (
+			SELECT 1 FROM user_file_tag uft JOIN user_files uf ON uf.user_id = uft.user_id AND uf.uf_id = uft.uf_id
+			WHERE uft.tag_id = td.id AND uft.user_id = ? AND uf.deleted_at IS NULL
+		) OR EXISTS (
+			SELECT 1 FROM user_directory_tag udt WHERE udt.tag_id = td.id AND udt.user_id = ?
+		)`, true, userID, userID)
+	} else if scope == "public" {
+		query = query.Joins("JOIN user_file_tag uft ON uft.tag_id = td.id").
+			Joins("JOIN user_files uf ON uf.user_id = uft.user_id AND uf.uf_id = uft.uf_id").
+			Where("uf.deleted_at IS NULL").
+			Where("NOT EXISTS (SELECT 1 FROM user_file_tag_exclusion e WHERE e.user_id = uft.user_id AND e.uf_id = uft.uf_id AND e.tag_id = uft.tag_id)")
 		query = query.Where("uf.public = ? AND (uft.source_type <> ? OR uft.visibility = ?)",
 			true, models.TagSourceManual, models.TagVisibilityPublic)
 	} else {
+		query = query.Joins("JOIN user_file_tag uft ON uft.tag_id = td.id").
+			Joins("JOIN user_files uf ON uf.user_id = uft.user_id AND uf.uf_id = uft.uf_id").
+			Where("uf.deleted_at IS NULL").
+			Where("NOT EXISTS (SELECT 1 FROM user_file_tag_exclusion e WHERE e.user_id = uft.user_id AND e.uf_id = uft.uf_id AND e.tag_id = uft.tag_id)")
 		query = query.Where("uft.user_id = ? OR (uf.public = ? AND (uft.source_type <> ? OR uft.visibility = ?))",
 			userID, true, models.TagSourceManual, models.TagVisibilityPublic)
 	}
@@ -750,7 +923,7 @@ func (s *TagService) Suggestions(ctx context.Context, userID, keyword string, ta
 	}
 	result := make([]response.CompactTagView, 0, len(rows))
 	for _, row := range rows {
-		result = append(result, response.CompactTagView{ID: row.ID, Name: row.Name, CategoryCode: row.CategoryCode, Color: row.Color})
+		result = append(result, response.CompactTagView{ID: row.ID, Name: row.Name, CategoryCode: row.CategoryCode, Color: row.Color, SystemCode: row.SystemCode})
 	}
 	return result, nil
 }

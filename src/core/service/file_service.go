@@ -615,14 +615,33 @@ func (f *FileService) GetFileList(req *request.FileListRequest, userID string) (
 	}
 
 	// 转换文件夹数据
+	folderIDs := make([]int, 0, len(folders))
+	for _, folder := range folders {
+		folderIDs = append(folderIDs, folder.ID)
+	}
+	folderTags := make(map[int][]response.CompactTagView)
+	if f.tagService != nil {
+		folderTags, err = f.tagService.CompactDirectoryTags(ctx, userID, folderIDs)
+		if err != nil {
+			return nil, err
+		}
+	}
 	for _, folder := range folders {
 		absolutePath, pathErr := virtualpath.ResolveAbsolutePath(ctx, userID, folder.ID, f.factory)
 		if pathErr != nil {
 			return nil, pathErr
 		}
+		tags := folderTags[folder.ID]
+		cinemaMode := false
+		for _, tag := range tags {
+			if tag.SystemCode == models.TagSystemCodeCinemaMode {
+				cinemaMode = true
+				break
+			}
+		}
 		resp.Folders = append(resp.Folders, &response.FolderItem{
 			ID: folder.ID, Name: folder.Name, ParentID: folder.ParentID,
-			AbsolutePath: absolutePath, CreatedAt: folder.CreatedAt,
+			AbsolutePath: absolutePath, CreatedAt: folder.CreatedAt, Tags: tags, CinemaMode: cinemaMode,
 		})
 	}
 

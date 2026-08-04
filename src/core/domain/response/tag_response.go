@@ -25,6 +25,7 @@ type CompactTagView struct {
 	CategoryCode string `json:"category_code"`
 	Color        string `json:"color"`
 	Visibility   string `json:"visibility"`
+	SystemCode   string `json:"system_code,omitempty"`
 }
 
 type FileTagsResponse struct {
@@ -34,6 +35,11 @@ type FileTagsResponse struct {
 	State      string    `json:"state"`
 	LastError  string    `json:"last_error,omitempty"`
 	UpdatedAt  time.Time `json:"updated_at,omitempty"`
+}
+
+type DirectoryTagsResponse struct {
+	DirectoryID int       `json:"directory_id"`
+	Tags        []TagView `json:"tags"`
 }
 
 type TagPreviewItem struct {

@@ -11,6 +11,11 @@ type UpdateManualTagsRequest struct {
 	RemoveTagIDs []string         `json:"remove_tag_ids"`
 }
 
+type UpdateDirectoryTagsRequest struct {
+	Add          []ManualTagInput `json:"add"`
+	RemoveTagIDs []string         `json:"remove_tag_ids"`
+}
+
 type UpdateTagExclusionsRequest struct {
 	SuppressTagIDs []string `json:"suppress_tag_ids"`
 	RestoreTagIDs  []string `json:"restore_tag_ids"`

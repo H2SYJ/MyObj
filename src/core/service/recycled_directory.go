@@ -6,7 +6,9 @@ import (
 	"fmt"
 	"myobj/src/pkg/custom_type"
 	"myobj/src/pkg/models"
+	"time"
 
+	"github.com/google/uuid"
 	"gorm.io/gorm"
 )
 
@@ -20,6 +22,10 @@ func (r *RecycledService) restoreDirectory(ctx context.Context, recycled *models
 	}
 	var members []*models.RecycledDirectoryFile
 	if err := r.factory.DB().Where("recycled_id = ?", recycled.ID).Find(&members).Error; err != nil {
+		return nil, err
+	}
+	var directoryTags []*models.RecycledDirectoryTag
+	if err := r.factory.DB().Where("recycled_id = ?", recycled.ID).Find(&directoryTags).Error; err != nil {
 		return nil, err
 	}
 	targetParentID := recycled.OriginalParentID
@@ -76,6 +82,22 @@ func (r *RecycledService) restoreDirectory(ctx context.Context, recycled *models
 					return err
 				}
 			}
+		}
+		for _, tag := range directoryTags {
+			newDirID, ok := idMap[tag.OriginalDirID]
+			if !ok {
+				return fmt.Errorf("标签目录映射不存在: %d", tag.OriginalDirID)
+			}
+			binding := &models.UserDirectoryTag{
+				ID: uuid.NewString(), UserID: recycled.UserID, DirectoryID: newDirID,
+				TagID: tag.TagID, CreatedBy: recycled.UserID, CreatedAt: time.Now(),
+			}
+			if err := tx.Create(binding).Error; err != nil {
+				return err
+			}
+		}
+		if err := tx.Where("recycled_id = ?", recycled.ID).Delete(&models.RecycledDirectoryTag{}).Error; err != nil {
+			return err
 		}
 		if err := tx.Where("recycled_id = ?", recycled.ID).Delete(&models.RecycledDirectoryFile{}).Error; err != nil {
 			return err
@@ -171,6 +193,9 @@ func (r *RecycledService) deleteDirectoryRecycled(ctx context.Context, recycled 
 			return err
 		}
 		if err := tx.Where("recycled_id = ?", recycled.ID).Delete(&models.RecycledDirectoryNode{}).Error; err != nil {
+			return err
+		}
+		if err := tx.Where("recycled_id = ?", recycled.ID).Delete(&models.RecycledDirectoryTag{}).Error; err != nil {
 			return err
 		}
 		if err := tx.Where("id = ?", recycled.ID).Delete(&models.Recycled{}).Error; err != nil {

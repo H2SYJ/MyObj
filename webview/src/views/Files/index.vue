@@ -342,6 +342,13 @@
         @saved="reloadDisplayData"
       />
 
+      <DirectoryTagManager
+        v-model="showDirectoryTagManager"
+        :directory-id="directoryTagTarget.id"
+        :directory-name="directoryTagTarget.name"
+        @saved="reloadDisplayData"
+      />
+
       <preview v-model="previewVisible" :file="previewFile" />
     </template>
   </WorkspacePage>
@@ -394,6 +401,8 @@
   import { useFileViewMode } from './composables/useFileViewMode'
   import WorkspacePage from '@/components/WorkspacePage/index.vue'
   import FileTagManager from '@/components/FileTagManager/index.vue'
+  import DirectoryTagManager from '@/components/DirectoryTagManager/index.vue'
+  import { cinemaRouteForFolder } from './folderNavigation'
 
   const { t } = useI18n()
   const { proxy } = getCurrentInstance() as ComponentInternalInstance
@@ -493,6 +502,13 @@
     tagManagerFileIds.value = [...targetIds]
     tagManagerFileName.value = fileName
     showTagManager.value = true
+  }
+  const showDirectoryTagManager = ref(false)
+  const directoryTagTarget = reactive({ id: 0, name: '' })
+  const openDirectoryTagManager = (directoryId: number, directoryName: string) => {
+    directoryTagTarget.id = directoryId
+    directoryTagTarget.name = directoryName
+    showDirectoryTagManager.value = true
   }
   const {
     displayedCount: toolbarSelectedCount,
@@ -691,6 +707,7 @@
     if (entry.type === 'folder') {
       return [
         { key: 'open', label: t('files.open'), icon: FolderOpened },
+        { key: 'manage-tags', label: t('tags.manage'), icon: PriceTag },
         { key: 'download-selection', label: t('files.download'), icon: Download },
         { key: 'rename', label: t('files.rename'), icon: EditPen },
         { key: 'move-selection', label: t('files.move'), icon: FolderOpened },
@@ -772,6 +789,9 @@
         }
         break
       case 'manage-tags':
+        if (entry?.type === 'folder' && selectedCount.value === 1) {
+          return openDirectoryTagManager(entry.folder.id, entry.folder.name)
+        }
         if (entry?.type === 'file' && selectedCount.value === 1) {
           return openTagManager([entry.file.file_id], entry.file.file_name)
         }
@@ -802,6 +822,10 @@
 
   const openEntry = async (entry: FileEntry) => {
     if (entry.type === 'folder') {
+      const cinemaRoute = cinemaRouteForFolder(entry.folder)
+      if (cinemaRoute) {
+        return router.push(cinemaRoute)
+      }
       navigateToPath(entry.folder.id)
     } else {
       await handleOpenFile(entry.file)
@@ -1043,6 +1067,7 @@
       showRenameFileDialog.value,
       showRenameDirDialog.value,
       showTagManager.value,
+      showDirectoryTagManager.value,
       previewVisible.value
     ].some(Boolean)
   )

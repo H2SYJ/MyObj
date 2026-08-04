@@ -11,6 +11,18 @@ const userInfo = {
   free_space: 85899345920
 }
 
+const cinemaVideo = (id: number) => ({
+  file_id: `cinema-video-${id}`,
+  file_name: `移动影视视频 ${id}.mp4`,
+  file_size: 1048576,
+  mime_type: 'video/mp4',
+  is_enc: false,
+  has_thumbnail: false,
+  created_at: '2026-08-04T00:00:00Z',
+  directory: { id: 7, name: '移动影视库', parent_id: 0, path: '移动影视库' },
+  tags: []
+})
+
 const mockApi = async (page: Page) => {
   await page.route('**/dev-api/**', async route => {
     const url = new URL(route.request().url())
@@ -18,7 +30,37 @@ const mockApi = async (page: Page) => {
     let data: unknown = {}
 
     if (path === '/user/info') data = userInfo
-    else if (path === '/file/list') {
+    else if (path === '/cinema/7/home') {
+      data = {
+        root: { id: 7, name: '移动影视库', parent_id: 0, path: '移动影视库' },
+        sections: [
+          {
+            directory: { id: 7, name: '移动影视库', parent_id: 0, path: '移动影视库' },
+            videos: Array.from({ length: 6 }, (_, index) => cinemaVideo(index + 1)),
+            total: 6,
+            has_more: false
+          }
+        ],
+        total: 1,
+        page: 1,
+        page_size: Number(url.searchParams.get('page_size') || 20),
+        has_more: false
+      }
+    } else if (/^\/cinema\/7\/videos\/cinema-video-\d+$/.test(path)) {
+      const id = Number(path.split('-').at(-1))
+      data = {
+        root: { id: 7, name: '移动影视库', parent_id: 0, path: '移动影视库' },
+        video: cinemaVideo(id)
+      }
+    } else if (/^\/cinema\/7\/videos\/cinema-video-\d+\/related$/.test(path)) {
+      data = {
+        videos: [cinemaVideo(2), cinemaVideo(3)],
+        total: 2,
+        page: 1,
+        page_size: 20,
+        has_more: false
+      }
+    } else if (path === '/file/list') {
       const pageNumber = Number(url.searchParams.get('page') || 1)
       const start = (pageNumber - 1) * 20
       const files = Array.from({ length: Math.max(0, Math.min(20, 25 - start)) }, (_, index) => {
@@ -108,6 +150,27 @@ test.beforeEach(async ({ page }) => {
     localStorage.setItem('locale', 'zh-CN')
   }, userInfo)
   await mockApi(page)
+})
+
+test('影视播放页在移动端按播放器、标题、相关推荐单列排列', async ({ page }) => {
+  await page.goto('/cinema/7/watch/cinema-video-1')
+  await expect(page.locator('.cinema-brand')).toContainText('移动影视库')
+  await expect(page.locator('.mobile-bottom-nav')).toHaveCount(0)
+  expect(await page.locator('.cinema-shell').evaluate(element => getComputedStyle(element).backgroundColor)).toBe(
+    'rgb(255, 255, 255)'
+  )
+  await expect(page.locator('.cinema-poster')).toBeVisible()
+
+  const playerBox = await page.locator('.cinema-player-frame').boundingBox()
+  const titleBox = await page.locator('.cinema-watch h1').boundingBox()
+  const relatedBox = await page.locator('.cinema-related').boundingBox()
+  expect(playerBox).not.toBeNull()
+  expect(titleBox).not.toBeNull()
+  expect(relatedBox).not.toBeNull()
+  expect(playerBox!.y).toBeLessThan(titleBox!.y)
+  expect(titleBox!.y).toBeLessThan(relatedBox!.y)
+  expect(await page.locator('.cinema-watch').evaluate(element => getComputedStyle(element).display)).toBe('block')
+  expect(await page.locator('.cinema-related').evaluate(element => getComputedStyle(element).borderRadius)).toBe('16px')
 })
 
 test('五个主标签、无限滚动与二级页返回', async ({ page }) => {

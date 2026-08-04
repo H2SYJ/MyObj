@@ -1,9 +1,11 @@
 package database
 
 import (
+	"errors"
 	"fmt"
 	"myobj/src/pkg/custom_type"
 	"myobj/src/pkg/models"
+	"myobj/src/pkg/tagging"
 	"time"
 
 	"github.com/google/uuid"
@@ -28,6 +30,7 @@ func migrateTaggingSchema(db *gorm.DB) error {
 		&models.TagCategory{},
 		&models.TagDefinition{},
 		&models.UserFileTag{},
+		&models.UserDirectoryTag{},
 		&models.UserFileTagExclusion{},
 		&models.UserFileTagState{},
 		&models.FileMetadata{},
@@ -51,6 +54,9 @@ func migrateTaggingSchema(db *gorm.DB) error {
 			}).Create(&item).Error; err != nil {
 				return fmt.Errorf("初始化标签分类%s失败: %w", item.Code, err)
 			}
+		}
+		if err := seedCinemaModeTag(tx, now); err != nil {
+			return err
 		}
 
 		for key, value := range map[string]string{
@@ -93,6 +99,32 @@ func migrateTaggingSchema(db *gorm.DB) error {
 		}
 		return nil
 	})
+}
+
+func seedCinemaModeTag(tx *gorm.DB, now time.Time) error {
+	const categoryID = "other"
+	var tag models.TagDefinition
+	err := tx.Where("system_code = ?", models.TagSystemCodeCinemaMode).First(&tag).Error
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		err = tx.Where("normalized_name = ?", tagging.Normalize(models.TagNameCinemaMode)).
+			Order("CASE WHEN category_id = 'other' THEN 0 ELSE 1 END, created_at ASC, id ASC").First(&tag).Error
+	}
+	if err != nil && err != gorm.ErrRecordNotFound {
+		return fmt.Errorf("查询影视模式标签失败: %w", err)
+	}
+	if err == gorm.ErrRecordNotFound {
+		code := models.TagSystemCodeCinemaMode
+		tag = models.TagDefinition{
+			ID: uuid.NewString(), Name: models.TagNameCinemaMode, NormalizedName: tagging.Normalize(models.TagNameCinemaMode),
+			CategoryID: categoryID, SystemCode: &code, Builtin: true, CreatedAt: now,
+		}
+		if err := tx.Create(&tag).Error; err != nil {
+			return fmt.Errorf("初始化影视模式标签失败: %w", err)
+		}
+		return nil
+	}
+	return tx.Model(&models.TagDefinition{}).Where("id = ?", tag.ID).
+		Updates(map[string]interface{}{"system_code": models.TagSystemCodeCinemaMode, "builtin": true}).Error
 }
 
 func seedInitialGlobalTagRules(tx *gorm.DB, now time.Time) (bool, int64, error) {

@@ -32,6 +32,11 @@ export interface FileTagsData {
   updated_at?: string
 }
 
+export interface DirectoryTagsData {
+  directory_id: number
+  tags: FileTag[]
+}
+
 export interface ManualTagInput {
   name: string
   category_id?: string
@@ -143,6 +148,7 @@ export interface TagSuggestionParams {
   tagIds?: string[]
   scope?: TagSuggestionScope
   limit?: number
+  target?: 'file' | 'directory'
 }
 
 export const getTagSuggestions = (params: TagSuggestionParams = {}) =>
@@ -150,10 +156,20 @@ export const getTagSuggestions = (params: TagSuggestionParams = {}) =>
     keyword: params.keyword || undefined,
     tag_ids: params.tagIds?.join(',') || undefined,
     scope: params.scope || 'user',
+    target: params.target || undefined,
     limit: params.limit || 30
   })
 
 export const getEnabledTagCategories = () => get<ApiResponse<TagCategory[]>>(API_ENDPOINTS.FILE.TAG_CATEGORIES)
+
+export const getDirectoryTags = (directoryId: number) =>
+  get<ApiResponse<DirectoryTagsData>>(`/file/directories/${directoryId}/tags`)
+
+export const updateDirectoryTags = (directoryId: number, add: ManualTagInput[], removeTagIds: string[]) =>
+  put<ApiResponse<DirectoryTagsData>>(`/file/directories/${directoryId}/tags/manual`, {
+    add,
+    remove_tag_ids: removeTagIds
+  })
 
 export const getPersonalTagDictionary = () => get<ApiResponse<TagRuleSet>>(API_ENDPOINTS.FILE.TAG_DICTIONARY)
 

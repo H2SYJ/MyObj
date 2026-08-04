@@ -20,6 +20,7 @@ type ServerFactory struct {
 	recycledService     *RecycledService
 	adminService        *AdminService
 	tagService          *TagService
+	cinemaService       *CinemaService
 	pluginService       *PluginService
 	subscriptionService *SubscriptionService
 }
@@ -58,6 +59,7 @@ func NewServiceFactory(factory *impl.RepositoryFactory, cacheLocal cache.Cache) 
 		recycledService:     recycledService,
 		adminService:        adminService,
 		tagService:          tagService,
+		cinemaService:       NewCinemaService(factory, tagService),
 		pluginService:       pluginService,
 		subscriptionService: subscriptionService,
 	}
@@ -103,3 +105,5 @@ func (f *ServerFactory) AdminService() *AdminService {
 }
 
 func (f *ServerFactory) TagService() *TagService { return f.tagService }
+
+func (f *ServerFactory) CinemaService() *CinemaService { return f.cinemaService }

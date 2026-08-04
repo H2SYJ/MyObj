@@ -54,6 +54,16 @@ func (RecycledDirectoryFile) TableName() string {
 	return "recycled_directory_file"
 }
 
+// RecycledDirectoryTag 保存目录进入回收站前的手工标签，恢复时映射到新目录ID。
+type RecycledDirectoryTag struct {
+	ID            uint   `gorm:"primaryKey" json:"id"`
+	RecycledID    string `gorm:"type:VARCHAR;not null;index;uniqueIndex:uk_recycled_directory_tag" json:"recycled_id"`
+	OriginalDirID int    `gorm:"not null;index;uniqueIndex:uk_recycled_directory_tag" json:"original_dir_id"`
+	TagID         string `gorm:"type:VARCHAR(64);not null;uniqueIndex:uk_recycled_directory_tag" json:"tag_id"`
+}
+
+func (RecycledDirectoryTag) TableName() string { return "recycled_directory_tag" }
+
 func (Recycled) TableName() string {
 	return "recycled"
 }
