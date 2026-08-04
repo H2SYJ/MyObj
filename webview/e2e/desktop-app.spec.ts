@@ -278,7 +278,7 @@ test.beforeEach(async ({ page }, testInfo) => {
   await mockApi(page)
 })
 
-test('影视模式桌面布局、隐藏横向滚动条和路由前进后退', async ({ page }, testInfo) => {
+test('影视模式桌面布局、隐藏横向滚动条和路由前进后退', async ({ page }) => {
   await page.goto('/cinema/7')
   await expect(page.locator('.cinema-brand')).toContainText('影视库')
   await expect(page.locator('.layout-sidebar')).toHaveCount(0)
@@ -309,15 +309,25 @@ test('影视模式桌面布局、隐藏横向滚动条和路由前进后退', as
   await rail.locator('.cinema-video-card').first().click()
   await expect(page).toHaveURL(/\/cinema\/7\/watch\/cinema-video-1$/)
   await expect(page.locator('.cinema-watch h1')).toContainText('影视验收视频 1')
-  const watchDisplay = await page.locator('.cinema-watch').evaluate(element => getComputedStyle(element).display)
-  if (testInfo.project.name === 'chromium-desktop-1440' || testInfo.project.name === 'chromium-desktop-1024') {
-    expect(watchDisplay).toBe('grid')
-    expect(
-      await page.locator('.cinema-watch').evaluate(element => getComputedStyle(element).gridTemplateColumns)
-    ).toContain('340px')
+  expect(await page.locator('.cinema-watch').evaluate(element => getComputedStyle(element).display)).toBe('block')
+  const mainBox = await page.locator('.cinema-watch__main').boundingBox()
+  const titleBox = await page.locator('.cinema-watch h1').boundingBox()
+  const playerBox = await page.locator('.cinema-player-frame').boundingBox()
+  const relatedBox = await page.locator('.cinema-related').boundingBox()
+  expect(mainBox).not.toBeNull()
+  expect(titleBox).not.toBeNull()
+  expect(playerBox).not.toBeNull()
+  expect(relatedBox).not.toBeNull()
+  if ((page.viewportSize()?.width || 0) > 900) {
+    expect(titleBox!.y).toBeLessThan(playerBox!.y)
   } else {
-    expect(watchDisplay).toBe('block')
+    expect(playerBox!.y).toBeLessThan(titleBox!.y)
   }
+  expect(playerBox!.x + playerBox!.width / 2).toBeCloseTo(mainBox!.x + mainBox!.width / 2, 0)
+  expect(relatedBox!.y).toBeGreaterThan(playerBox!.y + playerBox!.height)
+  expect(await page.locator('.cinema-related__grid').evaluate(element => getComputedStyle(element).display)).toBe(
+    'grid'
+  )
 
   await page.goBack()
   await expect(page).toHaveURL(/\/cinema\/7$/)

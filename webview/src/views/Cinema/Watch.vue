@@ -23,13 +23,15 @@
 
     <aside v-if="video" class="cinema-related">
       <h2>相关视频</h2>
-      <CinemaVideoCard
-        v-for="item in related"
-        :key="item.file_id"
-        :video="item"
-        show-directory
-        @open="openRelated(item.file_id)"
-      />
+      <div class="cinema-related__grid">
+        <CinemaVideoCard
+          v-for="item in related"
+          :key="item.file_id"
+          :video="item"
+          show-directory
+          @open="openRelated(item.file_id)"
+        />
+      </div>
       <el-empty v-if="!relatedLoading && related.length === 0" :image-size="70" description="暂无相关视频" />
       <div ref="sentinel" class="cinema-related__sentinel">
         <el-icon v-if="relatedLoading"><Loading class="is-loading" /></el-icon>
@@ -268,15 +270,14 @@
 
 <style scoped>
   .cinema-watch {
-    display: grid;
-    grid-template-columns: minmax(0, 1fr) 340px;
-    align-items: start;
-    gap: 28px;
+    display: block;
   }
   .cinema-watch__main {
+    width: min(100%, 1180px);
     min-width: 0;
     display: flex;
     flex-direction: column;
+    margin: 0 auto;
     padding: 20px;
     border: 1px solid var(--cinema-border, #e8edf2);
     border-radius: 20px;
@@ -367,14 +368,20 @@
     font-weight: 700;
   }
   .cinema-related {
+    margin-top: 30px;
     padding: 18px;
     border: 1px solid var(--cinema-border, #e8edf2);
     border-radius: 20px;
     background: #fff;
     box-shadow: var(--cinema-shadow, 0 8px 28px rgba(24, 25, 28, 0.06));
   }
+  .cinema-related__grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(210px, 1fr));
+    gap: 22px 16px;
+  }
   .cinema-related :deep(.cinema-video-card) {
-    margin-bottom: 20px;
+    min-width: 0;
   }
   .cinema-related__sentinel {
     min-height: 40px;
@@ -386,7 +393,9 @@
       display: block;
     }
     .cinema-watch__main {
+      width: 100%;
       display: flex;
+      margin: 0;
       padding: 0;
       border: 0;
       border-radius: 0;
@@ -417,11 +426,14 @@
       border-radius: 16px;
       box-shadow: 0 5px 18px rgba(24, 25, 28, 0.045);
     }
+    .cinema-related__grid {
+      grid-template-columns: 1fr;
+      gap: 14px;
+    }
     .cinema-related :deep(.cinema-video-card) {
       display: grid;
       grid-template-columns: 42% minmax(0, 1fr);
       column-gap: 12px;
-      margin-bottom: 14px;
     }
     .cinema-related :deep(.cinema-video-card__poster) {
       grid-row: 1 / 3;
