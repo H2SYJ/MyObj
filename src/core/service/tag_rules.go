@@ -335,7 +335,8 @@ func (s *TagService) SavePersonalDictionary(ctx context.Context, userID string, 
 			Updates(map[string]interface{}{"status": models.TagRuleSetArchived, "updated_at": now}).Error; err != nil {
 			return err
 		}
-		if err := tx.Create(ruleSet).Error; err != nil {
+		// 规则由下方显式批量写入；这里跳过关联，避免 GORM 自动保存 Rules 后再次插入同一主键。
+		if err := tx.Omit("Rules").Create(ruleSet).Error; err != nil {
 			return err
 		}
 		if len(rules) > 0 {
