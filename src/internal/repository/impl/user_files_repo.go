@@ -64,7 +64,10 @@ func (r *userFilesRepository) ListFiltered(ctx context.Context, query repository
 
 func (r *userFilesRepository) CountFiltered(ctx context.Context, query repository.UserFileQuery) (int64, error) {
 	var count int64
-	err := r.filteredQuery(ctx, query).Count(&count).Error
+	// filteredQuery 为列表查询显式选择了 user_files.*。GORM 的 Count 会把该选择项
+	// 当作普通列名引用，SQLite 最终收到 count(`user_files.*`) 并报列不存在。
+	// 计数前显式替换选择表达式，避免继承列表查询的通配列。
+	err := r.filteredQuery(ctx, query).Select("count(*)").Count(&count).Error
 	return count, err
 }
 

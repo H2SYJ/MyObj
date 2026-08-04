@@ -49,6 +49,38 @@ func TestUserFileTagFiltersRespectModesExclusionsAndPublicVisibility(t *testing.
 	}
 }
 
+func TestUserFileListAndCountWithoutTagFilter(t *testing.T) {
+	db := openUserFileFilterDB(t)
+	insertFilterFixture(t, db)
+	repo := NewUserFilesRepository(db)
+	ctx := context.Background()
+	directoryID := 1
+	query := repository.UserFileQuery{
+		UserID:      "user-a",
+		DirectoryID: &directoryID,
+		SortBy:      "time",
+		SortOrder:   "desc",
+		Offset:      0,
+		Limit:       20,
+	}
+
+	files, err := repo.ListFiltered(ctx, query)
+	if err != nil {
+		t.Fatalf("普通文件列表查询失败: %v", err)
+	}
+	if len(files) != 2 {
+		t.Fatalf("普通文件列表数量错误: got=%d want=2", len(files))
+	}
+
+	total, err := repo.CountFiltered(ctx, query)
+	if err != nil {
+		t.Fatalf("普通文件列表计数失败: %v", err)
+	}
+	if total != 2 {
+		t.Fatalf("普通文件列表计数错误: got=%d want=2", total)
+	}
+}
+
 func TestUserFileOtherTypeExcludesKnownTypes(t *testing.T) {
 	db := openUserFileFilterDB(t)
 	for _, item := range []struct{ ufID, fileID, mime string }{
