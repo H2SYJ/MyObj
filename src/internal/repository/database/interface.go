@@ -44,6 +44,10 @@ func InitDataBase() {
 		logger.LOG.Error("迁移虚拟目录结构失败", "error", err)
 		panic(fmt.Sprintf("迁移虚拟目录结构失败: %v", err))
 	}
+	if err := migrateUserFileSearchIndexes(databasePool); err != nil {
+		logger.LOG.Error("迁移文件搜索索引失败", "error", err)
+		panic(fmt.Sprintf("迁移文件搜索索引失败: %v", err))
+	}
 	migratedDisks, err := migrateLegacyDiskSizes(databasePool)
 	if err != nil {
 		logger.LOG.Error("迁移磁盘容量单位失败", "error", err)
@@ -74,6 +78,27 @@ func InitDataBase() {
 	}
 
 	logger.LOG.Info("[数据库] 数据库连接池初始化成功 ✓")
+}
+
+// migrateUserFileSearchIndexes 为搜索最先使用的用户、公开状态和目录范围补齐复合索引。
+// 文件名仍保留包含匹配语义，先通过这些等值条件缩小需要扫描的活跃文件范围。
+func migrateUserFileSearchIndexes(db *gorm.DB) error {
+	if !db.Migrator().HasTable(&models.UserFiles{}) {
+		return nil
+	}
+	for _, index := range []string{
+		"idx_user_files_user_active",
+		"idx_user_files_public_active",
+		"idx_user_files_user_directory_active",
+	} {
+		if db.Migrator().HasIndex(&models.UserFiles{}, index) {
+			continue
+		}
+		if err := db.Migrator().CreateIndex(&models.UserFiles{}, index); err != nil {
+			return fmt.Errorf("创建文件搜索索引%s失败: %w", index, err)
+		}
+	}
+	return nil
 }
 
 // migrateRecycledSchema 补齐整目录回收所需字段和关联表，旧文件记录保持兼容。

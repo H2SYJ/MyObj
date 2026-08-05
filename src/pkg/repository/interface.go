@@ -138,6 +138,7 @@ type UserFilesRepository interface {
 	ListByDirectoryIDSorted(ctx context.Context, userID string, directoryID int, sortBy, sortOrder string, offset, limit int) ([]*models.UserFiles, error)
 	ListFiltered(ctx context.Context, query UserFileQuery) ([]*models.UserFiles, error)
 	CountFiltered(ctx context.Context, query UserFileQuery) (int64, error)
+	ListAndCountFiltered(ctx context.Context, query UserFileQuery) ([]*models.UserFiles, int64, error)
 }
 
 // UserFileQuery 描述文件列表、搜索和文件广场共用的可组合查询条件。

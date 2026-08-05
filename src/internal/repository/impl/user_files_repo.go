@@ -9,10 +9,12 @@ import (
 	"gorm.io/gorm"
 )
 
-func (r *userFilesRepository) filteredQuery(ctx context.Context, input repository.UserFileQuery) *gorm.DB {
+func (r *userFilesRepository) filteredQuery(ctx context.Context, input repository.UserFileQuery, includeSortJoin bool) *gorm.DB {
 	query := r.db.WithContext(ctx).Model(&models.UserFiles{}).
-		Select("user_files.*").
-		Joins("JOIN file_info ON user_files.file_id = file_info.id")
+		Select("user_files.*")
+	if needsFileInfoJoin(input, includeSortJoin) {
+		query = query.Joins("JOIN file_info ON user_files.file_id = file_info.id")
+	}
 	if input.UserID != "" {
 		query = query.Where("user_files.user_id = ?", input.UserID)
 	}
@@ -56,7 +58,7 @@ func (r *userFilesRepository) filteredQuery(ctx context.Context, input repositor
 
 func (r *userFilesRepository) ListFiltered(ctx context.Context, query repository.UserFileQuery) ([]*models.UserFiles, error) {
 	var files []*models.UserFiles
-	err := r.filteredQuery(ctx, query).
+	err := r.filteredQuery(ctx, query, true).
 		Order(userFileOrder(query.SortBy, query.SortOrder)).
 		Offset(query.Offset).Limit(query.Limit).Find(&files).Error
 	return files, err
@@ -67,8 +69,32 @@ func (r *userFilesRepository) CountFiltered(ctx context.Context, query repositor
 	// filteredQuery 为列表查询显式选择了 user_files.*。GORM 的 Count 会把该选择项
 	// 当作普通列名引用，SQLite 最终收到 count(`user_files.*`) 并报列不存在。
 	// 计数前显式替换选择表达式，避免继承列表查询的通配列。
-	err := r.filteredQuery(ctx, query).Select("count(*)").Count(&count).Error
+	err := r.filteredQuery(ctx, query, false).Select("count(*)").Count(&count).Error
 	return count, err
+}
+
+// ListAndCountFiltered 返回分页文件和准确总数。结果不足一页时已经能够确定总数，
+// 无需再执行一次包含模糊匹配和标签子查询的完整计数扫描。
+func (r *userFilesRepository) ListAndCountFiltered(ctx context.Context, query repository.UserFileQuery) ([]*models.UserFiles, int64, error) {
+	files, err := r.ListFiltered(ctx, query)
+	if err != nil {
+		return nil, 0, err
+	}
+	if query.Limit > 0 && len(files) < query.Limit && (query.Offset == 0 || len(files) > 0) {
+		return files, int64(query.Offset + len(files)), nil
+	}
+	total, err := r.CountFiltered(ctx, query)
+	if err != nil {
+		return nil, 0, err
+	}
+	return files, total, nil
+}
+
+func needsFileInfoJoin(query repository.UserFileQuery, includeSortJoin bool) bool {
+	if query.FileType != "" && query.FileType != "all" {
+		return true
+	}
+	return includeSortJoin && query.SortBy == "size"
 }
 
 func tagExistsSQL(publicOnly, multiple bool) string {

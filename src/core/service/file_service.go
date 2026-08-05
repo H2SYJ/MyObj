@@ -438,15 +438,9 @@ func (f *FileService) SearchUserFiles(req *request.FileSearchRequest, userID str
 	if req.DirectoryID > 0 {
 		query.DirectoryID = &req.DirectoryID
 	}
-	userFiles, err := f.factory.UserFiles().ListFiltered(ctx, query)
+	userFiles, total, err := f.factory.UserFiles().ListAndCountFiltered(ctx, query)
 	if err != nil {
 		logger.LOG.Error("搜索用户文件失败", "error", err, "userID", userID, "keyword", req.Keyword)
-		return nil, err
-	}
-	query.Offset, query.Limit = 0, 0
-	total, err := f.factory.UserFiles().CountFiltered(ctx, query)
-	if err != nil {
-		logger.LOG.Error("统计用户文件数量失败", "error", err, "userID", userID, "keyword", req.Keyword)
 		return nil, err
 	}
 	items, err := f.buildSearchFileItems(ctx, userFiles, false)
@@ -479,12 +473,7 @@ func (f *FileService) SearchPublicFiles(req *request.FileSearchRequest) (*models
 		FileType: req.Type, SortBy: sortBy, SortOrder: sortOrder,
 		Offset: (page - 1) * pageSize, Limit: pageSize,
 	}
-	userFiles, err := f.factory.UserFiles().ListFiltered(ctx, query)
-	if err != nil {
-		return nil, err
-	}
-	query.Offset, query.Limit = 0, 0
-	total, err := f.factory.UserFiles().CountFiltered(ctx, query)
+	userFiles, total, err := f.factory.UserFiles().ListAndCountFiltered(ctx, query)
 	if err != nil {
 		return nil, err
 	}

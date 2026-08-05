@@ -164,7 +164,10 @@ CREATE TABLE `user_files` (
     PRIMARY KEY (`uf_id`),
     KEY `idx_user_id` (`user_id`),
     KEY `idx_file_id` (`file_id`),
-    KEY `idx_user_files_directory` (`user_id`, `directory_id`)
+    KEY `idx_user_files_directory` (`user_id`, `directory_id`),
+    KEY `idx_user_files_user_active` (`user_id`, `deleted_at`),
+    KEY `idx_user_files_public_active` (`public`, `deleted_at`),
+    KEY `idx_user_files_user_directory_active` (`user_id`, `directory_id`, `deleted_at`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='用户文件关联表';
 
 -- 文件分片表

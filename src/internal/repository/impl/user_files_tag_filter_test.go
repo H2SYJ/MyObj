@@ -102,6 +102,64 @@ func TestUserFileKeywordAndAnyTagFiltersAreCombined(t *testing.T) {
 	}
 }
 
+func TestUserFileSearchDoesNotJoinFileInfoWhenUnused(t *testing.T) {
+	db := openUserFileFilterDB(t)
+	insertFilterFixture(t, db)
+	if err := db.Migrator().DropTable("file_info"); err != nil {
+		t.Fatal(err)
+	}
+	repo := NewUserFilesRepository(db)
+	query := repository.UserFileQuery{
+		UserID:      "user-a",
+		SearchTerms: []string{"private-manual"},
+		SortBy:      "time",
+		SortOrder:   "desc",
+		Limit:       20,
+	}
+
+	files, total, err := repo.ListAndCountFiltered(context.Background(), query)
+	if err != nil {
+		t.Fatalf("普通搜索不应依赖文件信息表: %v", err)
+	}
+	if len(files) != 1 || total != 1 || files[0].UfID != "uf-private-manual" {
+		t.Fatalf("普通搜索结果错误: files=%+v total=%d", files, total)
+	}
+}
+
+func TestListAndCountFilteredSkipsCountOnLastPage(t *testing.T) {
+	db := openUserFileFilterDB(t)
+	insertFilterFixture(t, db)
+	queryCount := 0
+	if err := db.Callback().Query().Before("gorm:query").Register("test:count_search_queries", func(*gorm.DB) {
+		queryCount++
+	}); err != nil {
+		t.Fatal(err)
+	}
+	repo := NewUserFilesRepository(db)
+	query := repository.UserFileQuery{UserID: "user-a", Limit: 20}
+
+	files, total, err := repo.ListAndCountFiltered(context.Background(), query)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(files) != 2 || total != 2 {
+		t.Fatalf("分页结果错误: files=%d total=%d", len(files), total)
+	}
+	if queryCount != 1 {
+		t.Fatalf("最后一页应只执行列表查询: got=%d want=1", queryCount)
+	}
+
+	queryCount = 0
+	query.Limit = 1
+	_, total, err = repo.ListAndCountFiltered(context.Background(), query)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if total != 2 || queryCount != 2 {
+		t.Fatalf("满页时应补充计数查询: total=%d queries=%d", total, queryCount)
+	}
+}
+
 func TestUserFileOtherTypeExcludesKnownTypes(t *testing.T) {
 	db := openUserFileFilterDB(t)
 	for _, item := range []struct{ ufID, fileID, mime string }{
