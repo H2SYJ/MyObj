@@ -36,7 +36,11 @@ func newTagFailureTestService(t *testing.T, modelsToMigrate ...interface{}) (*Ta
 	if err := db.AutoMigrate(modelsToMigrate...); err != nil {
 		t.Fatal(err)
 	}
-	return &TagService{factory: impl.NewRepositoryFactory(db), wake: make(chan struct{}, 1)}, db
+	return &TagService{
+		factory: impl.NewRepositoryFactory(db), ctx: context.Background(),
+		pendingWake: make(chan struct{}, 1), rebuildWake: make(chan struct{}, 1),
+		metadataWake: make(chan struct{}, 1), ruleWake: make(chan struct{}, 1),
+	}, db
 }
 
 type tagWorkerTraceRecorder struct {
@@ -64,15 +68,19 @@ func TestEmptyTagWorkerQueuesDoNotEmitRecordNotFound(t *testing.T) {
 		t.Fatal(err)
 	}
 	recorder.errors = nil
-	service := &TagService{factory: impl.NewRepositoryFactory(db), ctx: context.Background(), wake: make(chan struct{}, 1)}
+	service := &TagService{
+		factory: impl.NewRepositoryFactory(db), ctx: context.Background(),
+		pendingWake: make(chan struct{}, 1), rebuildWake: make(chan struct{}, 1),
+		metadataWake: make(chan struct{}, 1), ruleWake: make(chan struct{}, 1),
+	}
 
-	if state, ok := service.claimPendingState(); ok || state != nil {
+	if state, ok, claimErr := service.claimPendingState(); claimErr != nil || ok || state != nil {
 		t.Fatalf("空自动标签队列不应领取到任务: state=%+v ok=%v", state, ok)
 	}
-	if job, ok := service.claimRebuildJob(); ok || job != nil {
+	if job, ok, claimErr := service.claimRebuildJob(); claimErr != nil || ok || job != nil {
 		t.Fatalf("空重建队列不应领取到任务: job=%+v ok=%v", job, ok)
 	}
-	if state, ok := service.claimMetadataState(); ok || state != nil {
+	if state, ok, claimErr := service.claimMetadataState(); claimErr != nil || ok || state != nil {
 		t.Fatalf("空元数据队列不应领取到任务: state=%+v ok=%v", state, ok)
 	}
 	if err := db.Create(&models.FileMetadataState{
@@ -80,7 +88,10 @@ func TestEmptyTagWorkerQueuesDoNotEmitRecordNotFound(t *testing.T) {
 	}).Error; err != nil {
 		t.Fatal(err)
 	}
-	state, ok := service.claimMetadataState()
+	state, ok, claimErr := service.claimMetadataState()
+	if claimErr != nil {
+		t.Fatal(claimErr)
+	}
 	if !ok || state.FileID != "file-1" || state.Status != models.TagStateRunning || state.RunToken == "" {
 		t.Fatalf("元数据队列没有正确领取待处理任务: state=%+v ok=%v", state, ok)
 	}
@@ -237,7 +248,11 @@ func TestDisabledAutoTagWorkCanResumeWithoutLosingProgress(t *testing.T) {
 	if pausedState.Status != models.TagStatePending || pausedState.RunToken != "" || pausedState.LeaseExpires != nil {
 		t.Fatalf("文件级任务暂停状态不正确: %+v", pausedState)
 	}
-	if claimed, ok := service.claimPendingState(); !ok || claimed.UFID != state.UFID {
+	claimed, ok, claimErr := service.claimPendingState()
+	if claimErr != nil {
+		t.Fatal(claimErr)
+	}
+	if !ok || claimed.UFID != state.UFID {
 		t.Fatalf("重新开启后文件级任务不可继续: claimed=%+v ok=%v", claimed, ok)
 	}
 
@@ -257,7 +272,10 @@ func TestDisabledAutoTagWorkCanResumeWithoutLosingProgress(t *testing.T) {
 	if pausedJob.Status != "pending" || pausedJob.Cursor != "uf-100" || pausedJob.Processed != 100 || pausedJob.RunToken != "" || pausedJob.LeaseExpires != nil {
 		t.Fatalf("重建任务暂停时丢失进度: %+v", pausedJob)
 	}
-	claimedJob, ok := service.claimRebuildJob()
+	claimedJob, ok, claimErr := service.claimRebuildJob()
+	if claimErr != nil {
+		t.Fatal(claimErr)
+	}
 	if !ok || claimedJob.ID != job.ID || claimedJob.Cursor != "uf-100" || claimedJob.Processed != 100 {
 		t.Fatalf("重新开启后重建任务不可续跑: claimed=%+v ok=%v", claimedJob, ok)
 	}

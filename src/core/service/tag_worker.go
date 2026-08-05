@@ -13,8 +13,10 @@ import (
 )
 
 const (
-	tagWorkerLease  = 45 * time.Second
-	tagRebuildBatch = 100
+	tagWorkerLease           = 45 * time.Second
+	tagPendingBatch          = 20
+	tagRebuildBatch          = 100
+	tagRuleReconcileInterval = 60 * time.Second
 )
 
 func (s *TagService) runPendingWorker() {
@@ -22,45 +24,68 @@ func (s *TagService) runPendingWorker() {
 	if !s.waitForRuntime() {
 		return
 	}
-	ticker := time.NewTicker(2 * time.Second)
-	defer ticker.Stop()
+	timer := time.NewTimer(0)
+	defer timer.Stop()
+	runDispatch := func() {
+		next, err := s.dispatchPending()
+		delay := schedulerWakeDelay(time.Now(), next)
+		if err != nil {
+			logger.LOG.Error("调度自动标签任务失败", "worker", "pending", "error", err, "retry_after", schedulerErrorRetry)
+			delay = schedulerErrorRetry
+		} else if next != nil {
+			logger.LOG.Debug("自动标签任务已安排下次唤醒", "worker", "pending", "next_wake_at", *next)
+		}
+		resetSchedulerTimer(timer, delay)
+	}
 	for {
 		select {
 		case <-s.ctx.Done():
 			return
-		case <-s.wake:
-		case <-ticker.C:
-		}
-		if !s.autoEnabled.Load() {
-			continue
-		}
-		for index := 0; index < 20; index++ {
-			if !s.autoEnabled.Load() {
-				break
-			}
-			state, ok := s.claimPendingState()
-			if !ok {
-				break
-			}
-			err := s.GenerateUserFile(s.ctx, state.UserID, state.UFID, state.RunToken, 0)
-			if errors.Is(err, errAutoTagDisabled) {
-				s.releasePendingState(state)
-				break
-			}
-			if err == nil {
-				s.resolveQueuedRebuildFailures(state.UFID)
-				continue
-			}
-			if errors.Is(err, errStaleTagGeneration) {
-				continue
-			}
-			if errors.Is(err, gorm.ErrRecordNotFound) {
-				_ = s.factory.DB().Where("uf_id = ? AND run_token = ?", state.UFID, state.RunToken).Delete(&models.UserFileTagState{}).Error
-				continue
-			}
-			s.failPendingState(state, err)
+		case <-s.pendingWake:
+			runDispatch()
+		case <-timer.C:
+			runDispatch()
 		}
 	}
+}
+
+func (s *TagService) dispatchPending() (*time.Time, error) {
+	if !s.autoEnabled.Load() {
+		return nil, nil
+	}
+	for index := 0; index < tagPendingBatch; index++ {
+		if !s.autoEnabled.Load() {
+			return nil, nil
+		}
+		state, ok, err := s.claimPendingState()
+		if err != nil {
+			return nil, err
+		}
+		if !ok {
+			return s.nextPendingWakeAt(time.Now())
+		}
+		err = s.GenerateUserFile(s.ctx, state.UserID, state.UFID, state.RunToken, 0)
+		if errors.Is(err, errAutoTagDisabled) {
+			s.releasePendingState(state)
+			return nil, nil
+		}
+		if err == nil {
+			s.resolveQueuedRebuildFailures(state.UFID)
+			continue
+		}
+		if errors.Is(err, errStaleTagGeneration) {
+			continue
+		}
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			if deleteErr := s.factory.DB().Where("uf_id = ? AND run_token = ?", state.UFID, state.RunToken).Delete(&models.UserFileTagState{}).Error; deleteErr != nil {
+				return nil, deleteErr
+			}
+			continue
+		}
+		s.failPendingState(state, err)
+	}
+	immediate := time.Now()
+	return &immediate, nil
 }
 
 func (s *TagService) releasePendingState(state *models.UserFileTagState) {
@@ -71,15 +96,18 @@ func (s *TagService) releasePendingState(state *models.UserFileTagState) {
 		}).Error
 }
 
-func (s *TagService) claimPendingState() (*models.UserFileTagState, bool) {
+func (s *TagService) claimPendingState() (*models.UserFileTagState, bool, error) {
 	now := time.Now()
 	var state models.UserFileTagState
 	query := s.factory.DB().WithContext(s.ctx).
 		Where("(status = ?) OR (status = ? AND (next_retry_at IS NULL OR next_retry_at <= ?)) OR (status = ? AND lease_expires_at < ?)",
 			models.TagStatePending, models.TagStateFailed, now, models.TagStateRunning, now).
 		Order("updated_at ASC").Limit(1).Find(&state)
-	if query.Error != nil || query.RowsAffected == 0 {
-		return nil, false
+	if query.Error != nil {
+		return nil, false, query.Error
+	}
+	if query.RowsAffected == 0 {
+		return nil, false, nil
 	}
 	token := uuid.NewString()
 	result := s.factory.DB().WithContext(s.ctx).Model(&models.UserFileTagState{}).
@@ -88,12 +116,41 @@ func (s *TagService) claimPendingState() (*models.UserFileTagState, bool) {
 			"status": models.TagStateRunning, "run_token": token,
 			"lease_expires_at": now.Add(tagWorkerLease), "updated_at": now,
 		})
-	if result.Error != nil || result.RowsAffected != 1 {
-		return nil, false
+	if result.Error != nil {
+		return nil, false, result.Error
+	}
+	if result.RowsAffected != 1 {
+		return nil, false, nil
 	}
 	state.Status = models.TagStateRunning
 	state.RunToken = token
-	return &state, true
+	return &state, true, nil
+}
+
+func (s *TagService) nextPendingWakeAt(now time.Time) (*time.Time, error) {
+	var retry models.UserFileTagState
+	retryQuery := s.factory.DB().WithContext(s.ctx).Select("next_retry_at").
+		Where("status = ? AND next_retry_at IS NOT NULL AND next_retry_at > ?", models.TagStateFailed, now).
+		Order("next_retry_at ASC").Limit(1).Find(&retry)
+	if retryQuery.Error != nil {
+		return nil, retryQuery.Error
+	}
+	var next *time.Time
+	if retryQuery.RowsAffected == 1 {
+		next = retry.NextRetryAt
+	}
+
+	var running models.UserFileTagState
+	leaseQuery := s.factory.DB().WithContext(s.ctx).Select("lease_expires_at").
+		Where("status = ? AND lease_expires_at IS NOT NULL AND lease_expires_at > ?", models.TagStateRunning, now).
+		Order("lease_expires_at ASC").Limit(1).Find(&running)
+	if leaseQuery.Error != nil {
+		return nil, leaseQuery.Error
+	}
+	if leaseQuery.RowsAffected == 1 {
+		next = earlierTime(next, running.LeaseExpires)
+	}
+	return next, nil
 }
 
 func (s *TagService) failPendingState(state *models.UserFileTagState, generationErr error) {
@@ -125,34 +182,59 @@ func (s *TagService) runRebuildWorker() {
 	if !s.waitForRuntime() {
 		return
 	}
-	ticker := time.NewTicker(3 * time.Second)
-	defer ticker.Stop()
+	timer := time.NewTimer(0)
+	defer timer.Stop()
+	runDispatch := func() {
+		next, err := s.dispatchRebuild()
+		delay := schedulerWakeDelay(time.Now(), next)
+		if err != nil {
+			logger.LOG.Error("调度标签重建任务失败", "worker", "rebuild", "error", err, "retry_after", schedulerErrorRetry)
+			delay = schedulerErrorRetry
+		} else if next != nil {
+			logger.LOG.Debug("标签重建任务已安排下次唤醒", "worker", "rebuild", "next_wake_at", *next)
+		}
+		resetSchedulerTimer(timer, delay)
+	}
 	for {
 		select {
 		case <-s.ctx.Done():
 			return
-		case <-s.wake:
-		case <-ticker.C:
+		case <-s.rebuildWake:
+			runDispatch()
+		case <-timer.C:
+			runDispatch()
 		}
-		if !s.autoEnabled.Load() {
-			continue
-		}
-		job, ok := s.claimRebuildJob()
-		if !ok {
-			continue
-		}
-		s.processRebuildJob(job)
 	}
 }
 
-func (s *TagService) claimRebuildJob() (*models.TagRebuildJob, bool) {
+func (s *TagService) dispatchRebuild() (*time.Time, error) {
+	for s.autoEnabled.Load() {
+		job, ok, err := s.claimRebuildJob()
+		if err != nil {
+			return nil, err
+		}
+		if !ok {
+			return s.nextRebuildWakeAt(time.Now())
+		}
+		s.processRebuildJob(job)
+		if s.ctx.Err() != nil {
+			return nil, nil
+		}
+	}
+	return nil, nil
+}
+
+func (s *TagService) claimRebuildJob() (*models.TagRebuildJob, bool, error) {
 	now := time.Now()
 	var job models.TagRebuildJob
 	query := s.factory.DB().WithContext(s.ctx).
 		Where("status = ? OR (status = ? AND lease_expires_at < ?)", "pending", "running", now).
 		Order("created_at ASC").Limit(1).Find(&job)
-	if query.Error != nil || query.RowsAffected == 0 {
-		return nil, false
+	if query.Error != nil {
+		return nil, false, query.Error
+	}
+	if query.RowsAffected == 0 {
+		return nil, false, nil
 	}
 	token := uuid.NewString()
 	updates := map[string]interface{}{
@@ -165,8 +247,11 @@ func (s *TagService) claimRebuildJob() (*models.TagRebuildJob, bool) {
 	}
 	result := s.factory.DB().WithContext(s.ctx).Model(&models.TagRebuildJob{}).
 		Where("id = ? AND status = ? AND run_token = ?", job.ID, job.Status, job.RunToken).Updates(updates)
-	if result.Error != nil || result.RowsAffected != 1 {
-		return nil, false
+	if result.Error != nil {
+		return nil, false, result.Error
+	}
+	if result.RowsAffected != 1 {
+		return nil, false, nil
 	}
 	job.Status = "running"
 	job.RunToken = token
@@ -174,7 +259,21 @@ func (s *TagService) claimRebuildJob() (*models.TagRebuildJob, bool) {
 	if startedNow {
 		job.StartedAt = timePointer(now)
 	}
-	return &job, true
+	return &job, true, nil
+}
+
+func (s *TagService) nextRebuildWakeAt(now time.Time) (*time.Time, error) {
+	var job models.TagRebuildJob
+	query := s.factory.DB().WithContext(s.ctx).Select("lease_expires_at").
+		Where("status = ? AND lease_expires_at IS NOT NULL AND lease_expires_at > ?", "running", now).
+		Order("lease_expires_at ASC").Limit(1).Find(&job)
+	if query.Error != nil {
+		return nil, query.Error
+	}
+	if query.RowsAffected == 0 {
+		return nil, nil
+	}
+	return job.LeaseExpires, nil
 }
 
 func (s *TagService) processRebuildJob(job *models.TagRebuildJob) {
@@ -402,35 +501,50 @@ func (s *TagService) resolveQueuedRebuildFailures(ufID string) {
 
 func (s *TagService) runRulePoller() {
 	defer s.wg.Done()
-	if err := s.initializeRuntime(s.ctx); err != nil {
-		s.degraded.Store(true)
-		s.degradedReason.Store(err.Error())
-		logger.LOG.Error("异步加载标签规则失败，将继续重试", "error", err)
+	timer := time.NewTimer(0)
+	defer timer.Stop()
+	runReload := func() {
+		err := s.reloadRuleRuntime()
+		delay := tagRuleReconcileInterval
+		if err != nil {
+			s.degraded.Store(true)
+			s.degradedReason.Store(err.Error())
+			logger.LOG.Error("刷新标签规则运行时失败，将继续重试", "worker", "rules", "error", err, "retry_after", schedulerErrorRetry)
+			delay = schedulerErrorRetry
+		}
+		resetSchedulerTimer(timer, delay)
 	}
-	ticker := time.NewTicker(5 * time.Second)
-	defer ticker.Stop()
 	for {
 		select {
 		case <-s.ctx.Done():
 			return
-		case <-ticker.C:
-			if s.globalRuntime.Load() == nil {
-				if err := s.initializeRuntime(s.ctx); err != nil {
-					s.degraded.Store(true)
-					s.degradedReason.Store(err.Error())
-					logger.LOG.Error("重试加载标签规则失败", "error", err)
-				}
-				continue
-			}
-			if err := s.reloadSettings(s.ctx); err != nil {
-				logger.LOG.Warn("刷新标签配置失败", "error", err)
-				continue
-			}
-			if err := s.reloadGlobalRules(s.ctx, false); err != nil {
-				logger.LOG.Error("热加载全局标签规则失败，继续使用上一版本", "error", err)
-			}
+		case <-s.ruleWake:
+			runReload()
+		case <-timer.C:
+			runReload()
 		}
 	}
+}
+
+func (s *TagService) reloadRuleRuntime() error {
+	wasEnabled := s.autoEnabled.Load()
+	if s.globalRuntime.Load() == nil {
+		if err := s.initializeRuntime(s.ctx); err != nil {
+			return err
+		}
+	} else {
+		if err := s.reloadSettings(s.ctx); err != nil {
+			return err
+		}
+		if err := s.reloadGlobalRules(s.ctx, false); err != nil {
+			return err
+		}
+	}
+	if !wasEnabled && s.autoEnabled.Load() {
+		s.notifyPending()
+		s.notifyRebuild()
+	}
+	return nil
 }
 
 func timePointer(value time.Time) *time.Time { return &value }

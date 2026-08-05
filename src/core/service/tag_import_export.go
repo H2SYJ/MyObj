@@ -178,7 +178,7 @@ func (s *TagService) RetryRebuildFailure(ctx context.Context, jobID, ufID string
 		return nil
 	})
 	if err == nil {
-		s.Notify()
+		s.notifyPending()
 	}
 	return err
 }

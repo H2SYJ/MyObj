@@ -7,7 +7,6 @@ import (
 	"myobj/src/core/service"
 	"myobj/src/internal/api/handlers"
 	"myobj/src/internal/api/middleware"
-	"myobj/src/internal/repository/database"
 	"myobj/src/internal/repository/impl"
 	"myobj/src/pkg/cache"
 	"myobj/src/pkg/logger"
@@ -109,10 +108,9 @@ func initRouter(factory *service.ServerFactory, cache cache.Cache) *gin.Engine {
 
 // Execute 执行服务器
 // 启动HTTP服务器并开始监听请求
-func Execute(cacheLocal cache.Cache) {
+func Execute(cacheLocal cache.Cache, factory *impl.RepositoryFactory) {
 	logger.LOG.Info("========== HTTP服务器启动 ==========")
 
-	factory := impl.NewRepositoryFactory(database.GetDB())
 	serverFactory := service.NewServiceFactory(factory, cacheLocal)
 	defer serverFactory.Close(context.Background())
 	serverFactory.FileService().StartFinalizeManager()

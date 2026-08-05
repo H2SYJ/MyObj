@@ -31,6 +31,7 @@ func NewServiceFactory(factory *impl.RepositoryFactory, cacheLocal cache.Cache) 
 	if err != nil {
 		panic(err)
 	}
+	factory.SetUserFileQueuedHook(tagService.notifyPending)
 	networkPolicy := initializeDownloadNetworkPolicy(factory)
 	downloadService := NewDownloadService(factory, networkPolicy)
 	downloadService.SetTaskEventHub(taskEvents)
@@ -76,6 +77,7 @@ func (f *ServerFactory) SubscriptionService() *SubscriptionService { return f.su
 func (f *ServerFactory) Close(ctx context.Context) error {
 	f.subscriptionService.Stop()
 	f.downloadService.Stop()
+	f.fileService.factory.SetUserFileQueuedHook(nil)
 	f.tagService.Close()
 	return f.pluginService.Close(ctx)
 }

@@ -2,13 +2,20 @@ package impl
 
 import (
 	"myobj/src/pkg/repository"
+	"sync"
 
 	"gorm.io/gorm"
 )
 
+type repositoryHooks struct {
+	mu                 sync.RWMutex
+	userFileQueuedHook func()
+}
+
 // RepositoryFactory 仓储工厂
 type RepositoryFactory struct {
-	db *gorm.DB
+	db    *gorm.DB
+	hooks *repositoryHooks
 
 	userRepo         repository.UserRepository
 	fileInfoRepo     repository.FileInfoRepository
@@ -31,7 +38,7 @@ type RepositoryFactory struct {
 // NewRepositoryFactory 创建仓储工厂实例
 func NewRepositoryFactory(db *gorm.DB) *RepositoryFactory {
 	return &RepositoryFactory{
-		db: db,
+		db: db, hooks: &repositoryHooks{},
 	}
 }
 
@@ -168,7 +175,38 @@ func (f *RepositoryFactory) DB() *gorm.DB {
 	return f.db
 }
 
+// SetUserFileQueuedHook 设置用户文件标签任务提交后的应用内通知。
+func (f *RepositoryFactory) SetUserFileQueuedHook(hook func()) {
+	if f == nil || f.hooks == nil {
+		return
+	}
+	f.hooks.mu.Lock()
+	f.hooks.userFileQueuedHook = hook
+	f.hooks.mu.Unlock()
+}
+
+// NotifyUserFileQueued 在包含标签任务的数据库事务提交成功后发送通知。
+func (f *RepositoryFactory) NotifyUserFileQueued() {
+	if f == nil || f.hooks == nil {
+		return
+	}
+	f.hooks.mu.RLock()
+	hook := f.hooks.userFileQueuedHook
+	f.hooks.mu.RUnlock()
+	if hook != nil {
+		hook()
+	}
+}
+
+// Clone 创建共享通知钩子但独立缓存仓储实例的工厂。
+func (f *RepositoryFactory) Clone() *RepositoryFactory {
+	if f == nil {
+		return nil
+	}
+	return &RepositoryFactory{db: f.db, hooks: f.hooks}
+}
+
 // WithTx 创建基于事务的新工厂实例
 func (f *RepositoryFactory) WithTx(tx *gorm.DB) *RepositoryFactory {
-	return NewRepositoryFactory(tx)
+	return &RepositoryFactory{db: tx, hooks: f.hooks}
 }

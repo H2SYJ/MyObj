@@ -55,7 +55,10 @@ type TagService struct {
 	runtimeReadyOnce sync.Once
 	userCacheMu      sync.RWMutex
 	userCache        map[string]cachedUserSnapshot
-	wake             chan struct{}
+	pendingWake      chan struct{}
+	rebuildWake      chan struct{}
+	metadataWake     chan struct{}
+	ruleWake         chan struct{}
 	ctx              context.Context
 	cancel           context.CancelFunc
 	wg               sync.WaitGroup
@@ -68,7 +71,9 @@ func NewTagService(factory *impl.RepositoryFactory) (*TagService, error) {
 	ctx, cancel := context.WithCancel(context.Background())
 	service := &TagService{
 		factory: factory, userCache: make(map[string]cachedUserSnapshot),
-		wake: make(chan struct{}, 1), runtimeReady: make(chan struct{}), ctx: ctx, cancel: cancel,
+		pendingWake: make(chan struct{}, 1), rebuildWake: make(chan struct{}, 1),
+		metadataWake: make(chan struct{}, 1), ruleWake: make(chan struct{}, 1),
+		runtimeReady: make(chan struct{}), ctx: ctx, cancel: cancel,
 	}
 	service.autoEnabled.Store(true)
 	service.autoLimit.Store(tagging.DefaultAutoTagLimit)
@@ -147,7 +152,9 @@ func (s *TagService) Start() {
 	go s.runRebuildWorker()
 	go s.runRulePoller()
 	go s.runMetadataWorker()
-	s.Notify()
+	s.notifyPending()
+	s.notifyRebuild()
+	s.notifyMetadata()
 }
 
 func (s *TagService) Close() {
@@ -160,22 +167,24 @@ func (s *TagService) Close() {
 	}
 }
 
-func (s *TagService) Notify() {
-	if s == nil {
+func (s *TagService) notify(signal chan struct{}) {
+	if s == nil || signal == nil || (s.ctx != nil && s.ctx.Err() != nil) {
 		return
 	}
 	select {
-	case s.wake <- struct{}{}:
+	case signal <- struct{}{}:
 	default:
 	}
 }
 
+func (s *TagService) notifyPending()  { s.notify(s.pendingWake) }
+func (s *TagService) notifyRebuild()  { s.notify(s.rebuildWake) }
+func (s *TagService) notifyMetadata() { s.notify(s.metadataWake) }
+func (s *TagService) notifyRules()    { s.notify(s.ruleWake) }
+
+// QueueUserFile 只在当前数据库事务内持久化任务，调用方必须在事务提交成功后发送待处理通知。
 func (s *TagService) QueueUserFile(ctx context.Context, db *gorm.DB, userID, ufID string) error {
-	if err := tagging.QueueUserFile(ctx, db, userID, ufID); err != nil {
-		return err
-	}
-	s.Notify()
-	return nil
+	return tagging.QueueUserFile(ctx, db, userID, ufID)
 }
 
 // RetryUserFile 将单个用户文件重新放入自动标签队列，不改变手工标签和屏蔽记录。
@@ -188,7 +197,7 @@ func (s *TagService) RetryUserFile(ctx context.Context, userID, ufID string) err
 	}); err != nil {
 		return err
 	}
-	s.Notify()
+	s.notifyPending()
 	return nil
 }
 
@@ -215,11 +224,15 @@ func (s *TagService) reloadSettings(ctx context.Context) error {
 	limit := tagging.DefaultAutoTagLimit
 	if config, err := s.factory.SysConfig().GetByKey(ctx, "auto_tag_enabled"); err == nil {
 		enabled = config.Value == "true"
+	} else if !errors.Is(err, gorm.ErrRecordNotFound) {
+		return err
 	}
 	if config, err := s.factory.SysConfig().GetByKey(ctx, "auto_tag_limit"); err == nil {
 		if parsed, parseErr := strconv.Atoi(config.Value); parseErr == nil && parsed >= 1 && parsed <= 100 {
 			limit = parsed
 		}
+	} else if !errors.Is(err, gorm.ErrRecordNotFound) {
+		return err
 	}
 	s.autoEnabled.Store(enabled)
 	s.autoLimit.Store(int64(limit))
@@ -896,7 +909,7 @@ func (s *TagService) UpdateExclusions(ctx context.Context, userID, ufID string, 
 		return nil
 	})
 	if err == nil && len(restore) > 0 {
-		s.Notify()
+		s.notifyPending()
 	}
 	return err
 }

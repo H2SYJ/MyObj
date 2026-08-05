@@ -110,6 +110,9 @@ func (r *RecycledService) restoreDirectory(ctx context.Context, recycled *models
 	if err != nil {
 		return nil, fmt.Errorf("恢复目录失败: %w", err)
 	}
+	if r.tagService != nil && len(members) > 0 {
+		r.factory.NotifyUserFileQueued()
+	}
 	message := "目录已还原"
 	if targetParentID != recycled.OriginalParentID {
 		message = "目录已还原到根目录（原父目录已删除）"

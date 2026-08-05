@@ -62,12 +62,12 @@ func main() {
 		os.Exit(1)
 	}
 	localCache := cache.InitCache()
+	factory := impl.NewRepositoryFactory(database.GetDB())
 
 	// 4. 启动 WebDAV 服务（如果启用）
 	if config.CONFIG.WebDAV.Enable {
 		logger.LOG.Info("WebDAV 服务已启用，正在启动...")
-		factory := impl.NewRepositoryFactory(database.GetDB())
-		webdavServer := webdav.NewServer(factory)
+		webdavServer := webdav.NewServer(factory.Clone())
 		go func() {
 			if err := webdavServer.Start(); err != nil {
 				logger.LOG.Error("WebDAV 服务器启动失败", "error", err)
@@ -81,7 +81,7 @@ func main() {
 	setupGracefulShutdown(localCache)
 	fmt.Printf("apiKey开启情况: %v", config.CONFIG.Auth.ApiKey)
 	// 6. 启动HTTP服务器
-	if err := startServer(localCache); err != nil {
+	if err := startServer(localCache, factory); err != nil {
 		logger.LOG.Error("服务器启动失败", "error", err)
 		os.Exit(1)
 	}
@@ -132,12 +132,12 @@ func initDatabase() error {
 
 // startServer 启动HTTP服务器
 // 初始化路由并启动Gin服务器监听请求
-func startServer(cacheLocal cache.Cache) error {
+func startServer(cacheLocal cache.Cache, factory *impl.RepositoryFactory) error {
 	logger.LOG.Info("[初始化] 正在启动HTTP服务器...")
 	addr := fmt.Sprintf("%s:%d", config.CONFIG.Server.Host, config.CONFIG.Server.Port)
 	logger.LOG.Info("服务器监听地址", "address", addr)
 	// 启动服务器
-	routers.Execute(cacheLocal)
+	routers.Execute(cacheLocal, factory)
 	return nil
 }
 

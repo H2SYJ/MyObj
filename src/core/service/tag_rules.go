@@ -248,7 +248,8 @@ func (s *TagService) PublishGlobalDraft(ctx context.Context, id, adminID string)
 	s.runtimeMu.Unlock()
 	s.clearUserCache()
 	s.markRuntimeReady()
-	s.Notify()
+	s.notifyRules()
+	s.notifyRebuild()
 	return draft, job, nil
 }
 
@@ -358,7 +359,8 @@ func (s *TagService) SavePersonalDictionary(ctx context.Context, userID string, 
 		return nil, nil, err
 	}
 	s.invalidateUserCache(userID)
-	s.Notify()
+	s.notifyRules()
+	s.notifyRebuild()
 	return ruleSet, job, nil
 }
 
@@ -489,7 +491,11 @@ func (s *TagService) UpdateTagSettings(ctx context.Context, enabled bool, limit 
 			return nil, err
 		}
 	}
-	s.Notify()
+	s.notifyRules()
+	if enabled {
+		s.notifyPending()
+		s.notifyRebuild()
+	}
 	return s.TagSettings(ctx)
 }
 
@@ -519,7 +525,7 @@ func (s *TagService) CreateRebuildJob(ctx context.Context, scopeType, scopeID st
 	}); err != nil {
 		return nil, err
 	}
-	s.Notify()
+	s.notifyRebuild()
 	return job, nil
 }
 
@@ -564,7 +570,7 @@ func (s *TagService) RetryRebuildJob(ctx context.Context, id string) error {
 		return tx.Where("job_id = ?", id).Delete(&models.TagRebuildFailure{}).Error
 	})
 	if err == nil {
-		s.Notify()
+		s.notifyRebuild()
 	}
 	return err
 }

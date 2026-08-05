@@ -43,7 +43,11 @@ func newCinemaTestService(t *testing.T) (*CinemaService, *TagService, *gorm.DB) 
 		t.Fatal(err)
 	}
 	factory := impl.NewRepositoryFactory(db)
-	tagService := &TagService{factory: factory, wake: make(chan struct{}, 1)}
+	tagService := &TagService{
+		factory: factory, ctx: context.Background(),
+		pendingWake: make(chan struct{}, 1), rebuildWake: make(chan struct{}, 1),
+		metadataWake: make(chan struct{}, 1), ruleWake: make(chan struct{}, 1),
+	}
 	return NewCinemaService(factory, tagService), tagService, db
 }
 

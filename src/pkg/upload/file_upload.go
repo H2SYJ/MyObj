@@ -435,6 +435,7 @@ func ProcessUploadedFile(data *FileUploadData, repoFactory *impl.RepositoryFacto
 		cleanupProcessedFiles(mainFilePath, thumbnailPath, chunks)
 		return "", err
 	}
+	repoFactory.NotifyUserFileQueued()
 
 	// 10.5 写入.info文件（保存hash信息）
 	if err := writeInfoFile(mainFilePath, fullHash, fileEncHash); err != nil {

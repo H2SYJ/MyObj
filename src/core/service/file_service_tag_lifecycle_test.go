@@ -37,13 +37,26 @@ func TestCreateAndRollbackUserFileKeepsTagStateAtomic(t *testing.T) {
 	); err != nil {
 		t.Fatal(err)
 	}
-	fileService := &FileService{factory: impl.NewRepositoryFactory(db)}
+	factory := impl.NewRepositoryFactory(db)
+	notified := make(chan struct{}, 1)
+	factory.SetUserFileQueuedHook(func() {
+		select {
+		case notified <- struct{}{}:
+		default:
+		}
+	})
+	fileService := &FileService{factory: factory}
 	userFile := &models.UserFiles{
 		UserID: "user-1", FileID: "file-1", UfID: "uf-1", FileName: "测试.mp4",
 		DirectoryID: 1, CreatedAt: custom_type.Now(),
 	}
 	if err := fileService.createUserFileWithTagState(context.Background(), userFile); err != nil {
 		t.Fatal(err)
+	}
+	select {
+	case <-notified:
+	default:
+		t.Fatal("秒传文件事务提交后没有发送标签任务通知")
 	}
 	var state models.UserFileTagState
 	if err := db.First(&state, "uf_id = ?", userFile.UfID).Error; err != nil {
@@ -64,5 +77,10 @@ func TestCreateAndRollbackUserFileKeepsTagStateAtomic(t *testing.T) {
 	}
 	if userFileCount != 0 || stateCount != 0 {
 		t.Fatalf("秒传回滚遗留用户文件或标签状态: user_files=%d tag_state=%d", userFileCount, stateCount)
+	}
+	select {
+	case <-notified:
+		t.Fatal("删除用户文件不应产生新的标签任务通知")
+	default:
 	}
 }

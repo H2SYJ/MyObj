@@ -206,6 +206,9 @@ func (r *RecycledService) RestoreFile(req *request.RestoreFileRequest, userID st
 		logger.LOG.Error("还原文件失败", "error", err, "recycledID", req.RecycledID)
 		return nil, fmt.Errorf("还原文件失败: %w", err)
 	}
+	if r.tagService != nil {
+		r.factory.NotifyUserFileQueued()
+	}
 
 	message := "文件已还原"
 	if !parentDirExists {

@@ -57,8 +57,8 @@ func (f *FileService) createUserFileWithTagState(ctx context.Context, userFile *
 		}
 		return tagging.QueueUserFile(ctx, tx, userFile.UserID, userFile.UfID)
 	})
-	if err == nil && f.tagService != nil {
-		f.tagService.Notify()
+	if err == nil {
+		f.factory.NotifyUserFileQueued()
 	}
 	return err
 }
@@ -966,6 +966,9 @@ func (f *FileService) RenameFile(req *request.RenameFileRequest, userID string) 
 	if err != nil {
 		logger.LOG.Error("重命名文件失败", "error", err, "fileID", req.FileID, "newFileName", req.NewFileName)
 		return nil, fmt.Errorf("重命名文件失败: %w", err)
+	}
+	if f.tagService != nil {
+		f.factory.NotifyUserFileQueued()
 	}
 
 	logger.LOG.Info("文件重命名成功", "fileID", req.FileID, "oldFileName", oldFileName, "newFileName", req.NewFileName)
