@@ -1,4 +1,4 @@
-import type { ComponentInternalInstance } from 'vue'
+import { computed, getCurrentInstance, readonly, ref, type Ref } from 'vue'
 import type { FileSearchParams, SearchResponse, SearchFileItem } from '@/api/file'
 import cache from '@/plugins/cache'
 
@@ -19,7 +19,7 @@ export function useSearch<T, TSource = SearchFileItem>(
   enableHistory = true,
   getExtraParams?: () => Partial<FileSearchParams>
 ) {
-  const { proxy } = getCurrentInstance() as ComponentInternalInstance
+  const proxy = getCurrentInstance()?.proxy
 
   const searchKeyword = ref('')
   const isSearching = ref(false)
@@ -28,6 +28,7 @@ export function useSearch<T, TSource = SearchFileItem>(
   const currentPage = ref(1)
   const pageSize = ref(20)
   const searchHistory = ref<string[]>([])
+  let searchSerial = 0
 
   // 加载搜索历史
   const loadHistory = () => {
@@ -96,10 +97,11 @@ export function useSearch<T, TSource = SearchFileItem>(
 
   // 执行搜索
   const performSearch = async (keyword: string, pageNum: number = 1, pageSizeNum: number = 20, append = false) => {
+    const serial = ++searchSerial
     const extraParams = getExtraParams?.() || {}
     if (!keyword.trim() && !extraParams.tag_ids) {
       // 如果关键词为空，清空搜索结果
-      clearSearchResults()
+      resetSearchResults()
       if (onClear) {
         onClear()
       }
@@ -121,6 +123,9 @@ export function useSearch<T, TSource = SearchFileItem>(
       }
 
       const res = await searchApi(params)
+      if (serial !== searchSerial) {
+        return
+      }
 
       if (res.code === 200 && res.data) {
         const nextResults = transformResult(res.data.files)
@@ -130,23 +135,34 @@ export function useSearch<T, TSource = SearchFileItem>(
         pageSize.value = pageSizeNum
       } else {
         proxy?.$modal.msgError(res.message || '搜索失败')
-        clearSearchResults()
+        resetSearchResults()
       }
     } catch (error) {
+      if (serial !== searchSerial) {
+        return
+      }
       proxy?.$modal.msgError('搜索文件失败')
       proxy?.$log.error(error)
-      clearSearchResults()
+      resetSearchResults()
     } finally {
-      isSearching.value = false
+      if (serial === searchSerial) {
+        isSearching.value = false
+      }
     }
   }
 
-  // 清空搜索结果
-  const clearSearchResults = () => {
+  const resetSearchResults = () => {
     searchResults.value = []
     total.value = 0
     currentPage.value = 1
     pageSize.value = 20
+    isSearching.value = false
+  }
+
+  // 清空搜索结果，同时让尚未结束的旧请求失效。
+  const clearSearchResults = () => {
+    searchSerial++
+    resetSearchResults()
   }
 
   // 清空搜索
