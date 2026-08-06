@@ -26,6 +26,8 @@ describe('影视模式页面结构', () => {
     expect(folder).toContain('grid-template-columns: repeat(4, minmax(0, 1fr))')
     expect(watch).toContain('grid-template-columns: repeat(4, minmax(0, 1fr))')
     expect(source).toContain('@keydown="handleRailKeydown"')
+    expect(source).toContain('@pointerdown="handleRailPointerDown"')
+    expect(source).toContain('@pointermove="handleRailPointerMove"')
     expect(source).toContain('@wheel="handleRailWheel"')
     expect(source).toContain('touch-action: pan-x pan-y')
     expect(source).toContain('-webkit-overflow-scrolling: touch')

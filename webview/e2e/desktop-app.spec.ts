@@ -375,6 +375,23 @@ test('影视模式桌面布局、隐藏横向滚动条和路由前进后退', as
   if (canScrollRail) {
     await rail.dispatchEvent('wheel', { deltaY: 240 })
     await expect.poll(() => rail.evaluate(element => element.scrollLeft)).toBeGreaterThan(0)
+
+    await rail.evaluate(element => element.scrollTo({ left: 0 }))
+    const railBox = await rail.boundingBox()
+    expect(railBox).toBeTruthy()
+    if (railBox) {
+      await rail.hover({ position: { x: railBox.width * 0.75, y: railBox.height / 2 } })
+      await page.mouse.down()
+      await expect(rail).not.toHaveClass(/is-dragging/)
+      await page.mouse.move(railBox.x + railBox.width * 0.25, railBox.y + railBox.height / 2, { steps: 8 })
+      await expect(rail).toHaveClass(/is-dragging/)
+      await expect.poll(() => rail.evaluate(element => element.scrollLeft)).toBeGreaterThan(0)
+      await page.mouse.up()
+      await expect(rail).not.toHaveClass(/is-dragging/)
+      await expect.poll(() => rail.evaluate(element => element.scrollLeft)).toBeGreaterThan(0)
+      await expect(page).toHaveURL(/\/cinema\/7$/)
+      await page.waitForTimeout(20)
+    }
   }
 
   await rail.locator('.cinema-video-card').first().click()

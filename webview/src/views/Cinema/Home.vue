@@ -13,7 +13,12 @@
         class="cinema-section__rail"
         tabindex="0"
         :aria-label="`${section.directory.name}视频列表`"
+        @dragstart.prevent
         @keydown="handleRailKeydown"
+        @pointercancel="handleRailPointerCancel"
+        @pointerdown="handleRailPointerDown"
+        @pointermove="handleRailPointerMove"
+        @pointerup="handleRailPointerUp"
         @wheel="handleRailWheel"
       >
         <CinemaVideoCard
@@ -60,6 +65,15 @@
   const sentinel = ref<HTMLElement>()
   let observer: IntersectionObserver | undefined
   let generation = 0
+  let railDrag:
+    | {
+        rail: HTMLElement
+        pointerId: number
+        startX: number
+        startScrollLeft: number
+        moved: boolean
+      }
+    | undefined
 
   const failAndExit = (message: string) => {
     proxy?.$modal.msgError(message)
@@ -129,6 +143,51 @@
     event.preventDefault()
     rail.scrollLeft = nextScrollLeft
   }
+  const handleRailPointerDown = (event: PointerEvent) => {
+    if (event.pointerType !== 'mouse' || event.button !== 0) {
+      return
+    }
+    const rail = event.currentTarget as HTMLElement
+    if (rail.scrollWidth <= rail.clientWidth) {
+      return
+    }
+    railDrag = {
+      rail,
+      pointerId: event.pointerId,
+      startX: event.clientX,
+      startScrollLeft: rail.scrollLeft,
+      moved: false
+    }
+  }
+  const handleRailPointerMove = (event: PointerEvent) => {
+    if (!railDrag || railDrag.pointerId !== event.pointerId) {
+      return
+    }
+    const offset = event.clientX - railDrag.startX
+    if (!railDrag.moved && Math.abs(offset) < 5) {
+      return
+    }
+    if (!railDrag.moved) {
+      railDrag.moved = true
+      railDrag.rail.setPointerCapture(event.pointerId)
+      railDrag.rail.classList.add('is-dragging')
+    }
+    event.preventDefault()
+    railDrag.rail.scrollLeft = railDrag.startScrollLeft - offset
+  }
+  const finishRailPointerDrag = (event: PointerEvent) => {
+    if (!railDrag || railDrag.pointerId !== event.pointerId) {
+      return
+    }
+    const { rail, pointerId } = railDrag
+    if (rail.hasPointerCapture(pointerId)) {
+      rail.releasePointerCapture(pointerId)
+    }
+    rail.classList.remove('is-dragging')
+    railDrag = undefined
+  }
+  const handleRailPointerUp = (event: PointerEvent) => finishRailPointerDrag(event)
+  const handleRailPointerCancel = (event: PointerEvent) => finishRailPointerDrag(event)
 
   const reset = () => {
     generation++
@@ -210,14 +269,18 @@
     overscroll-behavior-inline: contain;
     touch-action: pan-x pan-y;
     -webkit-overflow-scrolling: touch;
-    scroll-snap-type: inline proximity;
     scrollbar-width: none;
+    cursor: grab;
   }
   .cinema-section__rail::-webkit-scrollbar {
     display: none;
   }
-  .cinema-section__rail > * {
-    scroll-snap-align: start;
+  .cinema-section__rail.is-dragging {
+    cursor: grabbing;
+    user-select: none;
+  }
+  .cinema-section__rail.is-dragging > * {
+    pointer-events: none;
   }
   .cinema-sentinel {
     min-height: 48px;
