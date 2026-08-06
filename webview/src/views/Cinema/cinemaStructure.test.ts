@@ -14,12 +14,17 @@ describe('影视模式页面结构', () => {
     expect(card).toContain('background: #fff')
   })
 
-  it('首页横向分区隐藏滚动条并限制桌面六列', () => {
+  it('桌面端统一使用 340px 影片卡片并隐藏首页滚动条', () => {
     const source = readSource('./Home.vue')
+    const folder = readSource('./FolderVideos.vue')
+    const watch = readSource('./Watch.vue')
     const shell = readSource('./components/CinemaShell.vue')
     expect(source).toContain('scrollbar-width: none')
     expect(source).toContain('.cinema-section__rail::-webkit-scrollbar')
-    expect(source).toContain('calc((100% - 80px) / 6)')
+    expect(shell).toContain('--cinema-card-width: 340px')
+    expect(source).toContain('grid-auto-columns: var(--cinema-card-width, 340px)')
+    expect(folder).toContain('grid-template-columns: repeat(auto-fill, var(--cinema-card-width, 340px))')
+    expect(watch).toContain('grid-template-columns: repeat(auto-fill, var(--cinema-card-width, 340px))')
     expect(source).toContain('@keydown="handleRailKeydown"')
     expect(source).toContain('@wheel="handleRailWheel"')
     expect(source).toContain('touch-action: pan-x pan-y')

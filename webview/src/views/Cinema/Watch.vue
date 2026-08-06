@@ -403,7 +403,7 @@
   }
   .cinema-related__grid {
     display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(210px, 1fr));
+    grid-template-columns: repeat(auto-fill, var(--cinema-card-width, 340px));
     gap: 22px 16px;
   }
   .cinema-related :deep(.cinema-video-card) {

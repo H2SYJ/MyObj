@@ -153,7 +153,7 @@
   }
   .cinema-video-grid {
     display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+    grid-template-columns: repeat(auto-fill, var(--cinema-card-width, 340px));
     gap: 24px 18px;
   }
   .cinema-sentinel {

@@ -201,7 +201,7 @@
   }
   .cinema-section__rail {
     display: grid;
-    grid-auto-columns: minmax(210px, 1fr);
+    grid-auto-columns: var(--cinema-card-width, 340px);
     grid-auto-flow: column;
     grid-template-rows: 1fr;
     gap: 16px;
@@ -223,11 +223,6 @@
     min-height: 48px;
     display: grid;
     place-items: center;
-  }
-  @media (min-width: 1280px) {
-    .cinema-section__rail {
-      grid-auto-columns: calc((100% - 80px) / 6);
-    }
   }
   @media (max-width: 767px) {
     .cinema-section {
