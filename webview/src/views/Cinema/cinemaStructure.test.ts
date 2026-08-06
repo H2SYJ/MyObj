@@ -14,17 +14,17 @@ describe('影视模式页面结构', () => {
     expect(card).toContain('background: #fff')
   })
 
-  it('桌面端统一使用 340px 影片卡片并隐藏首页滚动条', () => {
+  it('首页使用 340px 卡片横向滚动，其他桌面列表自适应四列', () => {
     const source = readSource('./Home.vue')
     const folder = readSource('./FolderVideos.vue')
     const watch = readSource('./Watch.vue')
     const shell = readSource('./components/CinemaShell.vue')
     expect(source).toContain('scrollbar-width: none')
     expect(source).toContain('.cinema-section__rail::-webkit-scrollbar')
-    expect(shell).toContain('--cinema-card-width: 340px')
-    expect(source).toContain('grid-auto-columns: var(--cinema-card-width, 340px)')
-    expect(folder).toContain('grid-template-columns: repeat(auto-fill, var(--cinema-card-width, 340px))')
-    expect(watch).toContain('grid-template-columns: repeat(auto-fill, var(--cinema-card-width, 340px))')
+    expect(shell).toContain('--cinema-home-card-width: 340px')
+    expect(source).toContain('grid-auto-columns: var(--cinema-home-card-width, 340px)')
+    expect(folder).toContain('grid-template-columns: repeat(4, minmax(0, 1fr))')
+    expect(watch).toContain('grid-template-columns: repeat(4, minmax(0, 1fr))')
     expect(source).toContain('@keydown="handleRailKeydown"')
     expect(source).toContain('@wheel="handleRailWheel"')
     expect(source).toContain('touch-action: pan-x pan-y')
@@ -53,7 +53,7 @@ describe('影视模式页面结构', () => {
     expect(source).toMatch(/\.cinema-player-frame\s*\{[\s\S]*width: 100%/)
     expect(source).toContain('margin: 0 auto')
     expect(source).toContain('class="cinema-related__grid"')
-    expect(source).toMatch(/\.cinema-related__grid\s*\{[\s\S]*grid-template-columns: repeat\(auto-fill/)
+    expect(source).toMatch(/\.cinema-related__grid\s*\{[\s\S]*grid-template-columns: repeat\(4, minmax\(0, 1fr\)\)/)
   })
 
   it('播放页使用通用内联标签编辑器', () => {

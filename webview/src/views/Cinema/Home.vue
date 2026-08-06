@@ -201,7 +201,7 @@
   }
   .cinema-section__rail {
     display: grid;
-    grid-auto-columns: var(--cinema-card-width, 340px);
+    grid-auto-columns: var(--cinema-home-card-width, 340px);
     grid-auto-flow: column;
     grid-template-rows: 1fr;
     gap: 16px;

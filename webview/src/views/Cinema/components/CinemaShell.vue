@@ -61,7 +61,7 @@
     --cinema-muted: #6b7280;
     --cinema-border: #e8edf2;
     --cinema-shadow: 0 8px 28px rgba(24, 25, 28, 0.06);
-    --cinema-card-width: 340px;
+    --cinema-home-card-width: 340px;
     --el-bg-color: #fff;
     --el-bg-color-page: #fff;
     --el-text-color-primary: var(--cinema-text);
