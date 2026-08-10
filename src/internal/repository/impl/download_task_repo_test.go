@@ -55,3 +55,40 @@ func TestListRunnableAppliesSchedulerConstraints(t *testing.T) {
 		t.Fatalf("下一次唤醒时间不符合预期: got=%v want=%v", next, future)
 	}
 }
+
+func TestListByFiltersPrioritizesDownloadingTasksBeforePagination(t *testing.T) {
+	db, err := gorm.Open(sqlite.Open("file:download-task-list-order?mode=memory&cache=shared"), &gorm.Config{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := db.AutoMigrate(&models.DownloadTask{}); err != nil {
+		t.Fatal(err)
+	}
+	now := time.Now()
+	tasks := []*models.DownloadTask{
+		{ID: "finished-new", UserID: "user-a", Type: 0, State: 3, CreateTime: custom_type.JsonTime(now)},
+		{ID: "downloading-old", UserID: "user-a", Type: 4, State: 1, CreateTime: custom_type.JsonTime(now.Add(-10 * time.Minute))},
+		{ID: "queued-new", UserID: "user-a", Type: 5, State: 0, CreateTime: custom_type.JsonTime(now.Add(-time.Minute))},
+		{ID: "downloading-new", UserID: "user-a", Type: 9, State: 1, CreateTime: custom_type.JsonTime(now.Add(-5 * time.Minute))},
+	}
+	if err := db.Create(tasks).Error; err != nil {
+		t.Fatal(err)
+	}
+
+	repo := NewDownloadTaskRepository(db)
+	firstPage, err := repo.ListByFilters(context.Background(), "user-a", nil, []int{0, 4, 5, 9}, 0, 2)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(firstPage) != 2 || firstPage[0].ID != "downloading-new" || firstPage[1].ID != "downloading-old" {
+		t.Fatalf("第一页应仅包含按创建时间倒序排列的下载中任务: %#v", firstPage)
+	}
+
+	secondPage, err := repo.ListByFilters(context.Background(), "user-a", nil, []int{0, 4, 5, 9}, 2, 2)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(secondPage) != 2 || secondPage[0].ID != "finished-new" || secondPage[1].ID != "queued-new" {
+		t.Fatalf("非下载中任务应在后续页按创建时间倒序排列: %#v", secondPage)
+	}
+}

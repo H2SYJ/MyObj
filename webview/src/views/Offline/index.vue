@@ -700,6 +700,7 @@
   import WorkspacePage from '@/components/WorkspacePage/index.vue'
   import { taskEventClient, type TaskEvent } from '@/utils/taskEvents'
   import { resolveOfflineTaskResultNavigation } from './taskResultNavigation'
+  import { prioritizeDownloadingTasks } from './taskOrdering'
 
   const { proxy } = getCurrentInstance() as ComponentInternalInstance
   const { t } = useI18n()
@@ -1025,7 +1026,7 @@
         // 通过创建新数组来触发 Vue 的响应式更新
         const mergedTasks = append ? [...taskList.value, ...newTasks] : newTasks
         const uniqueTasks = new Map(mergedTasks.map((task: OfflineDownloadTask) => [task.id, { ...task }]))
-        taskList.value = Array.from(uniqueTasks.values())
+        taskList.value = prioritizeDownloadingTasks(Array.from(uniqueTasks.values()))
         const visibleTaskIDs = new Set(taskList.value.map(task => task.id))
         selectedTaskIds.value = selectedTaskIds.value.filter(taskID => visibleTaskIDs.has(taskID))
         await syncTaskTableSelection()
@@ -1107,7 +1108,9 @@
       ...payload,
       state_text: payload.state === undefined ? current.state_text : getDownloadStatusText(payload.state)
     }
-    taskList.value.splice(index, 1, updated)
+    const nextTasks = [...taskList.value]
+    nextTasks.splice(index, 1, updated)
+    taskList.value = prioritizeDownloadingTasks(nextTasks)
   }
 
   const handleTaskPageSizeChange = () => {

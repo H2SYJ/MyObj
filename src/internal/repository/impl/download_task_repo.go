@@ -15,6 +15,8 @@ type downloadTaskRepository struct {
 	db *gorm.DB
 }
 
+const downloadTaskListOrder = "CASE WHEN state = 1 THEN 0 ELSE 1 END ASC, create_time DESC, id ASC"
+
 // NewDownloadTaskRepository 创建下载任务仓储实例
 func NewDownloadTaskRepository(db *gorm.DB) repository.DownloadTaskRepository {
 	return &downloadTaskRepository{db: db}
@@ -45,7 +47,7 @@ func (r *downloadTaskRepository) ListByUserID(ctx context.Context, userID string
 	var tasks []*models.DownloadTask
 	err := r.db.WithContext(ctx).
 		Where("user_id = ?", userID).
-		Order("create_time DESC").
+		Order(downloadTaskListOrder).
 		Offset(offset).
 		Limit(limit).
 		Find(&tasks).Error
@@ -65,7 +67,7 @@ func (r *downloadTaskRepository) ListByState(ctx context.Context, userID string,
 	var tasks []*models.DownloadTask
 	err := r.db.WithContext(ctx).
 		Where("user_id = ? AND state = ?", userID, state).
-		Order("create_time DESC").
+		Order(downloadTaskListOrder).
 		Offset(offset).
 		Limit(limit).
 		Find(&tasks).Error
@@ -85,7 +87,7 @@ func (r *downloadTaskRepository) ListByType(ctx context.Context, userID string, 
 	var tasks []*models.DownloadTask
 	err := r.db.WithContext(ctx).
 		Where("user_id = ? AND type = ?", userID, taskType).
-		Order("create_time DESC").
+		Order(downloadTaskListOrder).
 		Offset(offset).
 		Limit(limit).
 		Find(&tasks).Error
@@ -105,7 +107,7 @@ func (r *downloadTaskRepository) ListByStateAndType(ctx context.Context, userID 
 	var tasks []*models.DownloadTask
 	err := r.db.WithContext(ctx).
 		Where("user_id = ? AND state = ? AND type = ?", userID, state, taskType).
-		Order("create_time DESC").
+		Order(downloadTaskListOrder).
 		Offset(offset).
 		Limit(limit).
 		Find(&tasks).Error
@@ -130,7 +132,7 @@ func (r *downloadTaskRepository) ListByFilters(ctx context.Context, userID strin
 	if len(taskTypes) > 0 {
 		query = query.Where("type IN ?", taskTypes)
 	}
-	err := query.Order("create_time DESC").Offset(offset).Limit(limit).Find(&tasks).Error
+	err := query.Order(downloadTaskListOrder).Offset(offset).Limit(limit).Find(&tasks).Error
 	return tasks, err
 }
 
