@@ -468,7 +468,7 @@ func (f *FileHandler) Precheck(c *gin.Context) {
 
 // SearchUserFiles godoc
 // @Summary 搜索当前用户文件
-// @Description 关键词和标签筛选至少提供一项；每个关键词可由文件名或标签命中
+// @Description 关键词和标签筛选至少提供一项；关键词仅匹配文件名
 // @Tags 文件管理
 // @Accept json
 // @Produce json
@@ -503,7 +503,7 @@ func (f *FileHandler) SearchUserFiles(c *gin.Context) {
 
 // SearchPublicFiles godoc
 // @Summary 搜索公开文件
-// @Description 关键词和标签筛选至少提供一项；私有手工标签不参与搜索
+// @Description 关键词和标签筛选至少提供一项；关键词仅匹配文件名，私有手工标签不参与显式标签筛选
 // @Tags 文件管理
 // @Produce json
 // @Security BearerAuth

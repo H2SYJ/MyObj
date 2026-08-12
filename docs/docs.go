@@ -1913,7 +1913,7 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
-                "description": "关键词和标签筛选至少提供一项；私有手工标签不参与搜索",
+                "description": "关键词和标签筛选至少提供一项；关键词仅匹配文件名，私有手工标签不参与显式标签筛选",
                 "produces": [
                     "application/json"
                 ],
@@ -1995,7 +1995,7 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
-                "description": "关键词和标签筛选至少提供一项；每个关键词可由文件名或标签命中",
+                "description": "关键词和标签筛选至少提供一项；关键词仅匹配文件名",
                 "consumes": [
                     "application/json"
                 ],

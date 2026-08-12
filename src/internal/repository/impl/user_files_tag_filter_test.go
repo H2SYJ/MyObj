@@ -86,11 +86,11 @@ func TestUserFileKeywordAndAnyTagFiltersAreCombined(t *testing.T) {
 	insertFilterFixture(t, db)
 	repo := NewUserFilesRepository(db)
 	query := repository.UserFileQuery{
-		UserID:      "user-a",
-		SearchTerms: []string{"private-manual"},
-		TagIDs:      []string{"tag-auto", "tag-excluded"},
-		TagMode:     "any",
-		Limit:       20,
+		UserID:  "user-a",
+		Keyword: "private-manual",
+		TagIDs:  []string{"tag-auto", "tag-excluded"},
+		TagMode: "any",
+		Limit:   20,
 	}
 
 	files, err := repo.ListFiltered(context.Background(), query)
@@ -121,16 +121,6 @@ func TestUserFileFiltersExcludeViewerHiddenTags(t *testing.T) {
 		t.Fatalf("隐藏标签不应继续命中标签筛选: %+v", byTag)
 	}
 
-	byKeyword, err := repo.ListFiltered(ctx, repository.UserFileQuery{
-		UserID: "user-a", ViewerUserID: "user-a", SearchTerms: []string{"tag-private"}, Limit: 20,
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(byKeyword) != 0 {
-		t.Fatalf("隐藏标签不应继续命中关键词搜索: %+v", byKeyword)
-	}
-
 	withoutViewerPreference, err := repo.ListFiltered(ctx, repository.UserFileQuery{
 		UserID: "user-a", TagIDs: []string{"tag-private"}, TagMode: "any", Limit: 20,
 	})
@@ -142,7 +132,7 @@ func TestUserFileFiltersExcludeViewerHiddenTags(t *testing.T) {
 	}
 }
 
-func TestUserFileKeywordMatchesViewerDisplayName(t *testing.T) {
+func TestUserFileKeywordOnlyMatchesFileName(t *testing.T) {
 	db := openUserFileFilterDB(t)
 	insertFilterFixture(t, db)
 	if err := db.Exec("INSERT INTO user_tag_preference(user_id,tag_id,hidden,display_name,normalized_display_name) VALUES('user-a','tag-private',0,'个人标签','个人标签')").Error; err != nil {
@@ -150,26 +140,25 @@ func TestUserFileKeywordMatchesViewerDisplayName(t *testing.T) {
 	}
 	repo := NewUserFilesRepository(db)
 
+	for _, keyword := range []string{"tag-private", "个人标签"} {
+		files, err := repo.ListFiltered(context.Background(), repository.UserFileQuery{
+			UserID: "user-a", ViewerUserID: "user-a", Keyword: keyword, Limit: 20,
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(files) != 0 {
+			t.Fatalf("关键词不应通过标签名命中文件: keyword=%s files=%+v", keyword, files)
+		}
+	}
 	files, err := repo.ListFiltered(context.Background(), repository.UserFileQuery{
-		UserID: "user-a", ViewerUserID: "user-a", SearchTerms: []string{"个人标签"}, Limit: 20,
+		UserID: "user-a", ViewerUserID: "user-a", Keyword: "private-manual", Limit: 20,
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(files) != 2 {
-		t.Fatalf("显示名称关键词未命中文件: %+v", files)
-	}
-	if err := db.Exec("UPDATE user_tag_preference SET hidden=1 WHERE user_id='user-a' AND tag_id='tag-private'").Error; err != nil {
-		t.Fatal(err)
-	}
-	files, err = repo.ListFiltered(context.Background(), repository.UserFileQuery{
-		UserID: "user-a", ViewerUserID: "user-a", SearchTerms: []string{"个人标签"}, Limit: 20,
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(files) != 0 {
-		t.Fatalf("隐藏后显示名称仍命中文件: %+v", files)
+	if len(files) != 1 || files[0].UfID != "uf-private-manual" {
+		t.Fatalf("关键词应按文件名命中: %+v", files)
 	}
 }
 
@@ -181,11 +170,11 @@ func TestUserFileSearchDoesNotJoinFileInfoWhenUnused(t *testing.T) {
 	}
 	repo := NewUserFilesRepository(db)
 	query := repository.UserFileQuery{
-		UserID:      "user-a",
-		SearchTerms: []string{"private-manual"},
-		SortBy:      "time",
-		SortOrder:   "desc",
-		Limit:       20,
+		UserID:    "user-a",
+		Keyword:   "private-manual",
+		SortBy:    "time",
+		SortOrder: "desc",
+		Limit:     20,
 	}
 
 	files, total, err := repo.ListAndCountFiltered(context.Background(), query)

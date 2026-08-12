@@ -4,7 +4,6 @@ import (
 	"context"
 	"myobj/src/pkg/models"
 	"myobj/src/pkg/repository"
-	"myobj/src/pkg/tagging"
 	"strings"
 
 	"gorm.io/gorm"
@@ -26,36 +25,8 @@ func (r *userFilesRepository) filteredQuery(ctx context.Context, input repositor
 		query = query.Where("user_files.directory_id = ?", *input.DirectoryID)
 	}
 	query = applyFileTypeFilter(query, input.FileType)
-	for _, term := range input.SearchTerms {
-		term = strings.TrimSpace(term)
-		if term == "" {
-			continue
-		}
-		fileLike := "%" + term + "%"
-		tagLike := "%" + tagging.Normalize(term) + "%"
-		preferenceJoin := ""
-		tagNameCondition := "td.normalized_name LIKE ?"
-		preferenceFilter := ""
-		tagVisibility := ""
-		args := []interface{}{fileLike}
-		if input.ViewerUserID != "" {
-			preferenceJoin = " LEFT JOIN user_tag_preference viewer_pref ON viewer_pref.tag_id = uft.tag_id AND viewer_pref.user_id = ?"
-			tagNameCondition = "(td.normalized_name LIKE ? OR viewer_pref.normalized_display_name LIKE ?)"
-			preferenceFilter = " AND COALESCE(viewer_pref.hidden, false) = false"
-			args = append(args, input.ViewerUserID, tagLike, tagLike)
-		} else {
-			args = append(args, tagLike)
-		}
-		if input.PublicOnly {
-			tagVisibility = " AND (uft.source_type <> ? OR uft.visibility = ?)"
-			args = append(args, models.TagSourceManual, models.TagVisibilityPublic)
-		}
-		query = query.Where(
-			"(user_files.file_name LIKE ? OR EXISTS (SELECT 1 FROM user_file_tag uft JOIN tag_definition td ON td.id = uft.tag_id"+preferenceJoin+" WHERE uft.user_id = user_files.user_id AND uft.uf_id = user_files.uf_id AND "+tagNameCondition+
-				tagVisibility+" AND NOT EXISTS (SELECT 1 FROM user_file_tag_exclusion e WHERE e.user_id = uft.user_id AND e.uf_id = uft.uf_id AND e.tag_id = uft.tag_id)"+
-				preferenceFilter+"))",
-			args...,
-		)
+	if keyword := strings.TrimSpace(input.Keyword); keyword != "" {
+		query = query.Where("user_files.file_name LIKE ?", "%"+keyword+"%")
 	}
 	tagIDs := uniqueNonEmpty(input.TagIDs)
 	if len(tagIDs) > 0 {

@@ -142,13 +142,13 @@ type UserFilesRepository interface {
 }
 
 // UserFileQuery 描述文件列表、搜索和文件广场共用的可组合查询条件。
-// SearchTerms 中每个词都必须由文件名或可见标签命中；TagMode 控制标签筛选的 all/any 语义。
+// Keyword 仅对文件名执行包含匹配；TagMode 控制显式标签筛选的 all/any 语义。
 type UserFileQuery struct {
 	UserID       string
 	ViewerUserID string
 	PublicOnly   bool
 	DirectoryID  *int
-	SearchTerms  []string
+	Keyword      string
 	TagIDs       []string
 	TagMode      string
 	FileType     string

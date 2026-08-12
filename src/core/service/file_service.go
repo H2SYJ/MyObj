@@ -425,13 +425,9 @@ func (f *FileService) SearchUserFiles(req *request.FileSearchRequest, userID str
 	if strings.TrimSpace(req.Keyword) == "" && len(tagIDs) == 0 {
 		return nil, fmt.Errorf("%w: 关键词或标签筛选至少填写一项", ErrInvalidFileSearch)
 	}
-	terms, err := f.searchTerms(ctx, userID, req.Keyword)
-	if err != nil {
-		return nil, err
-	}
 	sortBy, sortOrder := normalizeFileSort(req.SortBy, req.SortOrder)
 	query := repository.UserFileQuery{
-		UserID: userID, ViewerUserID: userID, SearchTerms: terms, TagIDs: tagIDs, TagMode: tagMode,
+		UserID: userID, ViewerUserID: userID, Keyword: strings.TrimSpace(req.Keyword), TagIDs: tagIDs, TagMode: tagMode,
 		FileType: req.Type, SortBy: sortBy, SortOrder: sortOrder,
 		Offset: (page - 1) * pageSize, Limit: pageSize,
 	}
@@ -463,13 +459,9 @@ func (f *FileService) SearchPublicFiles(req *request.FileSearchRequest, viewerUs
 	if strings.TrimSpace(req.Keyword) == "" && len(tagIDs) == 0 {
 		return nil, fmt.Errorf("%w: 关键词或标签筛选至少填写一项", ErrInvalidFileSearch)
 	}
-	terms, err := f.searchTerms(ctx, "", req.Keyword)
-	if err != nil {
-		return nil, err
-	}
 	sortBy, sortOrder := normalizeFileSort(req.SortBy, req.SortOrder)
 	query := repository.UserFileQuery{
-		PublicOnly: true, ViewerUserID: viewerUserID, SearchTerms: terms, TagIDs: tagIDs, TagMode: tagMode,
+		PublicOnly: true, ViewerUserID: viewerUserID, Keyword: strings.TrimSpace(req.Keyword), TagIDs: tagIDs, TagMode: tagMode,
 		FileType: req.Type, SortBy: sortBy, SortOrder: sortOrder,
 		Offset: (page - 1) * pageSize, Limit: pageSize,
 	}
@@ -734,16 +726,6 @@ func normalizeTagFilter(raw, mode string) ([]string, string, error) {
 		}
 	}
 	return result, mode, nil
-}
-
-func (f *FileService) searchTerms(ctx context.Context, userID, keyword string) ([]string, error) {
-	if strings.TrimSpace(keyword) == "" {
-		return nil, nil
-	}
-	if f.tagService == nil {
-		return []string{strings.TrimSpace(keyword)}, nil
-	}
-	return f.tagService.SearchTerms(ctx, userID, keyword)
 }
 
 func (f *FileService) buildSearchFileItems(ctx context.Context, userFiles []*models.UserFiles, publicOnly bool, viewerUserIDs ...string) ([]response.SearchFileItem, error) {
