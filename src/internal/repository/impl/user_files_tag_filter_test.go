@@ -102,6 +102,77 @@ func TestUserFileKeywordAndAnyTagFiltersAreCombined(t *testing.T) {
 	}
 }
 
+func TestUserFileFiltersExcludeViewerHiddenTags(t *testing.T) {
+	db := openUserFileFilterDB(t)
+	insertFilterFixture(t, db)
+	if err := db.Exec("INSERT INTO user_tag_preference(user_id,tag_id,hidden) VALUES('user-a','tag-private',1)").Error; err != nil {
+		t.Fatal(err)
+	}
+	repo := NewUserFilesRepository(db)
+	ctx := context.Background()
+
+	byTag, err := repo.ListFiltered(ctx, repository.UserFileQuery{
+		UserID: "user-a", ViewerUserID: "user-a", TagIDs: []string{"tag-private"}, TagMode: "any", Limit: 20,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(byTag) != 0 {
+		t.Fatalf("隐藏标签不应继续命中标签筛选: %+v", byTag)
+	}
+
+	byKeyword, err := repo.ListFiltered(ctx, repository.UserFileQuery{
+		UserID: "user-a", ViewerUserID: "user-a", SearchTerms: []string{"tag-private"}, Limit: 20,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(byKeyword) != 0 {
+		t.Fatalf("隐藏标签不应继续命中关键词搜索: %+v", byKeyword)
+	}
+
+	withoutViewerPreference, err := repo.ListFiltered(ctx, repository.UserFileQuery{
+		UserID: "user-a", TagIDs: []string{"tag-private"}, TagMode: "any", Limit: 20,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(withoutViewerPreference) != 2 {
+		t.Fatalf("用户偏好不应影响未指定查看者的内部查询: %+v", withoutViewerPreference)
+	}
+}
+
+func TestUserFileKeywordMatchesViewerDisplayName(t *testing.T) {
+	db := openUserFileFilterDB(t)
+	insertFilterFixture(t, db)
+	if err := db.Exec("INSERT INTO user_tag_preference(user_id,tag_id,hidden,display_name,normalized_display_name) VALUES('user-a','tag-private',0,'个人标签','个人标签')").Error; err != nil {
+		t.Fatal(err)
+	}
+	repo := NewUserFilesRepository(db)
+
+	files, err := repo.ListFiltered(context.Background(), repository.UserFileQuery{
+		UserID: "user-a", ViewerUserID: "user-a", SearchTerms: []string{"个人标签"}, Limit: 20,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(files) != 2 {
+		t.Fatalf("显示名称关键词未命中文件: %+v", files)
+	}
+	if err := db.Exec("UPDATE user_tag_preference SET hidden=1 WHERE user_id='user-a' AND tag_id='tag-private'").Error; err != nil {
+		t.Fatal(err)
+	}
+	files, err = repo.ListFiltered(context.Background(), repository.UserFileQuery{
+		UserID: "user-a", ViewerUserID: "user-a", SearchTerms: []string{"个人标签"}, Limit: 20,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(files) != 0 {
+		t.Fatalf("隐藏后显示名称仍命中文件: %+v", files)
+	}
+}
+
 func TestUserFileSearchDoesNotJoinFileInfoWhenUnused(t *testing.T) {
 	db := openUserFileFilterDB(t)
 	insertFilterFixture(t, db)
@@ -197,6 +268,7 @@ func openUserFileFilterDB(t *testing.T) *gorm.DB {
 		`CREATE TABLE tag_definition (id TEXT PRIMARY KEY, name TEXT NOT NULL, normalized_name TEXT NOT NULL, category_id TEXT NOT NULL)`,
 		`CREATE TABLE user_file_tag (id TEXT PRIMARY KEY, user_id TEXT NOT NULL, uf_id TEXT NOT NULL, tag_id TEXT NOT NULL, source_type TEXT NOT NULL, visibility TEXT NOT NULL)`,
 		`CREATE TABLE user_file_tag_exclusion (user_id TEXT NOT NULL, uf_id TEXT NOT NULL, tag_id TEXT NOT NULL, PRIMARY KEY(user_id,uf_id,tag_id))`,
+		`CREATE TABLE user_tag_preference (user_id TEXT NOT NULL, tag_id TEXT NOT NULL, hidden BOOLEAN NOT NULL DEFAULT 0, display_name TEXT NULL, normalized_display_name TEXT NULL, PRIMARY KEY(user_id,tag_id))`,
 	}
 	for _, statement := range statements {
 		if err := db.Exec(statement).Error; err != nil {

@@ -94,6 +94,20 @@ func TestMigrateTaggingSchemaIsIdempotentAndGrantsExistingPreviewGroups(t *testi
 			t.Fatalf("迁移后缺少表 %T", model)
 		}
 	}
+	if !db.Migrator().HasTable(&models.UserTagPreference{}) {
+		t.Fatal("缺少用户标签偏好表")
+	}
+	if !db.Migrator().HasIndex(&models.UserTagPreference{}, "idx_user_tag_preference_hidden") {
+		t.Fatal("缺少用户标签隐藏索引")
+	}
+	for _, column := range []string{"display_name", "normalized_display_name"} {
+		if !db.Migrator().HasColumn(&models.UserTagPreference{}, column) {
+			t.Fatalf("用户标签偏好表缺少字段 %s", column)
+		}
+	}
+	if !db.Migrator().HasIndex(&models.UserTagPreference{}, "idx_user_tag_preference_display_name") {
+		t.Fatal("缺少用户标签显示名称索引")
+	}
 	if !db.Migrator().HasIndex(&models.TagDefinition{}, "idx_tag_definition_system_code") {
 		t.Fatal("迁移后缺少系统标签编码唯一索引")
 	}

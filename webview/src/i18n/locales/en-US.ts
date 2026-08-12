@@ -1,6 +1,7 @@
 export default {
   route: {
     files: 'Files',
+    tags: 'Tag Cloud',
     shares: 'Shares',
     offline: 'Offline Download',
     subscriptions: 'Subscriptions',
@@ -21,6 +22,7 @@ export default {
   },
   mobileTab: {
     files: 'Files',
+    tags: 'Tag Cloud',
     offline: 'Offline',
     tasks: 'Tasks',
     square: 'Square',
@@ -110,6 +112,38 @@ export default {
       public: 'Public Features',
       admin: 'System Management'
     }
+  },
+  tagCloud: {
+    title: 'Tag Cloud',
+    description: 'Browse and manage your file tags by usage frequency',
+    total: '{count} active tags',
+    hint: 'Click a tag to search; right-click or long-press a regular tag to manage it',
+    empty: 'No active tags',
+    hiddenTitle: 'Hidden Tags',
+    hiddenCount: '{count} tags are hidden for this account',
+    restore: 'Restore Tag',
+    editTitle: 'Edit Tag: {name}',
+    displayName: 'Tag Name',
+    displayNamePlaceholder: 'Enter a tag name',
+    displayNameHint: 'Only changes the name shown for this account; other users are not affected',
+    nameRequired: 'Tag name is required',
+    displayCategory: 'Display Category',
+    aliases: 'Aliases',
+    aliasPlaceholder: 'Enter an alias and press Enter',
+    aliasHint: 'Filenames containing an alias will generate this tag. Saving rebuilds historical file tags.',
+    systemTag: 'System Tag',
+    more: 'Manage tag “{name}”',
+    edit: 'Edit Tag',
+    hide: 'Hide Tag',
+    hideConfirm: 'Hide “{name}” for this account only? Other users are not affected.',
+    hideSuccess: 'Tag hidden',
+    restoreSuccess: 'Tag restored and automatic tag rebuilding was queued',
+    saveSuccess: 'Tag settings saved',
+    loadFailed: 'Failed to load tag cloud',
+    operationFailed: 'Tag operation failed',
+    rebuildQueued: 'Aliases are active and historical tag rebuilding was queued',
+    lockedHint: 'System tags support system features and can only be searched',
+    fileCount: '{count} files'
   },
   layout: {
     sidebar: {

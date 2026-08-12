@@ -23,6 +23,7 @@ describe('手机路由元数据', () => {
       'me'
     ])
     expect(byPath.get('/subscriptions')?.meta).toMatchObject({ mobileParent: '/me', hideMobileNav: true })
+    expect(byPath.get('/tags')?.meta).toMatchObject({ mobileParent: '/me', hideMobileNav: true })
     expect(byPath.get('/settings/profile')?.meta).toMatchObject({ mobileParent: '/settings', hideMobileNav: true })
     expect(byPath.get('users')?.meta).toMatchObject({ mobileParent: '/admin', hideMobileNav: true })
   })

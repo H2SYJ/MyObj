@@ -982,10 +982,10 @@ func (s *SubscriptionService) queryFilesInternal(ctx context.Context, userID, sa
 		return pluginpkg.FileQueryResponse{}, fmt.Errorf("invalid_request")
 	}
 	for _, tagName := range tagsAll {
-		query = query.Where("EXISTS (SELECT 1 FROM user_file_tag uft JOIN tag_definition td ON td.id = uft.tag_id WHERE uft.user_id = user_files.user_id AND uft.uf_id = user_files.uf_id AND td.normalized_name = ? AND NOT EXISTS (SELECT 1 FROM user_file_tag_exclusion e WHERE e.user_id = uft.user_id AND e.uf_id = uft.uf_id AND e.tag_id = uft.tag_id))", tagName)
+		query = query.Where("EXISTS (SELECT 1 FROM user_file_tag uft JOIN tag_definition td ON td.id = uft.tag_id WHERE uft.user_id = user_files.user_id AND uft.uf_id = user_files.uf_id AND td.normalized_name = ? AND NOT EXISTS (SELECT 1 FROM user_file_tag_exclusion e WHERE e.user_id = uft.user_id AND e.uf_id = uft.uf_id AND e.tag_id = uft.tag_id) AND NOT EXISTS (SELECT 1 FROM user_tag_preference pref WHERE pref.user_id = uft.user_id AND pref.tag_id = uft.tag_id AND pref.hidden = ?))", tagName, true)
 	}
 	if len(tagsAny) > 0 {
-		query = query.Where("EXISTS (SELECT 1 FROM user_file_tag uft JOIN tag_definition td ON td.id = uft.tag_id WHERE uft.user_id = user_files.user_id AND uft.uf_id = user_files.uf_id AND td.normalized_name IN ? AND NOT EXISTS (SELECT 1 FROM user_file_tag_exclusion e WHERE e.user_id = uft.user_id AND e.uf_id = uft.uf_id AND e.tag_id = uft.tag_id))", tagsAny)
+		query = query.Where("EXISTS (SELECT 1 FROM user_file_tag uft JOIN tag_definition td ON td.id = uft.tag_id WHERE uft.user_id = user_files.user_id AND uft.uf_id = user_files.uf_id AND td.normalized_name IN ? AND NOT EXISTS (SELECT 1 FROM user_file_tag_exclusion e WHERE e.user_id = uft.user_id AND e.uf_id = uft.uf_id AND e.tag_id = uft.tag_id) AND NOT EXISTS (SELECT 1 FROM user_tag_preference pref WHERE pref.user_id = uft.user_id AND pref.tag_id = uft.tag_id AND pref.hidden = ?))", tagsAny, true)
 	}
 	queryPath, err := virtualpath.JoinSavePath(saveRoot, request.RelativePath)
 	if err != nil {
@@ -1112,6 +1112,7 @@ func (s *SubscriptionService) safeFileTags(ctx context.Context, userID, ufID str
 		Joins("JOIN tag_definition td ON td.id = uft.tag_id").
 		Where("uft.user_id = ? AND uft.uf_id = ?", userID, ufID).
 		Where("NOT EXISTS (SELECT 1 FROM user_file_tag_exclusion e WHERE e.user_id = uft.user_id AND e.uf_id = uft.uf_id AND e.tag_id = uft.tag_id)").
+		Where("NOT EXISTS (SELECT 1 FROM user_tag_preference pref WHERE pref.user_id = uft.user_id AND pref.tag_id = uft.tag_id AND pref.hidden = ?)", true).
 		Order("td.name ASC").Pluck("td.name", &names).Error
 	return names, err
 }

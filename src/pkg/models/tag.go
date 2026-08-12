@@ -66,6 +66,20 @@ type TagDefinition struct {
 
 func (TagDefinition) TableName() string { return "tag_definition" }
 
+// UserTagPreference 保存用户对共享标签的显示偏好，不改变标签定义和其他用户的数据。
+type UserTagPreference struct {
+	UserID                string    `gorm:"column:user_id;type:varchar(64);not null;primaryKey;index:idx_user_tag_preference_hidden,priority:1;index:idx_user_tag_preference_display_name,priority:1" json:"user_id"`
+	TagID                 string    `gorm:"column:tag_id;type:varchar(64);not null;primaryKey;index" json:"tag_id"`
+	Hidden                bool      `gorm:"column:hidden;type:boolean;not null;default:false;index:idx_user_tag_preference_hidden,priority:2" json:"hidden"`
+	DisplayName           *string   `gorm:"column:display_name;type:varchar(255)" json:"display_name,omitempty"`
+	NormalizedDisplayName *string   `gorm:"column:normalized_display_name;type:varchar(191);index:idx_user_tag_preference_display_name,priority:2" json:"normalized_display_name,omitempty"`
+	DisplayCategoryID     *string   `gorm:"column:display_category_id;type:varchar(64);index" json:"display_category_id,omitempty"`
+	CreatedAt             time.Time `gorm:"column:created_at;type:datetime;not null" json:"created_at"`
+	UpdatedAt             time.Time `gorm:"column:updated_at;type:datetime;not null" json:"updated_at"`
+}
+
+func (UserTagPreference) TableName() string { return "user_tag_preference" }
+
 // UserFileTag 保存用户文件与标签之间的一条来源绑定。
 type UserFileTag struct {
 	ID          string    `gorm:"column:id;type:varchar(64);primaryKey" json:"id"`

@@ -74,6 +74,12 @@ export const routes: RouteRecordRaw[] = [
         meta: { title: '我的分享', i18nKey: 'route.shares', mobileParent: '/me', hideMobileNav: true }
       },
       {
+        path: '/tags',
+        name: 'Tags',
+        component: () => import('@/views/Tags/index.vue'),
+        meta: { title: '标签云', i18nKey: 'route.tags', mobileParent: '/me', hideMobileNav: true }
+      },
+      {
         path: '/offline',
         name: 'Offline',
         component: () => import('@/views/Offline/index.vue'),

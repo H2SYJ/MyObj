@@ -414,6 +414,9 @@ func (s *TagService) jobVersionCurrent(job *models.TagRebuildJob) bool {
 		return runtime != nil && runtime.snapshot != nil && runtime.snapshot.GlobalVersion == job.TargetVersion
 	}
 	personal, err := s.loadActiveRuleSet(s.ctx, models.TagRuleScopeUser, job.ScopeID)
+	if errors.Is(err, gorm.ErrRecordNotFound) && job.TargetVersion == 0 {
+		return true
+	}
 	return err == nil && personal.Version == job.TargetVersion
 }
 

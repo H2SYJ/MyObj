@@ -336,7 +336,7 @@ func TestClaimRebuildStateInvalidatesOlderFileWorker(t *testing.T) {
 func TestTagSuggestionsIncludeOnlyOwnedOrPubliclyAllowedTags(t *testing.T) {
 	service, db := newTagFailureTestService(t,
 		&models.TagCategory{}, &models.TagDefinition{}, &tagFailureTestUserFile{},
-		&models.UserFileTag{}, &models.UserFileTagExclusion{},
+		&models.UserFileTag{}, &models.UserFileTagExclusion{}, &models.UserTagPreference{},
 	)
 	now := time.Now()
 	if err := db.Create(&models.TagCategory{ID: "other", Code: "other", Name: "其他", Color: "#999999", Enabled: true, CreatedAt: now, UpdatedAt: now}).Error; err != nil {

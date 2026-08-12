@@ -118,6 +118,40 @@ export interface AdminTagSettings {
   providers: TagProviderSettings
 }
 
+export interface TagCloudItem {
+  id: string
+  name: string
+  base_name: string
+  category: TagCategory
+  base_category: TagCategory
+  file_count: number
+  hidden: boolean
+  system: boolean
+  system_code?: string
+}
+
+export interface TagCloudData {
+  tags: TagCloudItem[]
+  hidden: TagCloudItem[]
+}
+
+export interface TagCloudEditorData {
+  tag: TagCloudItem
+  aliases: string[]
+}
+
+export const getTagCloud = () => get<ApiResponse<TagCloudData>>(API_ENDPOINTS.FILE.TAG_CLOUD)
+export const getTagCloudItem = (tagId: string) =>
+  get<ApiResponse<TagCloudEditorData>>(`${API_ENDPOINTS.FILE.TAG_CLOUD}/${tagId}`)
+export const updateTagCloudItem = (tagId: string, displayName: string, displayCategoryId: string, aliases: string[]) =>
+  put<ApiResponse<{ editor: TagCloudEditorData; rebuild_job?: TagRebuildJob }>>(
+    `${API_ENDPOINTS.FILE.TAG_CLOUD}/${tagId}`,
+    { display_name: displayName, display_category_id: displayCategoryId, aliases }
+  )
+export const hideTagCloudItem = (tagId: string) => del<ApiResponse<null>>(`${API_ENDPOINTS.FILE.TAG_CLOUD}/${tagId}`)
+export const restoreTagCloudItem = (tagId: string) =>
+  post<ApiResponse<{ rebuild_job?: TagRebuildJob }>>(`${API_ENDPOINTS.FILE.TAG_CLOUD}/${tagId}/restore`)
+
 export const getFileTags = (fileId: string) => get<ApiResponse<FileTagsData>>(`${API_ENDPOINTS.FILE.TAGS}/${fileId}`)
 
 export const updateManualTags = (fileId: string, add: ManualTagInput[], removeTagIds: string[]) =>

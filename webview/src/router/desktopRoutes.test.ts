@@ -34,10 +34,17 @@ describe('桌面路由元数据', () => {
     expect(enUS.route.tasks).toBe('Transfer List')
   })
 
+  it('标签云提供独立路由并可从桌面菜单进入', () => {
+    const byPath = new Map(flatten(routes).map(record => [record.path, record]))
+    expect(byPath.get('/tags')?.meta?.i18nKey).toBe('route.tags')
+    expect(zhCN.route.tags).toBe('标签云')
+    expect(enUS.route.tags).toBe('Tag Cloud')
+  })
+
   it('影视模式使用独立鉴权路由并提供首页、目录和播放页', () => {
     const cinema = routes.find(record => record.path === '/cinema/:rootDirectoryId')
     expect(cinema?.meta?.requiresAuth).toBe(true)
-    expect(cinema?.children?.map(record => record.path)).toEqual(['', 'folder/:directoryId', 'watch/:fileId'])
+    expect(cinema?.children?.map(record => record.path)).toEqual(['', 'folder/:directoryId', 'latest', 'watch/:fileId'])
     const appLayout = routes.find(record => record.name === 'Layout')
     expect(appLayout?.children?.some(record => String(record.path).startsWith('/cinema'))).toBe(false)
   })

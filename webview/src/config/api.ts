@@ -62,6 +62,7 @@ export const API_ENDPOINTS = {
     TAGS: '/file/tags',
     TAG_SUGGESTIONS: '/file/tags/suggestions',
     TAG_CATEGORIES: '/file/tag-categories',
+    TAG_CLOUD: '/file/tag-cloud',
     TAG_DICTIONARY: '/file/tag-dictionary',
     // 设置文件公开状态
     SET_PUBLIC: '/file/setPublic'

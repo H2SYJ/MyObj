@@ -298,8 +298,17 @@ func (s *TagService) PersonalDictionary(ctx context.Context, userID string) (*mo
 }
 
 func (s *TagService) SavePersonalDictionary(ctx context.Context, userID string, inputs []request.TagRuleInput) (*models.TagRuleSet, *models.TagRebuildJob, error) {
+	ruleSet, job, err := s.savePersonalDictionary(ctx, userID, inputs, s.factory.DB())
+	if err != nil {
+		return nil, nil, err
+	}
+	s.afterPersonalDictionarySaved(userID)
+	return ruleSet, job, nil
+}
+
+func (s *TagService) savePersonalDictionary(ctx context.Context, userID string, inputs []request.TagRuleInput, db *gorm.DB) (*models.TagRuleSet, *models.TagRebuildJob, error) {
 	var maxVersion int64
-	if err := s.factory.DB().WithContext(ctx).Model(&models.TagRuleSet{}).
+	if err := db.WithContext(ctx).Model(&models.TagRuleSet{}).
 		Where("scope_type = ? AND scope_id = ?", models.TagRuleScopeUser, userID).
 		Select("COALESCE(MAX(version), 0)").Scan(&maxVersion).Error; err != nil {
 		return nil, nil, err
@@ -330,7 +339,7 @@ func (s *TagService) SavePersonalDictionary(ctx context.Context, userID string, 
 		TargetVersion: ruleSet.Version, Status: "pending", RequestedBy: userID,
 		CreatedAt: now, UpdatedAt: now,
 	}
-	err = s.factory.DB().WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+	err = db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		if err := tx.Model(&models.TagRuleSet{}).
 			Where("scope_type = ? AND scope_id = ? AND status = ?", models.TagRuleScopeUser, userID, models.TagRuleSetActive).
 			Updates(map[string]interface{}{"status": models.TagRuleSetArchived, "updated_at": now}).Error; err != nil {
@@ -358,10 +367,13 @@ func (s *TagService) SavePersonalDictionary(ctx context.Context, userID string, 
 	if err != nil {
 		return nil, nil, err
 	}
+	return ruleSet, job, nil
+}
+
+func (s *TagService) afterPersonalDictionarySaved(userID string) {
 	s.invalidateUserCache(userID)
 	s.notifyRules()
 	s.notifyRebuild()
-	return ruleSet, job, nil
 }
 
 func (s *TagService) PreviewRules(ctx context.Context, userID string, samples []string, inputs []request.TagRuleInput, personal bool) ([]response.TagPreviewItem, error) {
@@ -500,12 +512,21 @@ func (s *TagService) UpdateTagSettings(ctx context.Context, enabled bool, limit 
 }
 
 func (s *TagService) CreateRebuildJob(ctx context.Context, scopeType, scopeID string, targetVersion int64, requestedBy string) (*models.TagRebuildJob, error) {
+	job, err := s.createRebuildJob(ctx, scopeType, scopeID, targetVersion, requestedBy, s.factory.DB())
+	if err != nil {
+		return nil, err
+	}
+	s.notifyRebuild()
+	return job, nil
+}
+
+func (s *TagService) createRebuildJob(ctx context.Context, scopeType, scopeID string, targetVersion int64, requestedBy string, db *gorm.DB) (*models.TagRebuildJob, error) {
 	now := time.Now()
 	job := &models.TagRebuildJob{
 		ID: uuid.NewString(), ScopeType: scopeType, ScopeID: scopeID, TargetVersion: targetVersion,
 		Status: "pending", RequestedBy: requestedBy, CreatedAt: now, UpdatedAt: now,
 	}
-	if err := s.factory.DB().WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+	if err := db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		unfinished := tx.Model(&models.TagRebuildJob{}).
 			Where("scope_type = ? AND scope_id = ? AND status IN ?", scopeType, scopeID, []string{"pending", "running"})
 		if err := unfinished.Updates(map[string]interface{}{
@@ -525,7 +546,6 @@ func (s *TagService) CreateRebuildJob(ctx context.Context, scopeType, scopeID st
 	}); err != nil {
 		return nil, err
 	}
-	s.notifyRebuild()
 	return job, nil
 }
 

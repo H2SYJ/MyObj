@@ -1,6 +1,7 @@
 export default {
   route: {
     files: '我的文件',
+    tags: '标签云',
     shares: '我的分享',
     offline: '离线下载',
     subscriptions: '订阅管理',
@@ -95,6 +96,7 @@ export default {
   },
   menu: {
     files: '我的文件',
+    tags: '标签云',
     shares: '我的分享',
     tasks: '传输列表',
     offline: '离线下载',
@@ -111,6 +113,38 @@ export default {
       public: '公共功能',
       admin: '系统管理'
     }
+  },
+  tagCloud: {
+    title: '标签云',
+    description: '按使用频率浏览和管理你的文件标签',
+    total: '共 {count} 个在用标签',
+    hint: '点击标签搜索文件，右键或长按可管理普通标签',
+    empty: '暂无在用标签',
+    hiddenTitle: '已隐藏标签',
+    hiddenCount: '{count} 个标签已对当前账号隐藏',
+    restore: '恢复标签',
+    editTitle: '编辑标签：{name}',
+    displayName: '标签名称',
+    displayNamePlaceholder: '请输入标签名称',
+    displayNameHint: '仅修改当前账号看到的名称，不影响其他用户',
+    nameRequired: '标签名称不能为空',
+    displayCategory: '显示分类',
+    aliases: '别名',
+    aliasPlaceholder: '输入别名后按回车',
+    aliasHint: '文件名包含别名时将生成当前标签，保存后会重建历史文件标签',
+    systemTag: '系统标签',
+    more: '管理标签“{name}”',
+    edit: '编辑标签',
+    hide: '隐藏标签',
+    hideConfirm: '仅对当前账号隐藏标签“{name}”，不会影响其他用户。确定继续吗？',
+    hideSuccess: '标签已隐藏',
+    restoreSuccess: '标签已恢复，自动标签重建已排队',
+    saveSuccess: '标签设置已保存',
+    loadFailed: '标签云加载失败',
+    operationFailed: '标签操作失败',
+    rebuildQueued: '别名已生效，历史文件标签重建已排队',
+    lockedHint: '系统标签用于系统功能，只能搜索',
+    fileCount: '{count} 个文件'
   },
   layout: {
     sidebar: {

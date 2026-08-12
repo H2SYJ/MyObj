@@ -32,6 +32,7 @@ func migrateTaggingSchema(db *gorm.DB) error {
 		&schemaMigration{},
 		&models.TagCategory{},
 		&models.TagDefinition{},
+		&models.UserTagPreference{},
 		&models.UserFileTag{},
 		&models.UserDirectoryTag{},
 		&models.UserFileTagExclusion{},

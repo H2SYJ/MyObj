@@ -20,7 +20,7 @@ func TestSubscriptionFileQueriesAreLimitedToSaveRoot(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := db.AutoMigrate(&models.FileInfo{}, &models.VirtualDirectory{}, &models.TagDefinition{}, &models.UserFileTag{}, &models.UserFileTagExclusion{}); err != nil {
+	if err := db.AutoMigrate(&models.FileInfo{}, &models.VirtualDirectory{}, &models.TagDefinition{}, &models.UserFileTag{}, &models.UserFileTagExclusion{}, &models.UserTagPreference{}); err != nil {
 		t.Fatal(err)
 	}
 	if err := db.Exec(`CREATE TABLE user_files (

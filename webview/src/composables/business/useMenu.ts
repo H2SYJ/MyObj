@@ -37,6 +37,7 @@ export function useMenu() {
         title: t('menu.groups.main'),
         items: [
           { path: '/files', label: t('menu.files'), icon: 'Folder' },
+          { path: '/tags', label: t('menu.tags'), icon: 'CollectionTag' },
           { path: '/shares', label: t('menu.shares'), icon: 'Share' },
           { path: '/offline', label: t('menu.offline'), icon: 'Download' },
           { path: '/subscriptions', label: t('menu.subscriptions'), icon: 'Clock' },

@@ -431,7 +431,7 @@ func (f *FileService) SearchUserFiles(req *request.FileSearchRequest, userID str
 	}
 	sortBy, sortOrder := normalizeFileSort(req.SortBy, req.SortOrder)
 	query := repository.UserFileQuery{
-		UserID: userID, SearchTerms: terms, TagIDs: tagIDs, TagMode: tagMode,
+		UserID: userID, ViewerUserID: userID, SearchTerms: terms, TagIDs: tagIDs, TagMode: tagMode,
 		FileType: req.Type, SortBy: sortBy, SortOrder: sortOrder,
 		Offset: (page - 1) * pageSize, Limit: pageSize,
 	}
@@ -453,7 +453,7 @@ func (f *FileService) SearchUserFiles(req *request.FileSearchRequest, userID str
 }
 
 // SearchPublicFiles 搜索公开文件（广场）
-func (f *FileService) SearchPublicFiles(req *request.FileSearchRequest) (*models.JsonResponse, error) {
+func (f *FileService) SearchPublicFiles(req *request.FileSearchRequest, viewerUserID string) (*models.JsonResponse, error) {
 	ctx := context.Background()
 	page, pageSize := normalizeFilePage(req.Page, req.PageSize)
 	tagIDs, tagMode, err := normalizeTagFilter(req.TagIDs, req.TagMode)
@@ -469,7 +469,7 @@ func (f *FileService) SearchPublicFiles(req *request.FileSearchRequest) (*models
 	}
 	sortBy, sortOrder := normalizeFileSort(req.SortBy, req.SortOrder)
 	query := repository.UserFileQuery{
-		PublicOnly: true, SearchTerms: terms, TagIDs: tagIDs, TagMode: tagMode,
+		PublicOnly: true, ViewerUserID: viewerUserID, SearchTerms: terms, TagIDs: tagIDs, TagMode: tagMode,
 		FileType: req.Type, SortBy: sortBy, SortOrder: sortOrder,
 		Offset: (page - 1) * pageSize, Limit: pageSize,
 	}
@@ -477,7 +477,7 @@ func (f *FileService) SearchPublicFiles(req *request.FileSearchRequest) (*models
 	if err != nil {
 		return nil, err
 	}
-	items, err := f.buildSearchFileItems(ctx, userFiles, true)
+	items, err := f.buildSearchFileItems(ctx, userFiles, true, viewerUserID)
 	if err != nil {
 		return nil, err
 	}
@@ -530,7 +530,7 @@ func (f *FileService) GetFileList(req *request.FileListRequest, userID string) (
 		}
 	}
 	fileQuery := repository.UserFileQuery{
-		UserID: userID, DirectoryID: &currentDirectoryID, TagIDs: tagIDs, TagMode: tagMode,
+		UserID: userID, ViewerUserID: userID, DirectoryID: &currentDirectoryID, TagIDs: tagIDs, TagMode: tagMode,
 		FileType: req.Type, SortBy: sortBy, SortOrder: sortOrder,
 	}
 	fileCount, err := f.factory.UserFiles().CountFiltered(ctx, fileQuery)
@@ -653,7 +653,7 @@ func (f *FileService) GetFileList(req *request.FileListRequest, userID string) (
 	tagMap := make(map[string][]response.CompactTagView)
 	stateMap := make(map[string]string)
 	if f.tagService != nil {
-		tagMap, err = f.tagService.CompactTags(ctx, userID, ufIDs, false)
+		tagMap, err = f.tagService.CompactTags(ctx, userID, userID, ufIDs, false)
 		if err != nil {
 			return nil, err
 		}
@@ -746,7 +746,7 @@ func (f *FileService) searchTerms(ctx context.Context, userID, keyword string) (
 	return f.tagService.SearchTerms(ctx, userID, keyword)
 }
 
-func (f *FileService) buildSearchFileItems(ctx context.Context, userFiles []*models.UserFiles, publicOnly bool) ([]response.SearchFileItem, error) {
+func (f *FileService) buildSearchFileItems(ctx context.Context, userFiles []*models.UserFiles, publicOnly bool, viewerUserIDs ...string) ([]response.SearchFileItem, error) {
 	if len(userFiles) == 0 {
 		return []response.SearchFileItem{}, nil
 	}
@@ -780,7 +780,14 @@ func (f *FileService) buildSearchFileItems(ctx context.Context, userFiles []*mod
 	states := make(map[string]string)
 	if f.tagService != nil {
 		var err error
-		tags, err = f.tagService.CompactTags(ctx, "", ufIDs, publicOnly)
+		ownerUserID, viewerUserID := "", ""
+		if !publicOnly && len(userFiles) > 0 {
+			ownerUserID, viewerUserID = userFiles[0].UserID, userFiles[0].UserID
+		}
+		if len(viewerUserIDs) > 0 {
+			viewerUserID = viewerUserIDs[0]
+		}
+		tags, err = f.tagService.CompactTags(ctx, ownerUserID, viewerUserID, ufIDs, publicOnly)
 		if err != nil {
 			return nil, err
 		}

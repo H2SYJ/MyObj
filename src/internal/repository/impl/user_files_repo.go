@@ -4,6 +4,7 @@ import (
 	"context"
 	"myobj/src/pkg/models"
 	"myobj/src/pkg/repository"
+	"myobj/src/pkg/tagging"
 	"strings"
 
 	"gorm.io/gorm"
@@ -30,26 +31,39 @@ func (r *userFilesRepository) filteredQuery(ctx context.Context, input repositor
 		if term == "" {
 			continue
 		}
-		like := "%" + term + "%"
+		fileLike := "%" + term + "%"
+		tagLike := "%" + tagging.Normalize(term) + "%"
+		preferenceJoin := ""
+		tagNameCondition := "td.normalized_name LIKE ?"
+		preferenceFilter := ""
 		tagVisibility := ""
-		args := []interface{}{like, like}
+		args := []interface{}{fileLike}
+		if input.ViewerUserID != "" {
+			preferenceJoin = " LEFT JOIN user_tag_preference viewer_pref ON viewer_pref.tag_id = uft.tag_id AND viewer_pref.user_id = ?"
+			tagNameCondition = "(td.normalized_name LIKE ? OR viewer_pref.normalized_display_name LIKE ?)"
+			preferenceFilter = " AND COALESCE(viewer_pref.hidden, false) = false"
+			args = append(args, input.ViewerUserID, tagLike, tagLike)
+		} else {
+			args = append(args, tagLike)
+		}
 		if input.PublicOnly {
 			tagVisibility = " AND (uft.source_type <> ? OR uft.visibility = ?)"
 			args = append(args, models.TagSourceManual, models.TagVisibilityPublic)
 		}
 		query = query.Where(
-			"(user_files.file_name LIKE ? OR EXISTS (SELECT 1 FROM user_file_tag uft JOIN tag_definition td ON td.id = uft.tag_id WHERE uft.user_id = user_files.user_id AND uft.uf_id = user_files.uf_id AND td.normalized_name LIKE ?"+
-				tagVisibility+" AND NOT EXISTS (SELECT 1 FROM user_file_tag_exclusion e WHERE e.user_id = uft.user_id AND e.uf_id = uft.uf_id AND e.tag_id = uft.tag_id)))",
+			"(user_files.file_name LIKE ? OR EXISTS (SELECT 1 FROM user_file_tag uft JOIN tag_definition td ON td.id = uft.tag_id"+preferenceJoin+" WHERE uft.user_id = user_files.user_id AND uft.uf_id = user_files.uf_id AND "+tagNameCondition+
+				tagVisibility+" AND NOT EXISTS (SELECT 1 FROM user_file_tag_exclusion e WHERE e.user_id = uft.user_id AND e.uf_id = uft.uf_id AND e.tag_id = uft.tag_id)"+
+				preferenceFilter+"))",
 			args...,
 		)
 	}
 	tagIDs := uniqueNonEmpty(input.TagIDs)
 	if len(tagIDs) > 0 {
 		if input.TagMode == "any" {
-			query = query.Where(tagExistsSQL(input.PublicOnly, true), tagExistsArgs(input.PublicOnly, tagIDs)...)
+			query = query.Where(tagExistsSQL(input.PublicOnly, true, input.ViewerUserID), tagExistsArgs(input.PublicOnly, tagIDs, input.ViewerUserID)...)
 		} else {
 			for _, tagID := range tagIDs {
-				query = query.Where(tagExistsSQL(input.PublicOnly, false), tagExistsArgs(input.PublicOnly, tagID)...)
+				query = query.Where(tagExistsSQL(input.PublicOnly, false, input.ViewerUserID), tagExistsArgs(input.PublicOnly, tagID, input.ViewerUserID)...)
 			}
 		}
 	}
@@ -97,7 +111,21 @@ func needsFileInfoJoin(query repository.UserFileQuery, includeSortJoin bool) boo
 	return includeSortJoin && query.SortBy == "size"
 }
 
-func tagExistsSQL(publicOnly, multiple bool) string {
+func tagPreferenceSQL(viewerUserID string) string {
+	if viewerUserID == "" {
+		return ""
+	}
+	return " AND NOT EXISTS (SELECT 1 FROM user_tag_preference pref WHERE pref.user_id = ? AND pref.tag_id = uft.tag_id AND pref.hidden = ?)"
+}
+
+func tagPreferenceArgs(viewerUserID string) []interface{} {
+	if viewerUserID == "" {
+		return nil
+	}
+	return []interface{}{viewerUserID, true}
+}
+
+func tagExistsSQL(publicOnly, multiple bool, viewerUserID string) string {
 	operator := "= ?"
 	if multiple {
 		operator = "IN ?"
@@ -107,14 +135,15 @@ func tagExistsSQL(publicOnly, multiple bool) string {
 		visibility = " AND (uft.source_type <> ? OR uft.visibility = ?)"
 	}
 	return "EXISTS (SELECT 1 FROM user_file_tag uft WHERE uft.user_id = user_files.user_id AND uft.uf_id = user_files.uf_id AND uft.tag_id " + operator + visibility +
-		" AND NOT EXISTS (SELECT 1 FROM user_file_tag_exclusion e WHERE e.user_id = uft.user_id AND e.uf_id = uft.uf_id AND e.tag_id = uft.tag_id))"
+		" AND NOT EXISTS (SELECT 1 FROM user_file_tag_exclusion e WHERE e.user_id = uft.user_id AND e.uf_id = uft.uf_id AND e.tag_id = uft.tag_id)" + tagPreferenceSQL(viewerUserID) + ")"
 }
 
-func tagExistsArgs(publicOnly bool, tagIDs interface{}) []interface{} {
+func tagExistsArgs(publicOnly bool, tagIDs interface{}, viewerUserID string) []interface{} {
 	args := []interface{}{tagIDs}
 	if publicOnly {
 		args = append(args, models.TagSourceManual, models.TagVisibilityPublic)
 	}
+	args = append(args, tagPreferenceArgs(viewerUserID)...)
 	return args
 }
 

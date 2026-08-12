@@ -53,6 +53,12 @@ type TagPreviewRequest struct {
 	Rules   []TagRuleInput `json:"rules"`
 }
 
+type UpdateTagCloudItemRequest struct {
+	DisplayName       string   `json:"display_name"`
+	DisplayCategoryID string   `json:"display_category_id"`
+	Aliases           []string `json:"aliases" binding:"max=100"`
+}
+
 type AdminTagCategoryRequest struct {
 	ID        string `json:"id"`
 	Code      string `json:"code" binding:"required"`

@@ -408,6 +408,13 @@ func (s *TagService) generateUserFile(ctx context.Context, userID, ufID, runToke
 		for _, id := range excluded {
 			excludedSet[id] = struct{}{}
 		}
+		var hidden []string
+		if err := tx.Model(&models.UserTagPreference{}).Where("user_id = ? AND hidden = ?", userID, true).Pluck("tag_id", &hidden).Error; err != nil {
+			return err
+		}
+		for _, id := range hidden {
+			excludedSet[id] = struct{}{}
+		}
 		for _, candidate := range candidates {
 			tag, tagErr := ensureTagDefinition(tx, candidate.Name, candidate.CategoryID)
 			if tagErr != nil {
@@ -586,25 +593,28 @@ type compactTagRow struct {
 	SystemCode   string
 }
 
-func (s *TagService) CompactTags(ctx context.Context, userID string, ufIDs []string, publicOnly bool) (map[string][]response.CompactTagView, error) {
+func (s *TagService) CompactTags(ctx context.Context, ownerUserID, viewerUserID string, ufIDs []string, publicOnly bool) (map[string][]response.CompactTagView, error) {
 	result := make(map[string][]response.CompactTagView, len(ufIDs))
 	if len(ufIDs) == 0 {
 		return result, nil
 	}
 	query := s.factory.DB().WithContext(ctx).Table("user_file_tag AS uft").
-		Select("uft.uf_id, td.id, td.name, tc.code AS category_code, tc.color, uft.visibility, uft.source_type, td.system_code").
+		Select("uft.uf_id, td.id, COALESCE(pref.display_name, td.name) AS name, COALESCE(display.code, tc.code) AS category_code, COALESCE(display.color, tc.color) AS color, uft.visibility, uft.source_type, td.system_code").
 		Joins("JOIN tag_definition td ON td.id = uft.tag_id").
 		Joins("JOIN tag_category tc ON tc.id = td.category_id").
+		Joins("LEFT JOIN user_tag_preference pref ON pref.tag_id = td.id AND pref.user_id = ?", viewerUserID).
+		Joins("LEFT JOIN tag_category display ON display.id = pref.display_category_id AND display.enabled = ?", true).
 		Where("uft.uf_id IN ?", ufIDs).
-		Where("NOT EXISTS (SELECT 1 FROM user_file_tag_exclusion e WHERE e.user_id = uft.user_id AND e.uf_id = uft.uf_id AND e.tag_id = uft.tag_id)")
-	if userID != "" {
-		query = query.Where("uft.user_id = ?", userID)
+		Where("NOT EXISTS (SELECT 1 FROM user_file_tag_exclusion e WHERE e.user_id = uft.user_id AND e.uf_id = uft.uf_id AND e.tag_id = uft.tag_id)").
+		Where("COALESCE(pref.hidden, ?) = ?", false, false)
+	if ownerUserID != "" {
+		query = query.Where("uft.user_id = ?", ownerUserID)
 	}
 	if publicOnly {
 		query = query.Where("uft.source_type <> ? OR uft.visibility = ?", models.TagSourceManual, models.TagVisibilityPublic)
 	}
 	var rows []compactTagRow
-	if err := query.Order("tc.sort_order ASC, td.name ASC").Scan(&rows).Error; err != nil {
+	if err := query.Order("tc.sort_order ASC, COALESCE(pref.display_name, td.name) ASC, td.id ASC").Scan(&rows).Error; err != nil {
 		return nil, err
 	}
 	seen := make(map[string]struct{})
@@ -638,11 +648,14 @@ func (s *TagService) CompactDirectoryTags(ctx context.Context, userID string, di
 	}
 	var rows []compactDirectoryTagRow
 	err := s.factory.DB().WithContext(ctx).Table("user_directory_tag AS udt").
-		Select("udt.directory_id, td.id, td.name, tc.code AS category_code, tc.color, td.system_code").
+		Select("udt.directory_id, td.id, COALESCE(pref.display_name, td.name) AS name, COALESCE(display.code, tc.code) AS category_code, COALESCE(display.color, tc.color) AS color, td.system_code").
 		Joins("JOIN tag_definition td ON td.id = udt.tag_id").
 		Joins("JOIN tag_category tc ON tc.id = td.category_id").
+		Joins("LEFT JOIN user_tag_preference pref ON pref.tag_id = td.id AND pref.user_id = ?", userID).
+		Joins("LEFT JOIN tag_category display ON display.id = pref.display_category_id AND display.enabled = ?", true).
 		Where("udt.user_id = ? AND udt.directory_id IN ?", userID, directoryIDs).
-		Order("tc.sort_order ASC, td.name ASC").Scan(&rows).Error
+		Where("COALESCE(pref.hidden, ?) = ?", false, false).
+		Order("tc.sort_order ASC, COALESCE(pref.display_name, td.name) ASC, td.id ASC").Scan(&rows).Error
 	if err != nil {
 		return nil, err
 	}
@@ -661,11 +674,14 @@ func (s *TagService) GetDirectoryTags(ctx context.Context, userID string, direct
 	}
 	var rows []detailedTagRow
 	err := s.factory.DB().WithContext(ctx).Table("user_directory_tag AS udt").
-		Select("td.id, td.name, tc.id AS category_id, tc.code AS category_code, tc.name AS category_name, tc.color").
+		Select("td.id, COALESCE(pref.display_name, td.name) AS name, COALESCE(display.id, tc.id) AS category_id, COALESCE(display.code, tc.code) AS category_code, COALESCE(display.name, tc.name) AS category_name, COALESCE(display.color, tc.color) AS color").
 		Joins("JOIN tag_definition td ON td.id = udt.tag_id").
 		Joins("JOIN tag_category tc ON tc.id = td.category_id").
+		Joins("LEFT JOIN user_tag_preference pref ON pref.tag_id = td.id AND pref.user_id = ?", userID).
+		Joins("LEFT JOIN tag_category display ON display.id = pref.display_category_id AND display.enabled = ?", true).
 		Where("udt.user_id = ? AND udt.directory_id = ?", userID, directoryID).
-		Order("tc.sort_order ASC, td.name ASC").Scan(&rows).Error
+		Where("COALESCE(pref.hidden, ?) = ?", false, false).
+		Order("tc.sort_order ASC, COALESCE(pref.display_name, td.name) ASC, td.id ASC").Scan(&rows).Error
 	if err != nil {
 		return nil, err
 	}
@@ -767,11 +783,14 @@ func (s *TagService) GetFileTags(ctx context.Context, userID, ufID string) (*res
 	}
 	var rows []detailedTagRow
 	err := s.factory.DB().WithContext(ctx).Table("user_file_tag AS uft").
-		Select("td.id, td.name, tc.id AS category_id, tc.code AS category_code, tc.name AS category_name, tc.color, uft.source_type, uft.visibility").
+		Select("td.id, COALESCE(pref.display_name, td.name) AS name, COALESCE(display.id, tc.id) AS category_id, COALESCE(display.code, tc.code) AS category_code, COALESCE(display.name, tc.name) AS category_name, COALESCE(display.color, tc.color) AS color, uft.source_type, uft.visibility").
 		Joins("JOIN tag_definition td ON td.id = uft.tag_id").
 		Joins("JOIN tag_category tc ON tc.id = td.category_id").
+		Joins("LEFT JOIN user_tag_preference pref ON pref.tag_id = td.id AND pref.user_id = ?", userID).
+		Joins("LEFT JOIN tag_category display ON display.id = pref.display_category_id AND display.enabled = ?", true).
 		Where("uft.user_id = ? AND uft.uf_id = ?", userID, ufID).
-		Order("tc.sort_order ASC, td.name ASC").Scan(&rows).Error
+		Where("COALESCE(pref.hidden, ?) = ?", false, false).
+		Order("tc.sort_order ASC, COALESCE(pref.display_name, td.name) ASC, td.id ASC").Scan(&rows).Error
 	if err != nil {
 		return nil, err
 	}
@@ -802,10 +821,14 @@ func (s *TagService) GetFileTags(ctx context.Context, userID, ufID string) (*res
 
 	var suppressed []detailedTagRow
 	if err := s.factory.DB().WithContext(ctx).Table("user_file_tag_exclusion AS e").
-		Select("td.id, td.name, tc.id AS category_id, tc.code AS category_code, tc.name AS category_name, tc.color").
+		Select("td.id, COALESCE(pref.display_name, td.name) AS name, COALESCE(display.id, tc.id) AS category_id, COALESCE(display.code, tc.code) AS category_code, COALESCE(display.name, tc.name) AS category_name, COALESCE(display.color, tc.color) AS color").
 		Joins("JOIN tag_definition td ON td.id = e.tag_id").
 		Joins("JOIN tag_category tc ON tc.id = td.category_id").
-		Where("e.user_id = ? AND e.uf_id = ?", userID, ufID).Scan(&suppressed).Error; err != nil {
+		Joins("LEFT JOIN user_tag_preference pref ON pref.tag_id = td.id AND pref.user_id = ?", userID).
+		Joins("LEFT JOIN tag_category display ON display.id = pref.display_category_id AND display.enabled = ?", true).
+		Where("e.user_id = ? AND e.uf_id = ?", userID, ufID).
+		Where("COALESCE(pref.hidden, ?) = ?", false, false).
+		Scan(&suppressed).Error; err != nil {
 		return nil, err
 	}
 	for _, row := range suppressed {
@@ -949,8 +972,11 @@ func (s *TagService) SuggestionsForTarget(ctx context.Context, userID, keyword s
 		SystemCode   string
 	}
 	query := s.factory.DB().WithContext(ctx).Table("tag_definition td").Distinct().
-		Select("td.id, td.name, tc.code AS category_code, tc.color, td.system_code").
-		Joins("JOIN tag_category tc ON tc.id = td.category_id").Where("tc.enabled = ?", true)
+		Select("td.id, COALESCE(pref.display_name, td.name) AS name, COALESCE(display.code, tc.code) AS category_code, COALESCE(display.color, tc.color) AS color, td.system_code").
+		Joins("JOIN tag_category tc ON tc.id = td.category_id").
+		Joins("LEFT JOIN user_tag_preference pref ON pref.tag_id = td.id AND pref.user_id = ?", userID).
+		Joins("LEFT JOIN tag_category display ON display.id = pref.display_category_id AND display.enabled = ?", true).
+		Where("tc.enabled = ?", true).Where("COALESCE(pref.hidden, ?) = ?", false, false)
 	if target == "directory" {
 		query = query.Where(`td.builtin = ? OR EXISTS (
 			SELECT 1 FROM user_file_tag uft JOIN user_files uf ON uf.user_id = uft.user_id AND uf.uf_id = uft.uf_id
@@ -977,10 +1003,11 @@ func (s *TagService) SuggestionsForTarget(ctx context.Context, userID, keyword s
 		query = query.Where("td.id IN ?", tagIDs)
 	}
 	if keyword = strings.TrimSpace(keyword); keyword != "" {
-		query = query.Where("td.normalized_name LIKE ?", "%"+tagging.Normalize(keyword)+"%")
+		normalizedKeyword := "%" + tagging.Normalize(keyword) + "%"
+		query = query.Where("td.normalized_name LIKE ? OR pref.normalized_display_name LIKE ?", normalizedKeyword, normalizedKeyword)
 	}
 	var rows []suggestionRow
-	if err := query.Order("td.name ASC").Limit(limit).Scan(&rows).Error; err != nil {
+	if err := query.Order("COALESCE(pref.display_name, td.name) ASC, td.id ASC").Limit(limit).Scan(&rows).Error; err != nil {
 		return nil, err
 	}
 	result := make([]response.CompactTagView, 0, len(rows))

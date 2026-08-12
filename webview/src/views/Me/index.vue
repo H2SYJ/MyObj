@@ -121,6 +121,7 @@
   )
 
   const baseLinks = computed(() => [
+    { path: '/tags', label: t('menu.tags'), description: t('tagCloud.description'), icon: 'CollectionTag' },
     { path: '/shares', label: t('menu.shares'), description: t('me.contentAutomation'), icon: 'Share' },
     { path: '/subscriptions', label: t('menu.subscriptions'), description: t('me.contentAutomation'), icon: 'Clock' },
     { path: '/trash', label: t('menu.trash'), description: t('me.contentAutomation'), icon: 'Delete' },
@@ -135,8 +136,8 @@
       : baseLinks.value
   )
   const menuGroups = computed(() => [
-    { title: t('me.contentAutomation'), items: baseLinks.value.slice(0, 3) },
-    { title: t('me.accountSystem'), items: desktopLinks.value.slice(3) }
+    { title: t('me.contentAutomation'), items: baseLinks.value.slice(0, 4) },
+    { title: t('me.accountSystem'), items: desktopLinks.value.slice(4) }
   ])
 
   const logout = async () => {

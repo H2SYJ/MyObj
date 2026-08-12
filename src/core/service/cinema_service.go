@@ -121,7 +121,7 @@ func (s *CinemaService) buildVideoItems(ctx context.Context, userID string, tree
 	for _, row := range rows {
 		ids = append(ids, row.FileID)
 	}
-	tags, err := s.tagService.CompactTags(ctx, userID, ids, false)
+	tags, err := s.tagService.CompactTags(ctx, userID, userID, ids, false)
 	if err != nil {
 		return nil, err
 	}
@@ -332,7 +332,7 @@ func (s *CinemaService) Related(ctx context.Context, userID string, rootID int, 
 	for _, row := range rows {
 		ids = append(ids, row.FileID)
 	}
-	tags, err := s.tagService.CompactTags(ctx, userID, ids, false)
+	tags, err := s.tagService.CompactTags(ctx, userID, userID, ids, false)
 	if err != nil {
 		return nil, err
 	}

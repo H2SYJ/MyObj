@@ -98,6 +98,11 @@ func (f *FileHandler) Router(c *gin.RouterGroup) {
 		fileGroup.GET("/directories/:directory_id/tags", middleware.PowerVerify("file:preview"), f.GetDirectoryTags)
 		fileGroup.PUT("/directories/:directory_id/tags/manual", middleware.PowerVerify("file:tag"), f.UpdateDirectoryTags)
 		fileGroup.GET("/tag-categories", middleware.PowerVerify("file:tag"), f.ListTagCategories)
+		fileGroup.GET("/tag-cloud", middleware.PowerVerify("file:tag"), f.GetTagCloud)
+		fileGroup.GET("/tag-cloud/:tag_id", middleware.PowerVerify("file:tag"), f.GetTagCloudItem)
+		fileGroup.PUT("/tag-cloud/:tag_id", middleware.PowerVerify("file:tag"), f.UpdateTagCloudItem)
+		fileGroup.DELETE("/tag-cloud/:tag_id", middleware.PowerVerify("file:tag"), f.HideTagCloudItem)
+		fileGroup.POST("/tag-cloud/:tag_id/restore", middleware.PowerVerify("file:tag"), f.RestoreTagCloudItem)
 		fileGroup.GET("/tags/suggestions", middleware.PowerVerify("file:tag"), f.TagSuggestions)
 		fileGroup.GET("/tags/:uf_id", middleware.PowerVerify("file:preview"), f.GetFileTags)
 		fileGroup.PUT("/tags/:uf_id/manual", middleware.PowerVerify("file:tag"), f.UpdateManualTags)
@@ -186,6 +191,55 @@ func (f *FileHandler) ListTagCategories(c *gin.Context) {
 		return
 	}
 	c.JSON(http.StatusOK, models.NewJsonResponse(200, "查询成功", result))
+}
+
+func (f *FileHandler) GetTagCloud(c *gin.Context) {
+	result, err := f.service.TagService().TagCloud(c.Request.Context(), c.GetString("userID"))
+	if err != nil {
+		c.JSON(http.StatusOK, models.NewJsonResponse(400, err.Error(), nil))
+		return
+	}
+	c.JSON(http.StatusOK, models.NewJsonResponse(200, "查询成功", result))
+}
+
+func (f *FileHandler) GetTagCloudItem(c *gin.Context) {
+	result, err := f.service.TagService().TagCloudEditor(c.Request.Context(), c.GetString("userID"), c.Param("tag_id"))
+	if err != nil {
+		c.JSON(http.StatusOK, models.NewJsonResponse(400, err.Error(), nil))
+		return
+	}
+	c.JSON(http.StatusOK, models.NewJsonResponse(200, "查询成功", result))
+}
+
+func (f *FileHandler) UpdateTagCloudItem(c *gin.Context) {
+	var req request.UpdateTagCloudItemRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, models.NewJsonResponse(400, "参数错误", nil))
+		return
+	}
+	result, job, err := f.service.TagService().UpdateTagCloudItem(c.Request.Context(), c.GetString("userID"), c.Param("tag_id"), req)
+	if err != nil {
+		c.JSON(http.StatusOK, models.NewJsonResponse(400, err.Error(), nil))
+		return
+	}
+	c.JSON(http.StatusOK, models.NewJsonResponse(200, "标签设置已更新", gin.H{"editor": result, "rebuild_job": job}))
+}
+
+func (f *FileHandler) HideTagCloudItem(c *gin.Context) {
+	if err := f.service.TagService().HideTagCloudItem(c.Request.Context(), c.GetString("userID"), c.Param("tag_id")); err != nil {
+		c.JSON(http.StatusOK, models.NewJsonResponse(400, err.Error(), nil))
+		return
+	}
+	c.JSON(http.StatusOK, models.NewJsonResponse(200, "标签已隐藏", nil))
+}
+
+func (f *FileHandler) RestoreTagCloudItem(c *gin.Context) {
+	job, err := f.service.TagService().RestoreTagCloudItem(c.Request.Context(), c.GetString("userID"), c.Param("tag_id"))
+	if err != nil {
+		c.JSON(http.StatusOK, models.NewJsonResponse(400, err.Error(), nil))
+		return
+	}
+	c.JSON(http.StatusOK, models.NewJsonResponse(200, "标签已恢复", gin.H{"rebuild_job": job}))
 }
 
 // RetryFileTags godoc
@@ -467,7 +521,7 @@ func (f *FileHandler) SearchPublicFiles(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, models.NewJsonResponse(400, "参数错误", err.Error()))
 		return
 	}
-	result, err := f.service.SearchPublicFiles(req)
+	result, err := f.service.SearchPublicFiles(req, c.GetString("userID"))
 	if err != nil {
 		if errors.Is(err, service.ErrInvalidFileSearch) {
 			c.JSON(http.StatusBadRequest, models.NewJsonResponse(400, err.Error(), nil))
