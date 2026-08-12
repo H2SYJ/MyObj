@@ -52,6 +52,14 @@ type CinemaVideoDetailResponse struct {
 	Video CinemaVideoItem `json:"video"`
 }
 
+type CinemaLatestResponse struct {
+	Videos   []CinemaVideoItem `json:"videos"`
+	Total    int64             `json:"total"`
+	Page     int               `json:"page"`
+	PageSize int               `json:"page_size"`
+	HasMore  bool              `json:"has_more"`
+}
+
 type CinemaRelatedResponse struct {
 	Videos   []CinemaVideoItem `json:"videos"`
 	Total    int               `json:"total"`

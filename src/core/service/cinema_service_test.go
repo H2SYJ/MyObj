@@ -235,6 +235,69 @@ func TestCinemaHomeSortsAllDescendantsAndUsesUserFileCreatedAt(t *testing.T) {
 	}
 }
 
+func TestCinemaLatestIncludesDescendantsFiltersAndPaginates(t *testing.T) {
+	cinema, _, db := newCinemaTestService(t)
+	now := time.Now().Truncate(time.Second)
+	if err := db.Create(&models.TagCategory{ID: "other", Code: "other", Name: "其他", Enabled: true, CreatedAt: now, UpdatedAt: now}).Error; err != nil {
+		t.Fatal(err)
+	}
+	root := models.VirtualDirectory{ID: 1, UserID: "user-1", Name: "影视库", CreatedAt: custom_type.Now(), UpdatedAt: custom_type.Now()}
+	child := models.VirtualDirectory{ID: 2, UserID: "user-1", Name: "子目录", ParentID: 1, CreatedAt: custom_type.Now(), UpdatedAt: custom_type.Now()}
+	outside := models.VirtualDirectory{ID: 3, UserID: "user-1", Name: "其他目录", CreatedAt: custom_type.Now(), UpdatedAt: custom_type.Now()}
+	if err := db.Create(&[]models.VirtualDirectory{root, child, outside}).Error; err != nil {
+		t.Fatal(err)
+	}
+	code := models.TagSystemCodeCinemaMode
+	if err := db.Create(&models.TagDefinition{ID: "cinema", Name: models.TagNameCinemaMode, NormalizedName: models.TagNameCinemaMode, CategoryID: "other", SystemCode: &code, Builtin: true, CreatedAt: now}).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Create(&models.UserDirectoryTag{ID: uuid.NewString(), UserID: "user-1", DirectoryID: root.ID, TagID: "cinema", CreatedBy: "user-1", CreatedAt: now}).Error; err != nil {
+		t.Fatal(err)
+	}
+	createCinemaTestVideo(t, db, "user-1", "same-a", "同秒A.mp4", root.ID, now)
+	createCinemaTestVideo(t, db, "user-1", "same-b", "同秒B.mp4", child.ID, now)
+	createCinemaTestVideo(t, db, "user-1", "older", "旧片.mp4", child.ID, now.Add(-time.Hour))
+	createCinemaTestVideo(t, db, "user-1", "outside", "库外视频.mp4", outside.ID, now.Add(time.Hour))
+	createCinemaTestVideo(t, db, "user-2", "other-user", "其他用户.mp4", child.ID, now.Add(time.Hour))
+
+	createCinemaTestVideo(t, db, "user-1", "deleted", "已删除.mp4", child.ID, now.Add(2*time.Hour))
+	deletedAt := now
+	if err := db.Table("user_files").Where("uf_id = ?", "deleted").Update("deleted_at", deletedAt).Error; err != nil {
+		t.Fatal(err)
+	}
+	fileID := "physical-unplayable"
+	if err := db.Create(&models.FileInfo{ID: fileID, Name: "不可播放.mp4", RandomName: fileID, Size: 100, Mime: "video/mp4", FileHash: fileID, CreatedAt: custom_type.JsonTime(now), UpdatedAt: custom_type.JsonTime(now)}).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Create(&models.UserFiles{UserID: "user-1", FileID: fileID, FileName: "不可播放.mp4", DirectoryID: child.ID, UfID: "unplayable", CreatedAt: custom_type.JsonTime(now.Add(2 * time.Hour))}).Error; err != nil {
+		t.Fatal(err)
+	}
+
+	first, err := cinema.Latest(context.Background(), "user-1", root.ID, 1, 2)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if first.Total != 3 || !first.HasMore || len(first.Videos) != 2 {
+		t.Fatalf("最新视频首分页异常: %+v", first)
+	}
+	if first.Videos[0].FileID != "same-b" || first.Videos[1].FileID != "same-a" {
+		t.Fatalf("最新视频同时间稳定排序异常: %+v", first.Videos)
+	}
+	if first.Videos[0].Directory.ID != child.ID {
+		t.Fatalf("最新视频目录信息异常: %+v", first.Videos[0].Directory)
+	}
+	second, err := cinema.Latest(context.Background(), "user-1", root.ID, 2, 2)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if second.HasMore || len(second.Videos) != 1 || second.Videos[0].FileID != "older" {
+		t.Fatalf("最新视频第二页异常: %+v", second)
+	}
+	if _, err := cinema.Latest(context.Background(), "user-2", root.ID, 1, 2); err == nil {
+		t.Fatal("其他用户不应访问当前影视库最新视频")
+	}
+}
+
 func TestCinemaRejectsUnauthorizedAndMovedOutTargets(t *testing.T) {
 	cinema, _, db := newCinemaTestService(t)
 	now := time.Now()

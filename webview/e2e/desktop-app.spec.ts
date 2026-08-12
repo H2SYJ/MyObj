@@ -118,6 +118,19 @@ const mockApi = async (page: Page) => {
         page_size: Number(url.searchParams.get('page_size') || 20),
         has_more: false
       }
+    } else if (path === '/cinema/7/latest') {
+      const pageNumber = Number(url.searchParams.get('page') || 1)
+      const pageSize = Number(url.searchParams.get('page_size') || 24)
+      const start = (pageNumber - 1) * pageSize
+      data = {
+        videos: Array.from({ length: Math.max(0, Math.min(pageSize, 30 - start)) }, (_, index) =>
+          cinemaVideo(30 - start - index)
+        ),
+        total: 30,
+        page: pageNumber,
+        page_size: pageSize,
+        has_more: start + pageSize < 30
+      }
     } else if (path === '/cinema/7/folders/7/videos') {
       data = {
         root: { id: 7, name: '影视库', parent_id: 0, path: '影视库' },
@@ -357,6 +370,14 @@ test('影视模式桌面布局、隐藏横向滚动条和路由前进后退', as
     'rgb(255, 255, 255)'
   )
   const rail = page.locator('.cinema-section__rail').first()
+  const latest = page.locator('.cinema-section--latest')
+  await expect(latest).toBeVisible()
+  await expect(latest.locator('.cinema-video-card')).toHaveCount(8)
+  await expect(latest.locator('.cinema-video-card').first()).toContainText('影视验收视频 30')
+  await expect(latest.locator('.cinema-video-card').first()).toContainText('影视库')
+  expect(await latest.locator('.cinema-latest-grid').evaluate(element => getComputedStyle(element).overflowX)).toBe(
+    'hidden'
+  )
   await expect(rail.locator('.cinema-video-card')).toHaveCount(6)
   expect(await rail.evaluate(element => getComputedStyle(element).scrollbarWidth)).toBe('none')
   expect(
@@ -443,6 +464,17 @@ test('影视模式桌面布局、隐藏横向滚动条和路由前进后退', as
   await expect(page).toHaveURL(/\/cinema\/7$/)
   await page.goForward()
   await expect(page).toHaveURL(/\/cinema\/7\/watch\/cinema-video-1$/)
+})
+
+test('影视最新视频更多页分页并进入播放页', async ({ page }) => {
+  await page.goto('/cinema/7')
+  await page.locator('.cinema-section--latest a').click()
+  await expect(page).toHaveURL(/\/cinema\/7\/latest$/)
+  await expect(page.locator('.cinema-latest h1')).toHaveText('最新视频')
+  await page.locator('.cinema-latest .cinema-sentinel').scrollIntoViewIfNeeded()
+  await expect(page.locator('.cinema-latest__grid .cinema-video-card')).toHaveCount(30)
+  await page.locator('.cinema-latest__grid .cinema-video-card').first().click()
+  await expect(page).toHaveURL(/\/cinema\/7\/watch\/cinema-video-30$/)
 })
 
 test('固定侧栏、路由搜索恢复与无横向滚动', async ({ page }) => {

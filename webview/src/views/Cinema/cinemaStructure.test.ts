@@ -35,6 +35,23 @@ describe('影视模式页面结构', () => {
     expect(shell).toContain('.cinema-shell::-webkit-scrollbar')
   })
 
+  it('首页最新视频位于目录分组前并按两行自适应展示', () => {
+    const home = readSource('./Home.vue')
+    const latest = readSource('./LatestVideos.vue')
+    const router = readSource('../../router/index.ts')
+    expect(home.indexOf('cinema-section--latest')).toBeLessThan(home.indexOf('v-for="section in sections"'))
+    expect(home).toContain('show-directory')
+    expect(home).toContain('grid-template-columns: repeat(4, minmax(0, 1fr))')
+    expect(home).toMatch(
+      /@media \(max-width: 767px\)[\s\S]*\.cinema-latest-grid\s*\{[\s\S]*repeat\(2, minmax\(0, 1fr\)\)/
+    )
+    expect(home).toMatch(/\.cinema-latest-grid\s*\{[\s\S]*overflow: hidden/)
+    expect(latest).toContain('getCinemaLatest(requestedRootId, requestedPage, 24)')
+    expect(latest).toContain('show-directory')
+    expect(router).toContain("path: 'latest'")
+    expect(router).toContain("name: 'CinemaLatest'")
+  })
+
   it('播放页先显示封面按钮，用户操作后才挂载播放器', () => {
     const source = readSource('./Watch.vue')
     expect(source).toContain('v-if="videoUrl"')

@@ -59,6 +59,8 @@ export interface CinemaRelatedData {
   has_more: boolean
 }
 
+export type CinemaLatestData = CinemaRelatedData
+
 export const getCinemaHome = (rootId: number, page = 1, pageSize = 20) =>
   get<ApiResponse<CinemaHomeData>>(`/cinema/${rootId}/home`, { page, page_size: pageSize })
 
@@ -67,6 +69,9 @@ export const getCinemaFolderVideos = (rootId: number, directoryId: number, page 
     page,
     page_size: pageSize
   })
+
+export const getCinemaLatest = (rootId: number, page = 1, pageSize = 24) =>
+  get<ApiResponse<CinemaLatestData>>(`/cinema/${rootId}/latest`, { page, page_size: pageSize })
 
 export const getCinemaVideo = (rootId: number, fileId: string) =>
   get<ApiResponse<CinemaVideoDetailData>>(`/cinema/${rootId}/videos/${fileId}`)

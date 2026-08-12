@@ -35,6 +35,12 @@ export const routes: RouteRecordRaw[] = [
         meta: { requiresAuth: true, title: '影视视频列表' }
       },
       {
+        path: 'latest',
+        name: 'CinemaLatest',
+        component: () => import('@/views/Cinema/LatestVideos.vue'),
+        meta: { requiresAuth: true, title: '最新视频' }
+      },
+      {
         path: 'watch/:fileId',
         name: 'CinemaWatch',
         component: () => import('@/views/Cinema/Watch.vue'),

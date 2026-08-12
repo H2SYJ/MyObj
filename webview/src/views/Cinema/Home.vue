@@ -4,6 +4,22 @@
       <h1>{{ root?.name || '影视库' }}</h1>
     </div>
 
+    <section v-if="latestVideos.length" class="cinema-section cinema-section--latest">
+      <div class="cinema-section__header">
+        <h2>最新</h2>
+        <router-link :to="`/cinema/${rootId}/latest`">更多 &gt;&gt;</router-link>
+      </div>
+      <div class="cinema-latest-grid" aria-label="最新视频列表">
+        <CinemaVideoCard
+          v-for="video in latestVideos"
+          :key="video.file_id"
+          :video="video"
+          show-directory
+          @open="openVideo(video.file_id)"
+        />
+      </div>
+    </section>
+
     <section v-for="section in sections" :key="section.directory.id" class="cinema-section">
       <div class="cinema-section__header">
         <h2>{{ section.directory.name }}</h2>
@@ -30,7 +46,10 @@
       </div>
     </section>
 
-    <el-empty v-if="!loading && sections.length === 0" description="当前影视文件夹及子文件夹中没有可播放视频" />
+    <el-empty
+      v-if="!loading && !latestLoading && sections.length === 0 && latestVideos.length === 0"
+      description="当前影视文件夹及子文件夹中没有可播放视频"
+    />
     <div ref="sentinel" class="cinema-sentinel">
       <el-icon v-if="loading && sections.length"><Loading class="is-loading" /></el-icon>
     </div>
@@ -50,7 +69,13 @@
   } from 'vue'
   import { useRoute, useRouter } from 'vue-router'
   import { Loading } from '@element-plus/icons-vue'
-  import { getCinemaHome, type CinemaDirectory, type CinemaSection } from '@/api/cinema'
+  import {
+    getCinemaHome,
+    getCinemaLatest,
+    type CinemaDirectory,
+    type CinemaSection,
+    type CinemaVideo
+  } from '@/api/cinema'
   import CinemaVideoCard from './components/CinemaVideoCard.vue'
 
   const route = useRoute()
@@ -59,12 +84,16 @@
   const rootId = computed(() => Number(route.params.rootDirectoryId))
   const root = ref<CinemaDirectory>()
   const sections = ref<CinemaSection[]>([])
+  const latestVideos = ref<CinemaVideo[]>([])
   const page = ref(1)
   const hasMore = ref(true)
   const loading = ref(false)
+  const latestLoading = ref(false)
   const sentinel = ref<HTMLElement>()
   let observer: IntersectionObserver | undefined
   let generation = 0
+  let latestGeneration = 0
+  let mobileMedia: MediaQueryList | undefined
   let railDrag:
     | {
         rail: HTMLElement
@@ -116,6 +145,37 @@
         }
       }
     }
+  }
+
+  const loadLatest = async () => {
+    const requestGeneration = ++latestGeneration
+    const requestedRootId = rootId.value
+    const pageSize = (mobileMedia?.matches ?? window.innerWidth <= 767) ? 4 : 8
+    latestLoading.value = true
+    try {
+      const response = await getCinemaLatest(requestedRootId, 1, pageSize)
+      if (requestGeneration !== latestGeneration) {
+        return
+      }
+      if (response.code !== 200 || !response.data) {
+        throw new Error(response.message || '加载最新视频失败')
+      }
+      latestVideos.value = response.data.videos || []
+    } catch (error) {
+      if (requestGeneration !== latestGeneration) {
+        return
+      }
+      latestVideos.value = []
+      proxy?.$modal.msgError(error instanceof Error ? error.message : '加载最新视频失败')
+    } finally {
+      if (requestGeneration === latestGeneration) {
+        latestLoading.value = false
+      }
+    }
+  }
+
+  const handleLatestBreakpointChange = () => {
+    void loadLatest()
   }
 
   const openVideo = (fileId: string) => router.push(`/cinema/${rootId.value}/watch/${fileId}`)
@@ -194,12 +254,18 @@
     loading.value = false
     root.value = undefined
     sections.value = []
+    latestGeneration++
+    latestLoading.value = false
+    latestVideos.value = []
     page.value = 1
     hasMore.value = true
     void loadMore()
+    void loadLatest()
   }
 
   onMounted(() => {
+    mobileMedia = window.matchMedia('(max-width: 767px)')
+    mobileMedia.addEventListener('change', handleLatestBreakpointChange)
     observer = new IntersectionObserver(
       entries => {
         if (entries[0]?.isIntersecting) {
@@ -213,7 +279,11 @@
     }
   })
   watch(rootId, reset, { immediate: true })
-  onBeforeUnmount(() => observer?.disconnect())
+  onBeforeUnmount(() => {
+    latestGeneration++
+    observer?.disconnect()
+    mobileMedia?.removeEventListener('change', handleLatestBreakpointChange)
+  })
 </script>
 
 <style scoped>
@@ -282,6 +352,12 @@
   .cinema-section__rail.is-dragging > * {
     pointer-events: none;
   }
+  .cinema-latest-grid {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 24px 18px;
+    overflow: hidden;
+  }
   .cinema-sentinel {
     min-height: 48px;
     display: grid;
@@ -297,6 +373,10 @@
     .cinema-section__rail {
       grid-auto-columns: minmax(166px, 72vw);
       gap: 12px;
+    }
+    .cinema-latest-grid {
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 14px 10px;
     }
   }
 </style>

@@ -27,6 +27,7 @@ func (h *CinemaHandler) Router(group *gin.RouterGroup) {
 	cinema := group.Group("/cinema")
 	cinema.Use(verify.Verify(), middleware.PowerVerify("file:preview"))
 	cinema.GET("/:root_id/home", h.Home)
+	cinema.GET("/:root_id/latest", h.Latest)
 	cinema.GET("/:root_id/folders/:folder_id/videos", h.FolderVideos)
 	cinema.GET("/:root_id/videos/:uf_id", h.VideoDetail)
 	cinema.GET("/:root_id/videos/:uf_id/related", h.Related)
@@ -49,6 +50,20 @@ func (h *CinemaHandler) Home(c *gin.Context) {
 		return
 	}
 	result, err := h.service.Home(c.Request.Context(), c.GetString("userID"), rootID, queryInt(c, "page"), queryInt(c, "page_size"))
+	if err != nil {
+		c.JSON(http.StatusOK, models.NewJsonResponse(400, err.Error(), nil))
+		return
+	}
+	c.JSON(http.StatusOK, models.NewJsonResponse(200, "查询成功", result))
+}
+
+func (h *CinemaHandler) Latest(c *gin.Context) {
+	rootID, ok := positivePathInt(c, "root_id")
+	if !ok {
+		c.JSON(http.StatusOK, models.NewJsonResponse(400, "影视文件夹ID无效", nil))
+		return
+	}
+	result, err := h.service.Latest(c.Request.Context(), c.GetString("userID"), rootID, queryInt(c, "page"), queryInt(c, "page_size"))
 	if err != nil {
 		c.JSON(http.StatusOK, models.NewJsonResponse(400, err.Error(), nil))
 		return

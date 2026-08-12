@@ -234,6 +234,25 @@ func (s *CinemaService) FolderVideos(ctx context.Context, userID string, rootID,
 	}, nil
 }
 
+func (s *CinemaService) Latest(ctx context.Context, userID string, rootID, page, pageSize int) (*response.CinemaLatestResponse, error) {
+	tree, err := s.loadTree(ctx, userID, rootID)
+	if err != nil {
+		return nil, err
+	}
+	page, pageSize = normalizeCinemaPage(page, pageSize, 24, 100)
+	rows, total, err := s.loadVideoRows(ctx, userID, tree.ids, (page-1)*pageSize, pageSize)
+	if err != nil {
+		return nil, err
+	}
+	videos, err := s.buildVideoItems(ctx, userID, tree, rows)
+	if err != nil {
+		return nil, err
+	}
+	return &response.CinemaLatestResponse{
+		Videos: videos, Total: total, Page: page, PageSize: pageSize, HasMore: int64(page*pageSize) < total,
+	}, nil
+}
+
 func (s *CinemaService) VideoDetail(ctx context.Context, userID string, rootID int, fileID string) (*response.CinemaVideoDetailResponse, error) {
 	tree, err := s.loadTree(ctx, userID, rootID)
 	if err != nil {

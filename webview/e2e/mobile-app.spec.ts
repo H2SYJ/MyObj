@@ -49,6 +49,15 @@ const mockApi = async (page: Page) => {
         page_size: Number(url.searchParams.get('page_size') || 20),
         has_more: false
       }
+    } else if (path === '/cinema/7/latest') {
+      const pageSize = Number(url.searchParams.get('page_size') || 24)
+      data = {
+        videos: Array.from({ length: pageSize }, (_, index) => cinemaVideo(pageSize - index)),
+        total: pageSize,
+        page: 1,
+        page_size: pageSize,
+        has_more: false
+      }
     } else if (/^\/cinema\/7\/videos\/cinema-video-\d+$/.test(path)) {
       const id = Number(path.split('-').at(-1))
       data = {
@@ -180,7 +189,13 @@ test('影视首页隐藏滚动条并保留横向和纵向滚动', async ({ page 
   await page.goto('/cinema/7')
   const shell = page.locator('.cinema-shell')
   const rail = page.locator('.cinema-section__rail').first()
+  const latest = page.locator('.cinema-section--latest')
 
+  await expect(latest.locator('.cinema-video-card')).toHaveCount(4)
+  await expect(latest.locator('.cinema-video-card').first()).toContainText('移动影视视频 4')
+  expect(
+    await latest.locator('.cinema-latest-grid').evaluate(element => getComputedStyle(element).gridTemplateColumns)
+  ).toMatch(/^\S+ \S+$/)
   await expect(rail.locator('.cinema-video-card')).toHaveCount(6)
   expect(await rail.evaluate(element => getComputedStyle(element).scrollbarWidth)).toBe('none')
   expect(await rail.evaluate(element => element.scrollWidth > element.clientWidth)).toBe(true)
