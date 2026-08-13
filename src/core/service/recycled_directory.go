@@ -45,6 +45,7 @@ func (r *RecycledService) restoreDirectory(ctx context.Context, recycled *models
 
 	err := r.factory.DB().WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		idMap := make(map[int]int, len(nodes))
+		affectedTagIDs := make([]string, 0)
 		for _, node := range nodes {
 			parentID := targetParentID
 			if node.Depth > 0 {
@@ -77,6 +78,11 @@ func (r *RecycledService) restoreDirectory(ctx context.Context, recycled *models
 				Updates(map[string]interface{}{"directory_id": newDirID, "deleted_at": nil}).Error; err != nil {
 				return err
 			}
+			tagIDs, err := tagIDsForUserFile(ctx, tx, recycled.UserID, member.FileID)
+			if err != nil {
+				return err
+			}
+			affectedTagIDs = append(affectedTagIDs, tagIDs...)
 			if r.tagService != nil {
 				if err := r.tagService.QueueUserFile(ctx, tx, recycled.UserID, member.FileID); err != nil {
 					return err
@@ -103,6 +109,9 @@ func (r *RecycledService) restoreDirectory(ctx context.Context, recycled *models
 			return err
 		}
 		if err := tx.Where("recycled_id = ?", recycled.ID).Delete(&models.RecycledDirectoryNode{}).Error; err != nil {
+			return err
+		}
+		if err := refreshUserTagStats(ctx, tx, recycled.UserID, affectedTagIDs); err != nil {
 			return err
 		}
 		return tx.Where("id = ?", recycled.ID).Delete(&models.Recycled{}).Error
@@ -145,6 +154,7 @@ func (r *RecycledService) deleteDirectoryRecycled(ctx context.Context, recycled 
 	}
 	var returnedSize int64
 	err := r.factory.DB().WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		affectedTagIDs := make([]string, 0)
 		for _, member := range members {
 			var userFile models.UserFiles
 			if err := tx.Unscoped().Where("user_id = ? AND uf_id = ?", recycled.UserID, member.FileID).First(&userFile).Error; err != nil {
@@ -160,6 +170,11 @@ func (r *RecycledService) deleteDirectoryRecycled(ctx context.Context, recycled 
 			if fileInfo.ID != "" {
 				returnedSize += int64(fileInfo.Size)
 			}
+			tagIDs, err := tagIDsForUserFile(ctx, tx, recycled.UserID, member.FileID)
+			if err != nil {
+				return err
+			}
+			affectedTagIDs = append(affectedTagIDs, tagIDs...)
 			if err := deleteUserFileTagRecords(tx, recycled.UserID, member.FileID); err != nil {
 				return err
 			}
@@ -202,6 +217,9 @@ func (r *RecycledService) deleteDirectoryRecycled(ctx context.Context, recycled 
 			return err
 		}
 		if err := tx.Where("id = ?", recycled.ID).Delete(&models.Recycled{}).Error; err != nil {
+			return err
+		}
+		if err := refreshUserTagStats(ctx, tx, recycled.UserID, affectedTagIDs); err != nil {
 			return err
 		}
 		if returnedSize > 0 {

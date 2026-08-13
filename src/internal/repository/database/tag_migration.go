@@ -26,6 +26,7 @@ var builtinTagCategories = []models.TagCategory{
 }
 
 const pureNumericTagCleanupVersion = "20260804_pure_numeric_tag_cleanup"
+const userTagStatBackfillVersion = "20260813_user_tag_stat_backfill"
 
 func migrateTaggingSchema(db *gorm.DB) error {
 	if err := db.AutoMigrate(
@@ -36,6 +37,7 @@ func migrateTaggingSchema(db *gorm.DB) error {
 		&models.UserFileTag{},
 		&models.UserDirectoryTag{},
 		&models.UserFileTagExclusion{},
+		&models.UserTagStat{},
 		&models.UserFileTagState{},
 		&models.FileMetadata{},
 		&models.FileMetadataState{},
@@ -63,6 +65,9 @@ func migrateTaggingSchema(db *gorm.DB) error {
 			return err
 		}
 		if err := migratePureNumericTags(tx, now); err != nil {
+			return err
+		}
+		if err := backfillUserTagStats(tx, now); err != nil {
 			return err
 		}
 
@@ -106,6 +111,54 @@ func migrateTaggingSchema(db *gorm.DB) error {
 		}
 		return nil
 	})
+}
+
+type userTagStatBackfillRow struct {
+	UserID    string
+	TagID     string
+	FileCount int64
+}
+
+func backfillUserTagStats(tx *gorm.DB, now time.Time) error {
+	var applied int64
+	if err := tx.Model(&schemaMigration{}).Where("version = ?", userTagStatBackfillVersion).Count(&applied).Error; err != nil {
+		return fmt.Errorf("查询标签统计回填状态失败: %w", err)
+	}
+	if applied > 0 {
+		return nil
+	}
+
+	if err := tx.Session(&gorm.Session{AllowGlobalUpdate: true}).Delete(&models.UserTagStat{}).Error; err != nil {
+		return fmt.Errorf("清空标签统计表失败: %w", err)
+	}
+	var rows []userTagStatBackfillRow
+	if err := tx.Table("user_file_tag AS uft").
+		Select("uft.user_id, uft.tag_id, COUNT(DISTINCT uft.uf_id) AS file_count").
+		Joins("JOIN user_files uf ON uf.uf_id = uft.uf_id AND uf.user_id = uft.user_id AND uf.deleted_at IS NULL").
+		Where(`NOT EXISTS (SELECT 1 FROM user_file_tag_exclusion e
+			WHERE e.user_id = uft.user_id AND e.uf_id = uft.uf_id AND e.tag_id = uft.tag_id)`).
+		Group("uft.user_id, uft.tag_id").
+		Scan(&rows).Error; err != nil {
+		return fmt.Errorf("聚合标签统计失败: %w", err)
+	}
+	for _, row := range rows {
+		if row.UserID == "" || row.TagID == "" || row.FileCount <= 0 {
+			continue
+		}
+		stat := models.UserTagStat{UserID: row.UserID, TagID: row.TagID, FileCount: row.FileCount, UpdatedAt: now}
+		if err := tx.Clauses(clause.OnConflict{
+			Columns: []clause.Column{{Name: "user_id"}, {Name: "tag_id"}},
+			DoUpdates: clause.Assignments(map[string]interface{}{
+				"file_count": row.FileCount, "updated_at": now,
+			}),
+		}).Create(&stat).Error; err != nil {
+			return fmt.Errorf("写入标签统计失败: %w", err)
+		}
+	}
+	if err := tx.Create(&schemaMigration{Version: userTagStatBackfillVersion, AppliedAt: now}).Error; err != nil {
+		return fmt.Errorf("记录标签统计回填状态失败: %w", err)
+	}
+	return nil
 }
 
 func migratePureNumericTags(tx *gorm.DB, now time.Time) error {

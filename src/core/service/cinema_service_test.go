@@ -38,7 +38,8 @@ func newCinemaTestService(t *testing.T) (*CinemaService, *TagService, *gorm.DB) 
 	if err := db.AutoMigrate(
 		&models.VirtualDirectory{}, &cinemaTestUserFile{}, &models.FileInfo{},
 		&models.TagCategory{}, &models.TagDefinition{}, &models.UserFileTag{},
-		&models.UserFileTagExclusion{}, &models.UserTagPreference{}, &models.UserDirectoryTag{}, &models.UserFileTagState{},
+		&models.UserFileTagExclusion{}, &models.UserTagPreference{}, &models.UserTagStat{},
+		&models.UserDirectoryTag{}, &models.UserFileTagState{},
 	); err != nil {
 		t.Fatal(err)
 	}

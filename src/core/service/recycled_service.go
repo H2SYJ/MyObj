@@ -188,6 +188,13 @@ func (r *RecycledService) RestoreFile(req *request.RestoreFileRequest, userID st
 			Updates(updateMap).Error; err != nil {
 			return fmt.Errorf("恢复用户文件失败: %w", err)
 		}
+		tagIDs, err := tagIDsForUserFile(ctx, tx, userID, recycled.FileID)
+		if err != nil {
+			return fmt.Errorf("查询文件标签失败: %w", err)
+		}
+		if err := refreshUserTagStats(ctx, tx, userID, tagIDs); err != nil {
+			return fmt.Errorf("刷新标签统计失败: %w", err)
+		}
 		if r.tagService != nil {
 			if err := r.tagService.QueueUserFile(ctx, tx, userID, recycled.FileID); err != nil {
 				return fmt.Errorf("恢复文件标签任务失败: %w", err)
@@ -393,11 +400,18 @@ func (r *RecycledService) deleteSingleFile(ctx context.Context, recycled *models
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return r.factory.DB().WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+				tagIDs, tagErr := tagIDsForUserFile(ctx, tx, recycled.UserID, recycled.FileID)
+				if tagErr != nil {
+					return tagErr
+				}
 				if err := deleteUserFileTagRecords(tx, recycled.UserID, recycled.FileID); err != nil {
 					return err
 				}
 				if err := tx.Unscoped().Where("user_id = ? AND uf_id = ?", recycled.UserID, recycled.FileID).
 					Delete(&models.UserFiles{}).Error; err != nil {
+					return err
+				}
+				if err := refreshUserTagStats(ctx, tx, recycled.UserID, tagIDs); err != nil {
 					return err
 				}
 				return tx.Where("id = ?", recycled.ID).Delete(&models.Recycled{}).Error
@@ -426,6 +440,10 @@ func (r *RecycledService) deleteSingleFile(ctx context.Context, recycled *models
 				}
 			}
 		}
+		tagIDs, err := tagIDsForUserFile(ctx, tx, recycled.UserID, recycled.FileID)
+		if err != nil {
+			return fmt.Errorf("查询文件标签失败: %w", err)
+		}
 		if err := deleteUserFileTagRecords(tx, recycled.UserID, recycled.FileID); err != nil {
 			return fmt.Errorf("删除文件标签失败: %w", err)
 		}
@@ -433,6 +451,9 @@ func (r *RecycledService) deleteSingleFile(ctx context.Context, recycled *models
 		if err := tx.Unscoped().Where("user_id = ? AND uf_id = ?", recycled.UserID, recycled.FileID).
 			Delete(&models.UserFiles{}).Error; err != nil {
 			return fmt.Errorf("删除用户文件关联失败: %w", err)
+		}
+		if err := refreshUserTagStats(ctx, tx, recycled.UserID, tagIDs); err != nil {
+			return fmt.Errorf("刷新标签统计失败: %w", err)
 		}
 
 		if refCount <= 1 {

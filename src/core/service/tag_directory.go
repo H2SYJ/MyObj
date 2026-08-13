@@ -47,6 +47,7 @@ func (s *TagService) UpdateDirectoryTags(ctx context.Context, userID string, dir
 		return err
 	}
 	return s.factory.DB().WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		affectedTagIDs := append([]string(nil), removeTagIDs...)
 		if len(removeTagIDs) > 0 {
 			if err := tx.Where("user_id = ? AND directory_id = ? AND tag_id IN ?", userID, directoryID, uniqueTagStrings(removeTagIDs)).
 				Delete(&models.UserDirectoryTag{}).Error; err != nil {
@@ -58,6 +59,7 @@ func (s *TagService) UpdateDirectoryTags(ctx context.Context, userID string, dir
 			if err != nil {
 				return err
 			}
+			affectedTagIDs = append(affectedTagIDs, tag.ID)
 			binding := models.UserDirectoryTag{
 				ID: uuid.NewString(), UserID: userID, DirectoryID: directoryID, TagID: tag.ID,
 				CreatedBy: userID, CreatedAt: time.Now(),
@@ -73,7 +75,7 @@ func (s *TagService) UpdateDirectoryTags(ctx context.Context, userID string, dir
 		if count > 100 {
 			return errors.New("每个文件夹最多允许100个手工标签")
 		}
-		return nil
+		return s.refreshUserTagStats(ctx, tx, userID, affectedTagIDs)
 	})
 }
 

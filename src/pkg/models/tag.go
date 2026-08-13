@@ -118,6 +118,16 @@ type UserFileTagExclusion struct {
 
 func (UserFileTagExclusion) TableName() string { return "user_file_tag_exclusion" }
 
+// UserTagStat 保存用户标签云的文件计数统计。
+type UserTagStat struct {
+	UserID    string    `gorm:"column:user_id;type:varchar(64);not null;primaryKey;index:idx_user_tag_stat_count,priority:1" json:"user_id"`
+	TagID     string    `gorm:"column:tag_id;type:varchar(64);not null;primaryKey;index" json:"tag_id"`
+	FileCount int64     `gorm:"column:file_count;type:bigint;not null;default:0;index:idx_user_tag_stat_count,priority:2" json:"file_count"`
+	UpdatedAt time.Time `gorm:"column:updated_at;type:datetime;not null" json:"updated_at"`
+}
+
+func (UserTagStat) TableName() string { return "user_tag_stat" }
+
 // UserFileTagState 保存自动标签生成版本，同时充当持久化文件级任务队列。
 type UserFileTagState struct {
 	UFID          string     `gorm:"column:uf_id;type:varchar(64);primaryKey" json:"uf_id"`

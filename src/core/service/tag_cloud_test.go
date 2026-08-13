@@ -2,20 +2,27 @@ package service
 
 import (
 	"context"
+	"io"
+	"log/slog"
 	"testing"
 	"time"
 
 	"github.com/glebarez/sqlite"
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 
 	"myobj/src/core/domain/request"
 	"myobj/src/internal/repository/impl"
+	"myobj/src/pkg/custom_type"
+	"myobj/src/pkg/logger"
 	"myobj/src/pkg/models"
 	"myobj/src/pkg/tagging"
 )
 
 type tagCloudTestUserFile struct {
 	UserID    string         `gorm:"column:user_id;primaryKey"`
+	FileID    string         `gorm:"column:file_id"`
+	FileName  string         `gorm:"column:file_name"`
 	UFID      string         `gorm:"column:uf_id;primaryKey"`
 	DeletedAt gorm.DeletedAt `gorm:"column:deleted_at"`
 }
@@ -29,9 +36,10 @@ func newTagCloudTestService(t *testing.T) (*TagService, *gorm.DB) {
 		t.Fatal(err)
 	}
 	if err := db.AutoMigrate(
-		&tagCloudTestUserFile{}, &models.TagCategory{}, &models.TagDefinition{},
+		&tagCloudTestUserFile{}, &models.FileInfo{}, &models.TagCategory{}, &models.TagDefinition{},
 		&models.UserFileTag{}, &models.UserDirectoryTag{}, &models.UserFileTagExclusion{}, &models.UserTagPreference{},
-		&models.TagRuleSet{}, &models.TagRule{}, &models.TagRebuildJob{},
+		&models.UserTagStat{}, &models.UserFileTagState{},
+		&models.FileMetadata{}, &models.FileMetadataState{}, &models.TagRuleSet{}, &models.TagRule{}, &models.TagRebuildJob{},
 	); err != nil {
 		t.Fatal(err)
 	}
@@ -79,12 +87,21 @@ func seedTagCloud(t *testing.T, db *gorm.DB) {
 	}
 }
 
+func refreshSeededTagCloudStats(t *testing.T, service *TagService, db *gorm.DB, userID string, tagIDs ...string) {
+	t.Helper()
+	if err := service.refreshUserTagStats(context.Background(), db, userID, tagIDs); err != nil {
+		t.Fatal(err)
+	}
+}
+
 func TestTagCloudCountsDistinctFilesAndKeepsUserPreferencesIsolated(t *testing.T) {
 	service, db := newTagCloudTestService(t)
 	seedTagCloud(t, db)
 	if err := db.Delete(&tagCloudTestUserFile{}, "user_id = ? AND uf_id = ?", "user-1", "two").Error; err != nil {
 		t.Fatal(err)
 	}
+	refreshSeededTagCloudStats(t, service, db, "user-1", "normal", "system")
+	refreshSeededTagCloudStats(t, service, db, "user-2", "normal")
 	cloud, err := service.TagCloud(context.Background(), "user-1")
 	if err != nil {
 		t.Fatal(err)
@@ -117,6 +134,8 @@ func TestTagCloudCountsDistinctFilesAndKeepsUserPreferencesIsolated(t *testing.T
 func TestUpdateTagCloudCategoryDoesNotCreateRebuildJob(t *testing.T) {
 	service, db := newTagCloudTestService(t)
 	seedTagCloud(t, db)
+	refreshSeededTagCloudStats(t, service, db, "user-1", "normal", "system")
+	refreshSeededTagCloudStats(t, service, db, "user-2", "normal")
 	editor, job, err := service.UpdateTagCloudItem(context.Background(), "user-1", "normal", request.UpdateTagCloudItemRequest{DisplayName: "普通", DisplayCategoryID: "title"})
 	if err != nil {
 		t.Fatal(err)
@@ -139,6 +158,7 @@ func TestUpdateTagCloudCategoryDoesNotCreateRebuildJob(t *testing.T) {
 func TestUpdateTagCloudAliasesReplaceOnlyCurrentTagRules(t *testing.T) {
 	service, db := newTagCloudTestService(t)
 	seedTagCloud(t, db)
+	refreshSeededTagCloudStats(t, service, db, "user-1", "normal", "system")
 	now := time.Now()
 	global := &models.TagRuleSet{ID: "global-v1", ScopeType: models.TagRuleScopeGlobal, Version: 1, Status: models.TagRuleSetActive}
 	globalSnapshot, err := tagging.CompileSnapshot([]models.TagRuleSet{*global}, 20)
@@ -191,6 +211,8 @@ func TestUpdateTagCloudAliasesReplaceOnlyCurrentTagRules(t *testing.T) {
 func TestUpdateTagCloudDisplayNameIsUserScopedAndDoesNotRebuild(t *testing.T) {
 	service, db := newTagCloudTestService(t)
 	seedTagCloud(t, db)
+	refreshSeededTagCloudStats(t, service, db, "user-1", "normal", "system")
+	refreshSeededTagCloudStats(t, service, db, "user-2", "normal")
 
 	editor, job, err := service.UpdateTagCloudItem(context.Background(), "user-1", "normal", request.UpdateTagCloudItemRequest{
 		DisplayName: "我的标签", DisplayCategoryID: "other",
@@ -258,6 +280,7 @@ func TestUpdateTagCloudDisplayNameIsUserScopedAndDoesNotRebuild(t *testing.T) {
 func TestUpdateTagCloudDisplayNameValidatesInputAndConflicts(t *testing.T) {
 	service, db := newTagCloudTestService(t)
 	seedTagCloud(t, db)
+	refreshSeededTagCloudStats(t, service, db, "user-1", "normal", "system")
 	now := time.Now()
 	if err := db.Create(&models.TagDefinition{ID: "duplicate", Name: "已存在", NormalizedName: "已存在", CategoryID: "other", CreatedAt: now}).Error; err != nil {
 		t.Fatal(err)
@@ -282,6 +305,7 @@ func TestUpdateTagCloudDisplayNameValidatesInputAndConflicts(t *testing.T) {
 func TestRestoreTagCloudItemRemainsIdempotentWithoutVisibleAssociation(t *testing.T) {
 	service, db := newTagCloudTestService(t)
 	seedTagCloud(t, db)
+	refreshSeededTagCloudStats(t, service, db, "user-1", "normal", "system")
 	if err := service.HideTagCloudItem(context.Background(), "user-1", "normal"); err != nil {
 		t.Fatal(err)
 	}
@@ -302,5 +326,127 @@ func TestRestoreTagCloudItemRemainsIdempotentWithoutVisibleAssociation(t *testin
 	}
 	if job != nil {
 		t.Fatal("重复恢复不应创建额外重建任务")
+	}
+}
+
+func TestTagCloudUsesStatsAndRefreshesManualChanges(t *testing.T) {
+	service, db := newTagCloudTestService(t)
+	seedTagCloud(t, db)
+	refreshSeededTagCloudStats(t, service, db, "user-1", "normal", "system")
+
+	cloud, err := service.TagCloud(context.Background(), "user-1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(cloud.Tags) != 2 || cloud.Tags[0].ID != "normal" || cloud.Tags[0].FileCount != 2 {
+		t.Fatalf("标签云未读取统计表: %+v", cloud.Tags)
+	}
+	if err := service.UpdateManualTags(context.Background(), "user-1", []string{"one"}, nil, []string{"normal"}); err != nil {
+		t.Fatal(err)
+	}
+	cloud, err = service.TagCloud(context.Background(), "user-1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, tag := range cloud.Tags {
+		if tag.ID == "normal" && tag.FileCount != 2 {
+			t.Fatalf("删除单一来源不应影响去重文件数: %+v", cloud.Tags)
+		}
+	}
+	if err := service.UpdateManualTags(context.Background(), "user-1", []string{"two"}, nil, []string{"normal"}); err != nil {
+		t.Fatal(err)
+	}
+	cloud, err = service.TagCloud(context.Background(), "user-1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, tag := range cloud.Tags {
+		if tag.ID == "normal" && tag.FileCount != 1 {
+			t.Fatalf("删除最后一个文件来源后统计未刷新: %+v", cloud.Tags)
+		}
+	}
+}
+
+func TestGenerateUserFileRefreshesTagStatsForOldAndNewAutomaticTags(t *testing.T) {
+	if logger.LOG == nil {
+		logger.LOG = slog.New(slog.NewTextHandler(io.Discard, nil))
+	}
+	service, db := newTagCloudTestService(t)
+	seedTagCloud(t, db)
+	now := time.Now()
+	for _, category := range []models.TagCategory{
+		{ID: "codec", Code: "codec", Name: "编码", Color: "#7b61ff", Enabled: true, CreatedAt: now, UpdatedAt: now},
+		{ID: "resolution", Code: "resolution", Name: "分辨率", Color: "#909399", Enabled: true, CreatedAt: now, UpdatedAt: now},
+	} {
+		if err := db.Clauses(clause.OnConflict{DoNothing: true}).Create(&category).Error; err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := db.Create(&models.TagDefinition{ID: "hevc", Name: "hevc", NormalizedName: "hevc", CategoryID: "codec", CreatedAt: now}).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Create(&models.UserFileTag{ID: "old-auto", UserID: "user-1", UFID: "one", TagID: "hevc", SourceType: models.TagSourceFilename, SourceKey: "old", CreatedAt: now}).Error; err != nil {
+		t.Fatal(err)
+	}
+	refreshSeededTagCloudStats(t, service, db, "user-1", "hevc")
+	global := &models.TagRuleSet{
+		ID: "global-auto", ScopeType: models.TagRuleScopeGlobal, Version: 1,
+		Revision: 1, Status: models.TagRuleSetActive, CreatedAt: now, UpdatedAt: now,
+		Rules: []models.TagRule{{
+			ID: "rule-1080p", RuleSetID: "global-auto", Type: models.TagRuleTypeRegex,
+			TargetField: "basename", Pattern: `(?i)(1080p)`, Replacement: "$1",
+			CategoryID: "resolution", Weight: 1, Enabled: true, CreatedAt: now, UpdatedAt: now,
+		}},
+	}
+	if err := db.Create(&models.TagRuleSet{
+		ID: global.ID, ScopeType: global.ScopeType, ScopeID: global.ScopeID, Version: global.Version,
+		Revision: global.Revision, Status: global.Status, CreatedAt: global.CreatedAt, UpdatedAt: global.UpdatedAt,
+	}).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Create(&global.Rules).Error; err != nil {
+		t.Fatal(err)
+	}
+	snapshot, err := tagging.CompileSnapshot([]models.TagRuleSet{*global}, 20)
+	if err != nil {
+		t.Fatal(err)
+	}
+	service.globalRuntime.Store(&globalTagRuntime{ruleSet: global, snapshot: snapshot})
+	service.autoEnabled.Store(true)
+	service.autoLimit.Store(20)
+	if err := db.Create(&models.FileInfo{ID: "physical-one", Name: "电影.1080p.mkv", RandomName: "physical-one", Mime: "video/x-matroska", FileHash: "hash-one", CreatedAt: custom_type.Now(), UpdatedAt: custom_type.Now()}).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Model(&tagCloudTestUserFile{}).Where("user_id = ? AND uf_id = ?", "user-1", "one").Update("file_id", "physical-one").Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Model(&tagCloudTestUserFile{}).Where("user_id = ? AND uf_id = ?", "user-1", "one").Update("file_name", "电影.1080p.mkv").Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Create(&models.UserFileTagState{UFID: "one", UserID: "user-1", Status: models.TagStateRunning, UpdatedAt: now}).Error; err != nil {
+		t.Fatal(err)
+	}
+
+	if err := service.GenerateUserFile(context.Background(), "user-1", "one", "", 0); err != nil {
+		t.Fatal(err)
+	}
+
+	var oldStatCount int64
+	if err := db.Model(&models.UserTagStat{}).Where("user_id = ? AND tag_id = ?", "user-1", "hevc").Count(&oldStatCount).Error; err != nil {
+		t.Fatal(err)
+	}
+	if oldStatCount != 0 {
+		t.Fatalf("旧自动标签统计未清理: %d", oldStatCount)
+	}
+	var generated models.TagDefinition
+	if err := db.Where("normalized_name = ? AND category_id = ?", "1080p", "resolution").First(&generated).Error; err != nil {
+		t.Fatal(err)
+	}
+	var stat models.UserTagStat
+	if err := db.Where("user_id = ? AND tag_id = ?", "user-1", generated.ID).First(&stat).Error; err != nil {
+		t.Fatal(err)
+	}
+	if stat.FileCount != 1 {
+		t.Fatalf("新自动标签统计异常: %+v", stat)
 	}
 }

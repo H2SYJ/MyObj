@@ -65,10 +65,17 @@ func (f *FileService) createUserFileWithTagState(ctx context.Context, userFile *
 
 func (f *FileService) rollbackUserFileWithTagState(ctx context.Context, userID, ufID string) error {
 	return f.factory.DB().WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		tagIDs, err := tagIDsForUserFile(ctx, tx, userID, ufID)
+		if err != nil {
+			return err
+		}
 		if err := deleteUserFileTagRecords(tx, userID, ufID); err != nil {
 			return err
 		}
-		return tx.Unscoped().Where("user_id = ? AND uf_id = ?", userID, ufID).Delete(&models.UserFiles{}).Error
+		if err := tx.Unscoped().Where("user_id = ? AND uf_id = ?", userID, ufID).Delete(&models.UserFiles{}).Error; err != nil {
+			return err
+		}
+		return refreshUserTagStats(ctx, tx, userID, tagIDs)
 	})
 }
 

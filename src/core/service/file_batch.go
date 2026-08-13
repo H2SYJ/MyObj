@@ -165,7 +165,14 @@ func recycleSingleUserFile(ctx context.Context, factory *impl.RepositoryFactory,
 	if err := factory.Recycled().Create(ctx, recycled); err != nil {
 		return err
 	}
-	return tx.Where("user_id = ? AND uf_id = ?", userID, fileID).Delete(&models.UserFiles{}).Error
+	tagIDs, err := tagIDsForUserFile(ctx, tx, userID, fileID)
+	if err != nil {
+		return err
+	}
+	if err := tx.Where("user_id = ? AND uf_id = ?", userID, fileID).Delete(&models.UserFiles{}).Error; err != nil {
+		return err
+	}
+	return refreshUserTagStats(ctx, tx, userID, tagIDs)
 }
 
 func recycleDirectoryTree(ctx context.Context, factory *impl.RepositoryFactory, tx *gorm.DB, userID string, rootID int) ([]string, error) {
@@ -252,7 +259,18 @@ func recycleDirectoryTree(ctx context.Context, factory *impl.RepositoryFactory, 
 		memberIDs = append(memberIDs, file.UfID)
 	}
 	if len(memberIDs) > 0 {
+		var affectedTagIDs []string
+		for _, memberID := range memberIDs {
+			tagIDs, err := tagIDsForUserFile(ctx, tx, userID, memberID)
+			if err != nil {
+				return nil, err
+			}
+			affectedTagIDs = append(affectedTagIDs, tagIDs...)
+		}
 		if err := tx.Where("user_id = ? AND uf_id IN ?", userID, memberIDs).Delete(&models.UserFiles{}).Error; err != nil {
+			return nil, err
+		}
+		if err := refreshUserTagStats(ctx, tx, userID, affectedTagIDs); err != nil {
 			return nil, err
 		}
 	}

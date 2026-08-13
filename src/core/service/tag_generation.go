@@ -50,6 +50,7 @@ func (s *TagService) generateUserFile(ctx context.Context, userID, ufID, runToke
 	}
 	now := time.Now()
 	err = s.factory.DB().WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		var affectedTagIDs []string
 		if runToken != "" {
 			var count int64
 			if err := tx.Model(&models.UserFileTagState{}).
@@ -84,6 +85,13 @@ func (s *TagService) generateUserFile(ctx context.Context, userID, ufID, runToke
 		if activeUserVersion != snapshot.UserVersion {
 			return errStaleTagGeneration
 		}
+		var oldAutomaticTagIDs []string
+		if err := tx.Model(&models.UserFileTag{}).
+			Where("user_id = ? AND uf_id = ? AND source_type <> ?", userID, ufID, models.TagSourceManual).
+			Distinct("tag_id").Pluck("tag_id", &oldAutomaticTagIDs).Error; err != nil {
+			return err
+		}
+		affectedTagIDs = append(affectedTagIDs, oldAutomaticTagIDs...)
 		if err := tx.Where("user_id = ? AND uf_id = ? AND source_type <> ?", userID, ufID, models.TagSourceManual).
 			Delete(&models.UserFileTag{}).Error; err != nil {
 			return err
@@ -109,6 +117,7 @@ func (s *TagService) generateUserFile(ctx context.Context, userID, ufID, runToke
 			if tagErr != nil {
 				return tagErr
 			}
+			affectedTagIDs = append(affectedTagIDs, tag.ID)
 			if _, suppressed := excludedSet[tag.ID]; suppressed {
 				continue
 			}
@@ -139,7 +148,7 @@ func (s *TagService) generateUserFile(ctx context.Context, userID, ufID, runToke
 		if result.RowsAffected != 1 {
 			return errStaleTagGeneration
 		}
-		return nil
+		return s.refreshUserTagStats(ctx, tx, userID, affectedTagIDs)
 	})
 	if err == nil {
 		logger.LOG.Info("自动标签生成完成", "uf_id", ufID, "global_version", snapshot.GlobalVersion,

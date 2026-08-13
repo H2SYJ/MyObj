@@ -121,6 +121,7 @@ func (s *TagService) UpdateManualTags(ctx context.Context, userID string, fileID
 		return err
 	}
 	return s.factory.DB().WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		affectedTagIDs := append([]string(nil), removeTagIDs...)
 		for _, ufID := range fileIDs {
 			if len(removeTagIDs) > 0 {
 				if err := tx.Where("user_id = ? AND uf_id = ? AND source_type = ? AND tag_id IN ?", userID, ufID, models.TagSourceManual, removeTagIDs).
@@ -140,6 +141,7 @@ func (s *TagService) UpdateManualTags(ctx context.Context, userID string, fileID
 				if err != nil {
 					return err
 				}
+				affectedTagIDs = append(affectedTagIDs, tag.ID)
 				binding := models.UserFileTag{
 					ID: uuid.NewString(), UserID: userID, UFID: ufID, TagID: tag.ID,
 					SourceType: models.TagSourceManual, SourceKey: "user", Visibility: visibility,
@@ -161,7 +163,7 @@ func (s *TagService) UpdateManualTags(ctx context.Context, userID string, fileID
 				return errors.New("每个文件最多允许100个手工标签")
 			}
 		}
-		return nil
+		return s.refreshUserTagStats(ctx, tx, userID, affectedTagIDs)
 	})
 }
 
@@ -169,6 +171,7 @@ func (s *TagService) UpdateExclusions(ctx context.Context, userID, ufID string, 
 	if err := s.ensureOwnership(ctx, userID, []string{ufID}); err != nil {
 		return err
 	}
+	affectedTagIDs := uniqueTagStrings(append(append([]string(nil), suppress...), restore...))
 	err := s.factory.DB().WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		for _, tagID := range suppress {
 			var autoCount int64
@@ -196,7 +199,7 @@ func (s *TagService) UpdateExclusions(ctx context.Context, userID, ufID string, 
 				return err
 			}
 		}
-		return nil
+		return s.refreshUserTagStats(ctx, tx, userID, affectedTagIDs)
 	})
 	if err == nil && len(restore) > 0 {
 		s.notifyPending()

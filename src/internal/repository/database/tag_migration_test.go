@@ -11,13 +11,26 @@ import (
 	"myobj/src/pkg/models"
 )
 
+type tagMigrationTestUserFile struct {
+	UserID      string     `gorm:"column:user_id"`
+	FileID      string     `gorm:"column:file_id"`
+	FileName    string     `gorm:"column:file_name"`
+	DirectoryID int        `gorm:"column:directory_id"`
+	IsPublic    bool       `gorm:"column:public"`
+	CreatedAt   time.Time  `gorm:"column:created_at"`
+	DeletedAt   *time.Time `gorm:"column:deleted_at"`
+	UFID        string     `gorm:"column:uf_id"`
+}
+
+func (tagMigrationTestUserFile) TableName() string { return "user_files" }
+
 func TestMigrateTaggingSchemaIsIdempotentAndGrantsExistingPreviewGroups(t *testing.T) {
 	db, err := gorm.Open(sqlite.Open("file:"+t.Name()+"?mode=memory&cache=shared"), &gorm.Config{})
 	if err != nil {
 		t.Fatal(err)
 	}
 	if err := db.AutoMigrate(
-		&models.SysConfig{}, &models.Power{}, &models.GroupPower{}, &models.UserFiles{},
+		&models.SysConfig{}, &models.Power{}, &models.GroupPower{}, &tagMigrationTestUserFile{},
 		&models.TagCategory{}, &models.TagDefinition{}, &models.UserFileTag{},
 		&models.UserDirectoryTag{}, &models.UserFileTagExclusion{}, &models.RecycledDirectoryTag{},
 	); err != nil {
@@ -45,8 +58,17 @@ func TestMigrateTaggingSchemaIsIdempotentAndGrantsExistingPreviewGroups(t *testi
 	if err := db.Create(&numericTag).Error; err != nil {
 		t.Fatal(err)
 	}
+	normalTag := models.TagDefinition{
+		ID: "normal", Name: "电影", NormalizedName: "电影",
+		CategoryID: customCategory.ID, CreatedAt: now,
+	}
+	if err := db.Create(&normalTag).Error; err != nil {
+		t.Fatal(err)
+	}
 	for _, record := range []interface{}{
+		&tagMigrationTestUserFile{UserID: "user-1", FileID: "file-1", UFID: "uf-1", FileName: "测试.mp4", DirectoryID: 1, IsPublic: false, CreatedAt: now},
 		&models.UserFileTag{ID: "numeric-file", UserID: "user-1", UFID: "uf-1", TagID: numericTag.ID, SourceType: models.TagSourceFilename, SourceKey: "gse", CreatedAt: now},
+		&models.UserFileTag{ID: "normal-file", UserID: "user-1", UFID: "uf-1", TagID: normalTag.ID, SourceType: models.TagSourceManual, SourceKey: "user", CreatedAt: now},
 		&models.UserDirectoryTag{ID: "numeric-directory", UserID: "user-1", DirectoryID: 1, TagID: numericTag.ID, CreatedBy: "user-1", CreatedAt: now},
 		&models.UserFileTagExclusion{UserID: "user-1", UFID: "uf-1", TagID: numericTag.ID, CreatedAt: now},
 		&models.RecycledDirectoryTag{RecycledID: "recycled-1", OriginalDirID: 1, TagID: numericTag.ID},
@@ -111,6 +133,12 @@ func TestMigrateTaggingSchemaIsIdempotentAndGrantsExistingPreviewGroups(t *testi
 	if !db.Migrator().HasIndex(&models.TagDefinition{}, "idx_tag_definition_system_code") {
 		t.Fatal("迁移后缺少系统标签编码唯一索引")
 	}
+	if !db.Migrator().HasTable(&models.UserTagStat{}) {
+		t.Fatal("缺少用户标签统计表")
+	}
+	if !db.Migrator().HasIndex(&models.UserTagStat{}, "idx_user_tag_stat_count") {
+		t.Fatal("缺少用户标签统计计数索引")
+	}
 	var cinemaTag models.TagDefinition
 	if err := db.Where("system_code = ?", models.TagSystemCodeCinemaMode).First(&cinemaTag).Error; err != nil {
 		t.Fatalf("迁移后缺少影视模式标签: %v", err)
@@ -131,6 +159,27 @@ func TestMigrateTaggingSchemaIsIdempotentAndGrantsExistingPreviewGroups(t *testi
 	}
 	if cleanupMigrationCount != 1 {
 		t.Fatalf("纯数字标签清理迁移记录数量异常: %d", cleanupMigrationCount)
+	}
+	var statBackfillCount int64
+	if err := db.Model(&schemaMigration{}).Where("version = ?", userTagStatBackfillVersion).Count(&statBackfillCount).Error; err != nil {
+		t.Fatal(err)
+	}
+	if statBackfillCount != 1 {
+		t.Fatalf("标签统计回填迁移记录数量异常: %d", statBackfillCount)
+	}
+	var stat models.UserTagStat
+	if err := db.Where("user_id = ? AND tag_id = ?", "user-1", normalTag.ID).First(&stat).Error; err != nil {
+		t.Fatalf("标签统计回填缺少普通标签: %v", err)
+	}
+	if stat.FileCount != 1 {
+		t.Fatalf("标签统计回填计数异常: %+v", stat)
+	}
+	var numericStatCount int64
+	if err := db.Model(&models.UserTagStat{}).Where("tag_id = ?", numericTag.ID).Count(&numericStatCount).Error; err != nil {
+		t.Fatal(err)
+	}
+	if numericStatCount != 0 {
+		t.Fatalf("纯数字标签不应保留统计: %d", numericStatCount)
 	}
 	for _, model := range []interface{}{
 		&models.UserFileTag{}, &models.UserDirectoryTag{}, &models.UserFileTagExclusion{}, &models.RecycledDirectoryTag{},

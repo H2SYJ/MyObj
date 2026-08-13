@@ -47,26 +47,16 @@ func cloudItemFromRow(row tagCloudRow) response.TagCloudItem {
 }
 
 func (s *TagService) tagCloudQuery(ctx context.Context, userID string) *gorm.DB {
-	fileCountSQL := `(SELECT COUNT(DISTINCT uf.uf_id)
-		FROM user_file_tag uft
-		JOIN user_files uf ON uf.uf_id = uft.uf_id AND uf.user_id = uft.user_id AND uf.deleted_at IS NULL
-		WHERE uft.tag_id = td.id AND uft.user_id = ?
-		AND NOT EXISTS (SELECT 1 FROM user_file_tag_exclusion e
-			WHERE e.user_id = uft.user_id AND e.uf_id = uft.uf_id AND e.tag_id = uft.tag_id))`
 	return s.factory.DB().WithContext(ctx).Table("tag_definition AS td").
 		Select(`td.id, COALESCE(pref.display_name, td.name) AS name, td.name AS base_name, td.builtin, td.system_code,
 			base.id AS base_category_id, base.code AS base_category_code, base.name AS base_category_name, base.color AS base_color,
 			display.id AS display_category_id, display.code AS display_category_code, display.name AS display_category_name, display.color AS display_color,
-			COALESCE(pref.hidden, false) AS hidden, `+fileCountSQL+` AS file_count`, userID).
+			COALESCE(pref.hidden, false) AS hidden, COALESCE(stat.file_count, 0) AS file_count`).
 		Joins("JOIN tag_category base ON base.id = td.category_id").
 		Joins("LEFT JOIN user_tag_preference pref ON pref.tag_id = td.id AND pref.user_id = ?", userID).
+		Joins("LEFT JOIN user_tag_stat stat ON stat.tag_id = td.id AND stat.user_id = ?", userID).
 		Joins("LEFT JOIN tag_category display ON display.id = pref.display_category_id AND display.enabled = ?", true).
-		Where(`COALESCE(pref.hidden, false) = ? OR EXISTS (SELECT 1
-			FROM user_file_tag uft
-			JOIN user_files uf ON uf.uf_id = uft.uf_id AND uf.user_id = uft.user_id AND uf.deleted_at IS NULL
-			WHERE uft.tag_id = td.id AND uft.user_id = ?
-			AND NOT EXISTS (SELECT 1 FROM user_file_tag_exclusion e
-				WHERE e.user_id = uft.user_id AND e.uf_id = uft.uf_id AND e.tag_id = uft.tag_id))`, true, userID)
+		Where("COALESCE(pref.hidden, false) = ? OR COALESCE(stat.file_count, 0) > 0", true)
 }
 
 func (s *TagService) TagCloud(ctx context.Context, userID string) (*response.TagCloudResponse, error) {
@@ -248,13 +238,16 @@ func (s *TagService) UpdateTagCloudItem(ctx context.Context, userID, tagID strin
 				job = createdJob
 			}
 		}
-		return tx.Clauses(clause.OnConflict{
+		if err := tx.Clauses(clause.OnConflict{
 			Columns: []clause.Column{{Name: "user_id"}, {Name: "tag_id"}},
 			DoUpdates: clause.Assignments(map[string]interface{}{
 				"display_name": pref.DisplayName, "normalized_display_name": pref.NormalizedDisplayName,
 				"display_category_id": pref.DisplayCategoryID, "updated_at": now,
 			}),
-		}).Create(&pref).Error
+		}).Create(&pref).Error; err != nil {
+			return err
+		}
+		return s.refreshUserTagStats(ctx, tx, userID, []string{tagID})
 	})
 	if err != nil {
 		return nil, nil, err
@@ -276,10 +269,15 @@ func (s *TagService) HideTagCloudItem(ctx context.Context, userID, tagID string)
 	}
 	now := time.Now()
 	pref := models.UserTagPreference{UserID: userID, TagID: tagID, Hidden: true, CreatedAt: now, UpdatedAt: now}
-	return s.factory.DB().WithContext(ctx).Clauses(clause.OnConflict{
-		Columns:   []clause.Column{{Name: "user_id"}, {Name: "tag_id"}},
-		DoUpdates: clause.Assignments(map[string]interface{}{"hidden": true, "updated_at": now}),
-	}).Create(&pref).Error
+	return s.factory.DB().WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if err := tx.Clauses(clause.OnConflict{
+			Columns:   []clause.Column{{Name: "user_id"}, {Name: "tag_id"}},
+			DoUpdates: clause.Assignments(map[string]interface{}{"hidden": true, "updated_at": now}),
+		}).Create(&pref).Error; err != nil {
+			return err
+		}
+		return s.refreshUserTagStats(ctx, tx, userID, []string{tagID})
+	})
 }
 
 func (s *TagService) RestoreTagCloudItem(ctx context.Context, userID, tagID string) (*models.TagRebuildJob, error) {
@@ -326,7 +324,7 @@ func (s *TagService) RestoreTagCloudItem(ctx context.Context, userID, tagID stri
 			return createErr
 		}
 		job = createdJob
-		return nil
+		return s.refreshUserTagStats(ctx, tx, userID, []string{tagID})
 	})
 	if err != nil {
 		return nil, err
@@ -335,4 +333,75 @@ func (s *TagService) RestoreTagCloudItem(ctx context.Context, userID, tagID stri
 		s.notifyRebuild()
 	}
 	return job, nil
+}
+
+type tagStatCountRow struct {
+	TagID     string
+	FileCount int64
+}
+
+func (s *TagService) tagIDsForUserFile(ctx context.Context, tx *gorm.DB, userID, ufID string) ([]string, error) {
+	return tagIDsForUserFile(ctx, tx, userID, ufID)
+}
+
+func tagIDsForUserFile(ctx context.Context, tx *gorm.DB, userID, ufID string) ([]string, error) {
+	var tagIDs []string
+	if err := tx.WithContext(ctx).Model(&models.UserFileTag{}).
+		Where("user_id = ? AND uf_id = ?", userID, ufID).
+		Distinct("tag_id").Pluck("tag_id", &tagIDs).Error; err != nil {
+		return nil, err
+	}
+	var excluded []string
+	if err := tx.WithContext(ctx).Model(&models.UserFileTagExclusion{}).
+		Where("user_id = ? AND uf_id = ?", userID, ufID).
+		Distinct("tag_id").Pluck("tag_id", &excluded).Error; err != nil {
+		return nil, err
+	}
+	return uniqueTagStrings(append(tagIDs, excluded...)), nil
+}
+
+func (s *TagService) refreshUserTagStats(ctx context.Context, tx *gorm.DB, userID string, tagIDs []string) error {
+	return refreshUserTagStats(ctx, tx, userID, tagIDs)
+}
+
+func refreshUserTagStats(ctx context.Context, tx *gorm.DB, userID string, tagIDs []string) error {
+	tagIDs = uniqueTagStrings(tagIDs)
+	if userID == "" || len(tagIDs) == 0 {
+		return nil
+	}
+	var rows []tagStatCountRow
+	if err := tx.WithContext(ctx).Table("user_file_tag AS uft").
+		Select("uft.tag_id, COUNT(DISTINCT uft.uf_id) AS file_count").
+		Joins("JOIN user_files uf ON uf.uf_id = uft.uf_id AND uf.user_id = uft.user_id AND uf.deleted_at IS NULL").
+		Where("uft.user_id = ? AND uft.tag_id IN ?", userID, tagIDs).
+		Where(`NOT EXISTS (SELECT 1 FROM user_file_tag_exclusion e
+			WHERE e.user_id = uft.user_id AND e.uf_id = uft.uf_id AND e.tag_id = uft.tag_id)`).
+		Group("uft.tag_id").
+		Scan(&rows).Error; err != nil {
+		return err
+	}
+	counts := make(map[string]int64, len(rows))
+	for _, row := range rows {
+		counts[row.TagID] = row.FileCount
+	}
+	now := time.Now()
+	for _, tagID := range tagIDs {
+		count := counts[tagID]
+		if count <= 0 {
+			if err := tx.WithContext(ctx).Where("user_id = ? AND tag_id = ?", userID, tagID).Delete(&models.UserTagStat{}).Error; err != nil {
+				return err
+			}
+			continue
+		}
+		stat := models.UserTagStat{UserID: userID, TagID: tagID, FileCount: count, UpdatedAt: now}
+		if err := tx.WithContext(ctx).Clauses(clause.OnConflict{
+			Columns: []clause.Column{{Name: "user_id"}, {Name: "tag_id"}},
+			DoUpdates: clause.Assignments(map[string]interface{}{
+				"file_count": count, "updated_at": now,
+			}),
+		}).Create(&stat).Error; err != nil {
+			return err
+		}
+	}
+	return nil
 }
