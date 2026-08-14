@@ -1303,8 +1303,8 @@ type migrationRelationshipCheck struct {
 
 func migrationRelationshipChecks() []migrationRelationshipCheck {
 	return []migrationRelationshipCheck{
-		{"用户组引用", "SELECT COUNT(*) FROM user_info u LEFT JOIN groups g ON g.id = u.group_id WHERE g.id IS NULL"},
-		{"用户组权限引用", "SELECT COUNT(*) FROM group_power gp LEFT JOIN groups g ON g.id = gp.group_id LEFT JOIN power p ON p.id = gp.power_id WHERE g.id IS NULL OR p.id IS NULL"},
+		{"用户组引用", "SELECT COUNT(*) FROM user_info u LEFT JOIN `groups` g ON g.id = u.group_id WHERE g.id IS NULL"},
+		{"用户组权限引用", "SELECT COUNT(*) FROM group_power gp LEFT JOIN `groups` g ON g.id = gp.group_id LEFT JOIN power p ON p.id = gp.power_id WHERE g.id IS NULL OR p.id IS NULL"},
 		{"用户文件用户引用", "SELECT COUNT(*) FROM user_files uf LEFT JOIN user_info u ON u.id = uf.user_id WHERE u.id IS NULL"},
 		{"活动用户文件实体引用", "SELECT COUNT(*) FROM user_files uf LEFT JOIN file_info f ON f.id = uf.file_id WHERE uf.deleted_at IS NULL AND f.id IS NULL"},
 		{"活动文件目录引用", "SELECT COUNT(*) FROM user_files uf LEFT JOIN virtual_directory d ON d.id = uf.directory_id AND d.user_id = uf.user_id WHERE uf.deleted_at IS NULL AND d.id IS NULL"},
