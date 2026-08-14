@@ -336,8 +336,14 @@ func (s *TagService) RestoreTagCloudItem(ctx context.Context, userID, tagID stri
 }
 
 type tagStatCountRow struct {
+	UserID    string
 	TagID     string
 	FileCount int64
+}
+
+type tagStatKey struct {
+	UserID string
+	TagID  string
 }
 
 func (s *TagService) tagIDsForUserFile(ctx context.Context, tx *gorm.DB, userID, ufID string) ([]string, error) {
@@ -364,43 +370,70 @@ func (s *TagService) refreshUserTagStats(ctx context.Context, tx *gorm.DB, userI
 	return refreshUserTagStats(ctx, tx, userID, tagIDs)
 }
 
+func (s *TagService) refreshUserTagStatsBatch(ctx context.Context, tx *gorm.DB, affectedTagIDs map[string][]string) error {
+	return refreshUserTagStatsBatch(ctx, tx, affectedTagIDs)
+}
+
 func refreshUserTagStats(ctx context.Context, tx *gorm.DB, userID string, tagIDs []string) error {
-	tagIDs = uniqueTagStrings(tagIDs)
-	if userID == "" || len(tagIDs) == 0 {
+	return refreshUserTagStatsBatch(ctx, tx, map[string][]string{userID: tagIDs})
+}
+
+func refreshUserTagStatsBatch(ctx context.Context, tx *gorm.DB, affectedTagIDs map[string][]string) error {
+	userIDs := make([]string, 0, len(affectedTagIDs))
+	normalizedTagIDs := make(map[string][]string, len(affectedTagIDs))
+	for userID := range affectedTagIDs {
+		tagIDs := uniqueTagStrings(affectedTagIDs[userID])
+		if userID == "" || len(tagIDs) == 0 {
+			continue
+		}
+		sort.Strings(tagIDs)
+		normalizedTagIDs[userID] = tagIDs
+		userIDs = append(userIDs, userID)
+	}
+	if len(userIDs) == 0 {
 		return nil
+	}
+	sort.Strings(userIDs)
+	conditions := make([]string, 0, len(userIDs))
+	conditionArgs := make([]interface{}, 0, len(userIDs)*2)
+	for _, userID := range userIDs {
+		conditions = append(conditions, "(uft.user_id = ? AND uft.tag_id IN ?)")
+		conditionArgs = append(conditionArgs, userID, normalizedTagIDs[userID])
 	}
 	var rows []tagStatCountRow
 	if err := tx.WithContext(ctx).Table("user_file_tag AS uft").
-		Select("uft.tag_id, COUNT(DISTINCT uft.uf_id) AS file_count").
+		Select("uft.user_id, uft.tag_id, COUNT(DISTINCT uft.uf_id) AS file_count").
 		Joins("JOIN user_files uf ON uf.uf_id = uft.uf_id AND uf.user_id = uft.user_id AND uf.deleted_at IS NULL").
-		Where("uft.user_id = ? AND uft.tag_id IN ?", userID, tagIDs).
+		Where("("+strings.Join(conditions, " OR ")+")", conditionArgs...).
 		Where(`NOT EXISTS (SELECT 1 FROM user_file_tag_exclusion e
 			WHERE e.user_id = uft.user_id AND e.uf_id = uft.uf_id AND e.tag_id = uft.tag_id)`).
-		Group("uft.tag_id").
+		Group("uft.user_id, uft.tag_id").
 		Scan(&rows).Error; err != nil {
 		return err
 	}
-	counts := make(map[string]int64, len(rows))
+	counts := make(map[tagStatKey]int64, len(rows))
 	for _, row := range rows {
-		counts[row.TagID] = row.FileCount
+		counts[tagStatKey{UserID: row.UserID, TagID: row.TagID}] = row.FileCount
 	}
 	now := time.Now()
-	for _, tagID := range tagIDs {
-		count := counts[tagID]
-		if count <= 0 {
-			if err := tx.WithContext(ctx).Where("user_id = ? AND tag_id = ?", userID, tagID).Delete(&models.UserTagStat{}).Error; err != nil {
+	for _, userID := range userIDs {
+		for _, tagID := range normalizedTagIDs[userID] {
+			count := counts[tagStatKey{UserID: userID, TagID: tagID}]
+			if count <= 0 {
+				if err := tx.WithContext(ctx).Where("user_id = ? AND tag_id = ?", userID, tagID).Delete(&models.UserTagStat{}).Error; err != nil {
+					return err
+				}
+				continue
+			}
+			stat := models.UserTagStat{UserID: userID, TagID: tagID, FileCount: count, UpdatedAt: now}
+			if err := tx.WithContext(ctx).Clauses(clause.OnConflict{
+				Columns: []clause.Column{{Name: "user_id"}, {Name: "tag_id"}},
+				DoUpdates: clause.Assignments(map[string]interface{}{
+					"file_count": count, "updated_at": now,
+				}),
+			}).Create(&stat).Error; err != nil {
 				return err
 			}
-			continue
-		}
-		stat := models.UserTagStat{UserID: userID, TagID: tagID, FileCount: count, UpdatedAt: now}
-		if err := tx.WithContext(ctx).Clauses(clause.OnConflict{
-			Columns: []clause.Column{{Name: "user_id"}, {Name: "tag_id"}},
-			DoUpdates: clause.Assignments(map[string]interface{}{
-				"file_count": count, "updated_at": now,
-			}),
-		}).Create(&stat).Error; err != nil {
-			return err
 		}
 	}
 	return nil

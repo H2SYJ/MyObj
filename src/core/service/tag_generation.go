@@ -19,24 +19,33 @@ func (s *TagService) GenerateUserFile(ctx context.Context, userID, ufID, runToke
 }
 
 func (s *TagService) generateUserFile(ctx context.Context, userID, ufID, runToken string, targetVersion int64, rebuildGuard *tagRebuildGuard) error {
+	_, err := s.generateUserFileWithStats(ctx, userID, ufID, runToken, targetVersion, rebuildGuard, true)
+	return err
+}
+
+func (s *TagService) generateUserFileForRebuild(ctx context.Context, userID, ufID, runToken string, targetVersion int64, rebuildGuard *tagRebuildGuard) ([]string, error) {
+	return s.generateUserFileWithStats(ctx, userID, ufID, runToken, targetVersion, rebuildGuard, false)
+}
+
+func (s *TagService) generateUserFileWithStats(ctx context.Context, userID, ufID, runToken string, targetVersion int64, rebuildGuard *tagRebuildGuard, refreshStatsImmediately bool) ([]string, error) {
 	if !s.autoEnabled.Load() {
-		return errAutoTagDisabled
+		return nil, errAutoTagDisabled
 	}
 	snapshot, err := s.snapshotForUser(ctx, userID)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	if targetVersion > 0 && snapshot.GlobalVersion != targetVersion {
-		return errStaleTagGeneration
+		return nil, errStaleTagGeneration
 	}
 
 	var userFile models.UserFiles
 	if err := s.factory.DB().WithContext(ctx).Where("user_id = ? AND uf_id = ? AND deleted_at IS NULL", userID, ufID).First(&userFile).Error; err != nil {
-		return err
+		return nil, err
 	}
 	var fileInfo models.FileInfo
 	if err := s.factory.DB().WithContext(ctx).Where("id = ?", userFile.FileID).First(&fileInfo).Error; err != nil {
-		return err
+		return nil, err
 	}
 	metadata, metadataVersion, metadataPartial := s.loadMetadata(ctx, userFile.FileID, fileInfo.IsEnc)
 	candidates := snapshot.Generate(tagging.Input{
@@ -49,8 +58,8 @@ func (s *TagService) generateUserFile(ctx context.Context, userID, ufID, runToke
 		status = models.TagStatePartial
 	}
 	now := time.Now()
+	var affectedTagIDs []string
 	err = s.factory.DB().WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		var affectedTagIDs []string
 		if runToken != "" {
 			var count int64
 			if err := tx.Model(&models.UserFileTagState{}).
@@ -148,13 +157,17 @@ func (s *TagService) generateUserFile(ctx context.Context, userID, ufID, runToke
 		if result.RowsAffected != 1 {
 			return errStaleTagGeneration
 		}
-		return s.refreshUserTagStats(ctx, tx, userID, affectedTagIDs)
+		if refreshStatsImmediately {
+			return s.refreshUserTagStats(ctx, tx, userID, affectedTagIDs)
+		}
+		return nil
 	})
-	if err == nil {
-		logger.LOG.Info("自动标签生成完成", "uf_id", ufID, "global_version", snapshot.GlobalVersion,
-			"user_version", snapshot.UserVersion, "generated", len(candidates), "status", status)
+	if err != nil {
+		return nil, err
 	}
-	return err
+	logger.LOG.Info("自动标签生成完成", "uf_id", ufID, "global_version", snapshot.GlobalVersion,
+		"user_version", snapshot.UserVersion, "generated", len(candidates), "status", status)
+	return uniqueTagStrings(affectedTagIDs), nil
 }
 
 func validateTagRebuildGuard(tx *gorm.DB, guard *tagRebuildGuard) error {

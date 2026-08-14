@@ -151,6 +151,7 @@ func (s *TagService) processRebuildJob(job *models.TagRebuildJob) {
 		}
 
 		batchSucceeded, batchFailed := int64(0), int64(0)
+		batchAffectedTagIDs := make(map[string][]string)
 		lastCursor := job.Cursor
 		for _, file := range files {
 			lastCursor = file.UfID
@@ -176,7 +177,7 @@ func (s *TagService) processRebuildJob(job *models.TagRebuildJob) {
 			if job.ScopeType == models.TagRuleScopeGlobal {
 				targetGlobalVersion = job.TargetVersion
 			}
-			err = s.generateUserFile(s.ctx, file.UserID, file.UfID, state.RunToken, targetGlobalVersion, &tagRebuildGuard{
+			affectedTagIDs, err := s.generateUserFileForRebuild(s.ctx, file.UserID, file.UfID, state.RunToken, targetGlobalVersion, &tagRebuildGuard{
 				jobID: job.ID, runToken: job.RunToken,
 			})
 			if err != nil {
@@ -204,24 +205,46 @@ func (s *TagService) processRebuildJob(job *models.TagRebuildJob) {
 				s.recordRebuildFailure(job.ID, file.UserID, file.UfID, err)
 			} else {
 				batchSucceeded++
+				batchAffectedTagIDs[file.UserID] = append(batchAffectedTagIDs[file.UserID], affectedTagIDs...)
 				s.resolveRebuildFailure(job.ID, file.UfID)
 			}
 		}
-		job.Cursor = lastCursor
-		job.Processed += int64(len(files))
-		job.Succeeded += batchSucceeded
-		job.Failed += batchFailed
+		nextProcessed := job.Processed + int64(len(files))
+		nextSucceeded := job.Succeeded + batchSucceeded
+		nextFailed := job.Failed + batchFailed
 		now := time.Now()
-		result := s.factory.DB().Model(&models.TagRebuildJob{}).
-			Where("id = ? AND run_token = ? AND status = ?", job.ID, job.RunToken, "running").
-			Updates(map[string]interface{}{
-				"cursor_value": job.Cursor, "processed": job.Processed,
-				"succeeded": job.Succeeded, "failed": job.Failed, "last_error": job.LastError,
-				"lease_expires_at": now.Add(tagWorkerLease), "updated_at": now,
-			})
-		if result.Error != nil || result.RowsAffected != 1 {
+		leaseExpires := now.Add(tagWorkerLease)
+		err := s.factory.DB().WithContext(s.ctx).Transaction(func(tx *gorm.DB) error {
+			// 重建期间先汇总本批受影响标签，再统一刷新统计并原子推进批次游标。
+			if err := s.refreshUserTagStatsBatch(s.ctx, tx, batchAffectedTagIDs); err != nil {
+				return err
+			}
+			result := tx.Model(&models.TagRebuildJob{}).
+				Where("id = ? AND run_token = ? AND status = ?", job.ID, job.RunToken, "running").
+				Updates(map[string]interface{}{
+					"cursor_value": lastCursor, "processed": nextProcessed,
+					"succeeded": nextSucceeded, "failed": nextFailed, "last_error": job.LastError,
+					"lease_expires_at": leaseExpires, "updated_at": now,
+				})
+			if result.Error != nil {
+				return result.Error
+			}
+			if result.RowsAffected != 1 {
+				return errStaleTagGeneration
+			}
+			return nil
+		})
+		if err != nil {
+			if !errors.Is(err, errStaleTagGeneration) {
+				logger.LOG.Error("提交标签重建批次失败", "job_id", job.ID, "cursor", lastCursor, "error", err)
+			}
 			return
 		}
+		job.Cursor = lastCursor
+		job.Processed = nextProcessed
+		job.Succeeded = nextSucceeded
+		job.Failed = nextFailed
+		job.LeaseExpires = timePointer(leaseExpires)
 	}
 }
 
