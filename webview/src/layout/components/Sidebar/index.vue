@@ -25,13 +25,6 @@
     </nav>
 
     <StorageCard v-if="!collapsed" class="desktop-sidebar__storage" />
-    <router-link
-      to="/settings"
-      class="desktop-sidebar__settings"
-      :class="{ 'is-active': route.path.startsWith('/settings') }"
-    >
-      <el-icon><Setting /></el-icon><span v-if="!collapsed">{{ t('menu.settings') }}</span>
-    </router-link>
   </aside>
 </template>
 
@@ -99,8 +92,7 @@
     letter-spacing: 0.08em;
     text-transform: uppercase;
   }
-  .desktop-sidebar__item,
-  .desktop-sidebar__settings {
+  .desktop-sidebar__item {
     min-height: 42px;
     margin: 3px 0;
     padding: 0 11px;
@@ -116,28 +108,21 @@
       background 140ms ease,
       color 140ms ease;
   }
-  .desktop-sidebar__item .el-icon,
-  .desktop-sidebar__settings .el-icon {
+  .desktop-sidebar__item .el-icon {
     width: 20px;
     flex: 0 0 20px;
     font-size: 18px;
   }
-  .desktop-sidebar__item:hover,
-  .desktop-sidebar__settings:hover {
+  .desktop-sidebar__item:hover {
     background: var(--desktop-fill);
     color: var(--text-primary);
   }
-  .desktop-sidebar__item.is-active,
-  .desktop-sidebar__settings.is-active {
+  .desktop-sidebar__item.is-active {
     background: var(--desktop-primary-soft);
     color: var(--primary-color);
   }
   .desktop-sidebar__storage {
     margin: 12px 0 !important;
-  }
-  .desktop-sidebar__settings {
-    flex: 0 0 auto;
-    border-top: 1px solid transparent;
   }
   .desktop-sidebar.is-collapsed {
     padding-inline: 9px;
@@ -147,8 +132,7 @@
     justify-content: center;
     padding: 0;
   }
-  .desktop-sidebar.is-collapsed .desktop-sidebar__item,
-  .desktop-sidebar.is-collapsed .desktop-sidebar__settings {
+  .desktop-sidebar.is-collapsed .desktop-sidebar__item {
     padding: 0;
     justify-content: center;
   }
