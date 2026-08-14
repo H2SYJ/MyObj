@@ -123,7 +123,6 @@
   import type { PreviewType, PreviewOptions } from '@/types/preview'
   import { detectFileType, getFilePreviewUrl, getFileTextContent, getCodeLanguage } from '@/utils/ui/preview'
   import { useFileDownload } from '@/composables/business/useFileDownload'
-  import { API_BASE_URL, API_ENDPOINTS } from '@/config/api'
   import { createVideoPlayPrecheck, getVideoStreamUrl } from '@/api/video'
   import {
     printImage,
@@ -371,31 +370,8 @@
 
       switch (previewType.value) {
         case 'image':
-          // 优先使用缩略图，如果没有则使用预览URL（blob URL）
-          if (file.has_thumbnail) {
-            // 缩略图也需要通过fetch获取（带认证），然后创建blob URL
-            try {
-              const token = proxy?.$cache.local.get('token')
-              const thumbnailUrl = `${API_BASE_URL}${API_ENDPOINTS.FILE.THUMBNAIL}/${fileId}`
-              const response = await fetch(thumbnailUrl, {
-                headers: {
-                  Authorization: token ? `Bearer ${token}` : ''
-                }
-              })
-              if (response.ok) {
-                const blob = await response.blob()
-                commitPreviewUrl('image', window.URL.createObjectURL(blob), requestVersion)
-              } else {
-                // 缩略图获取失败，使用预览URL
-                commitPreviewUrl('image', await getFilePreviewUrl(fileId), requestVersion)
-              }
-            } catch (err) {
-              // 缩略图获取失败，使用预览URL
-              commitPreviewUrl('image', await getFilePreviewUrl(fileId), requestVersion)
-            }
-          } else {
-            commitPreviewUrl('image', await getFilePreviewUrl(fileId), requestVersion)
-          }
+          // 图片预览始终加载原文件，缩略图仅用于文件列表展示
+          commitPreviewUrl('image', await getFilePreviewUrl(fileId), requestVersion)
           break
         case 'video':
           // 视频使用 Plyr 播放器（支持 Range 请求）
