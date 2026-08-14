@@ -257,6 +257,9 @@ func TestCinemaLatestIncludesDescendantsFiltersAndPaginates(t *testing.T) {
 	}
 	createCinemaTestVideo(t, db, "user-1", "same-a", "同秒A.mp4", root.ID, now)
 	createCinemaTestVideo(t, db, "user-1", "same-b", "同秒B.mp4", child.ID, now)
+	if err := db.Table("user_files").Where("uf_id = ?", "same-b").Update("public", true).Error; err != nil {
+		t.Fatal(err)
+	}
 	createCinemaTestVideo(t, db, "user-1", "older", "旧片.mp4", child.ID, now.Add(-time.Hour))
 	createCinemaTestVideo(t, db, "user-1", "outside", "库外视频.mp4", outside.ID, now.Add(time.Hour))
 	createCinemaTestVideo(t, db, "user-2", "other-user", "其他用户.mp4", child.ID, now.Add(time.Hour))
@@ -286,6 +289,9 @@ func TestCinemaLatestIncludesDescendantsFiltersAndPaginates(t *testing.T) {
 	}
 	if first.Videos[0].Directory.ID != child.ID {
 		t.Fatalf("最新视频目录信息异常: %+v", first.Videos[0].Directory)
+	}
+	if !first.Videos[0].Public {
+		t.Fatal("影视视频响应未返回用户文件公开状态")
 	}
 	second, err := cinema.Latest(context.Background(), "user-1", root.ID, 2, 2)
 	if err != nil {

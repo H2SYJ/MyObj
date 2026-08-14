@@ -13,22 +13,56 @@
       </router-link>
       <span class="cinema-shell__spacer"></span>
     </header>
-    <main><router-view /></main>
+    <main><router-view :key="contentRefreshKey" /></main>
+    <CinemaFileContextMenu
+      :visible="fileContextMenu.visible"
+      :x="fileContextMenu.x"
+      :y="fileContextMenu.y"
+      :video="fileContextMenu.video"
+      @close="fileContextMenu.visible = false"
+      @refresh="refreshContent"
+    />
   </div>
 </template>
 
 <script setup lang="ts">
-  import { computed, getCurrentInstance, ref, watch, type ComponentInternalInstance } from 'vue'
+  import { computed, getCurrentInstance, provide, reactive, ref, watch, type ComponentInternalInstance } from 'vue'
   import { useRoute, useRouter } from 'vue-router'
   import { ArrowLeft, Film } from '@element-plus/icons-vue'
-  import { getCinemaHome } from '@/api/cinema'
+  import { getCinemaHome, type CinemaVideo } from '@/api/cinema'
+  import { cinemaFileContextMenuKey } from '../cinemaFileContext'
+  import CinemaFileContextMenu from './CinemaFileContextMenu.vue'
 
   const router = useRouter()
   const route = useRoute()
   const { proxy } = getCurrentInstance() as ComponentInternalInstance
   const rootId = computed(() => Number(route.params.rootDirectoryId))
   const rootName = ref('')
+  const contentRefreshKey = ref(0)
+  const fileContextMenu = reactive<{ visible: boolean; x: number; y: number; video?: CinemaVideo }>({
+    visible: false,
+    x: 0,
+    y: 0
+  })
   let requestId = 0
+
+  const eventPosition = (event: MouseEvent | KeyboardEvent) => {
+    if (event instanceof MouseEvent && (event.clientX || event.clientY)) {
+      return { x: event.clientX, y: event.clientY }
+    }
+    const rect = (event.currentTarget as HTMLElement | null)?.getBoundingClientRect()
+    return rect ? { x: rect.left + 24, y: rect.top + 24 } : { x: window.innerWidth / 2, y: window.innerHeight / 2 }
+  }
+
+  provide(cinemaFileContextMenuKey, (video, event) => {
+    const position = eventPosition(event)
+    Object.assign(fileContextMenu, { visible: true, x: position.x, y: position.y, video })
+  })
+
+  const refreshContent = () => {
+    fileContextMenu.visible = false
+    contentRefreshKey.value++
+  }
 
   const loadRoot = async () => {
     const request = ++requestId

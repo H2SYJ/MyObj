@@ -17,6 +17,7 @@ const cinemaVideo = (id: number) => ({
   file_size: 1048576,
   mime_type: 'video/mp4',
   is_enc: false,
+  public: false,
   has_thumbnail: false,
   created_at: '2026-08-04T00:00:00Z',
   directory: { id: 7, name: '移动影视库', parent_id: 0, path: '移动影视库' },

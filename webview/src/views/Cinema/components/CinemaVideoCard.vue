@@ -1,5 +1,12 @@
 <template>
-  <article class="cinema-video-card" tabindex="0" role="button" @click="$emit('open')" @keydown.enter="$emit('open')">
+  <article
+    class="cinema-video-card"
+    tabindex="0"
+    role="button"
+    @click="$emit('open')"
+    @contextmenu.prevent="openContextMenu"
+    @keydown="handleKeydown"
+  >
     <div class="cinema-video-card__poster">
       <img v-if="thumbnailUrl" :src="thumbnailUrl" :alt="video.file_name" />
       <el-icon v-else :size="44"><VideoPlay /></el-icon>
@@ -13,15 +20,32 @@
 </template>
 
 <script setup lang="ts">
-  import { onBeforeUnmount, ref, watch } from 'vue'
+  import { inject, onBeforeUnmount, ref, watch } from 'vue'
   import { Lock, VideoPlay } from '@element-plus/icons-vue'
   import { getThumbnail } from '@/api/file'
   import type { CinemaVideo } from '@/api/cinema'
+  import { cinemaFileContextMenuKey } from '../cinemaFileContext'
 
   const props = withDefaults(defineProps<{ video: CinemaVideo; showDirectory?: boolean }>(), { showDirectory: false })
-  defineEmits<{ open: [] }>()
+  const emit = defineEmits<{ open: [] }>()
+  const openCinemaFileContextMenu = inject(cinemaFileContextMenuKey, undefined)
   const thumbnailUrl = ref('')
   let thumbnailRequest = 0
+
+  const openContextMenu = (event: MouseEvent | KeyboardEvent) => {
+    openCinemaFileContextMenu?.(props.video, event)
+  }
+
+  const handleKeydown = (event: KeyboardEvent) => {
+    if (event.key === 'Enter') {
+      emit('open')
+      return
+    }
+    if (event.key === 'ContextMenu' || (event.shiftKey && event.key === 'F10')) {
+      event.preventDefault()
+      openContextMenu(event)
+    }
+  }
 
   const loadThumbnail = async () => {
     if (!props.video.has_thumbnail) {
