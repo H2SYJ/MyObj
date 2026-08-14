@@ -357,13 +357,58 @@ func TestPreflightSourceRelationshipsCollectsAllOrphans(t *testing.T) {
 	if err := db.Exec("INSERT INTO group_power(group_id, power_id) VALUES(999, 999)").Error; err != nil {
 		t.Fatal(err)
 	}
+	if err := db.Exec(`INSERT INTO user_info(
+		id, name, user_name, password, email, phone, group_id, created_at, space, file_password, free_space, state
+	) VALUES('active-file-user', '活动文件用户', 'active-file-user', 'hash', 'active@example.com', '13800000001', 1,
+		'2026-08-14 08:00:00', 0, '', 0, 0)`).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Exec(`INSERT INTO user_files(
+		user_id, file_id, file_name, directory_id, public, created_at, deleted_at, uf_id
+	) VALUES('active-file-user', 'missing-file', '缺失实体.txt', 0, 0, '2026-08-14 08:00:00', NULL, 'active-orphan')`).Error; err != nil {
+		t.Fatal(err)
+	}
 	issues := &migrationPreflightIssues{issues: make(map[string]*migrationPreflightIssue)}
 	if err := preflightSourceRelationships(db, issues); err != nil {
 		t.Fatal(err)
 	}
 	if issues.issues["关联完整性\x00用户组引用"] == nil ||
-		issues.issues["关联完整性\x00用户组权限引用"] == nil {
+		issues.issues["关联完整性\x00用户组权限引用"] == nil ||
+		issues.issues["关联完整性\x00活动用户文件实体引用"] == nil {
 		t.Fatalf("未汇总全部悬空引用: %s", issues.Error())
+	}
+}
+
+func TestPreflightSourceRelationshipsAllowsDeletedUserFileWithoutEntity(t *testing.T) {
+	db, err := openSQLiteForMigration(filepath.Join(t.TempDir(), "preflight-deleted-file.db"), false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer closeGormDB(db)
+	if err := prepareSQLiteSnapshot(db); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Exec(`INSERT INTO user_info(
+		id, name, user_name, password, email, phone, group_id, created_at, space, file_password, free_space, state
+	) VALUES('deleted-file-user', '回收站用户', 'deleted-file-user', 'hash', 'deleted@example.com', '13800000002', 1,
+		'2026-08-14 08:00:00', 0, '', 0, 0)`).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Exec(`INSERT INTO user_files(
+		user_id, file_id, file_name, directory_id, public, created_at, deleted_at, uf_id
+	) VALUES('deleted-file-user', 'missing-deleted-file', '已删除文件.txt', 999, 0,
+		'2026-08-14 08:00:00', '2026-08-14 09:00:00', 'deleted-orphan')`).Error; err != nil {
+		t.Fatal(err)
+	}
+	issues := &migrationPreflightIssues{issues: make(map[string]*migrationPreflightIssue)}
+	if err := preflightSourceRelationships(db, issues); err != nil {
+		t.Fatal(err)
+	}
+	if issue := issues.issues["关联完整性\x00活动用户文件实体引用"]; issue != nil {
+		t.Fatalf("软删除用户文件缺少实体不应阻止迁移: %+v", issue)
+	}
+	if issue := issues.issues["关联完整性\x00活动文件目录引用"]; issue != nil {
+		t.Fatalf("软删除用户文件的历史目录缺失不应阻止迁移: %+v", issue)
 	}
 }
 
