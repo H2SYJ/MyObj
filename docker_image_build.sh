@@ -15,18 +15,7 @@ if ! docker buildx version >/dev/null 2>&1; then
     exit 1
 fi
 
-if ! command -v npm >/dev/null 2>&1; then
-    echo "错误：未找到 npm 命令，无法构建前端。" >&2
-    exit 1
-fi
-
-echo "正在构建前端资源……"
-(
-    cd "${ROOT_DIR}/webview"
-    npm run build:prod
-)
-
-echo "正在构建 Docker 镜像：${IMAGE}"
+echo "正在构建前后端 Docker 镜像：${IMAGE}"
 docker buildx build \
     --tag "${IMAGE}" \
     --load \

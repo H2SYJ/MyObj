@@ -1,5 +1,3 @@
-version: '1.0.0'
-
 services:
   myobj:
     build:
@@ -38,7 +36,7 @@ services:
       - "6379:6379"
     volumes:
       # 冒号左侧为宿主机持久化目录，可按需修改
-      - ./redis-data:/data
+      - ./libs/redis-data:/data
     command: redis-server --appendonly yes
     networks:
       - myobj-network
@@ -62,7 +60,7 @@ services:
   #     - --collation-server=utf8mb4_unicode_ci
   #   volumes:
   #     # 冒号左侧为宿主机持久化目录，可按需修改
-  #     - ./mysql-data:/var/lib/mysql
+  #     - ./libs/mysql-data:/var/lib/mysql
   #     - ./sql/mysql/mysql_init.sql:/docker-entrypoint-initdb.d/mysql_init.sql:ro
   #   networks:
   #     - myobj-network

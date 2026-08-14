@@ -1,5 +1,18 @@
 # syntax=docker/dockerfile:1.7
 
+# 前端构建固定使用构建机平台，避免跨平台构建时通过 QEMU 运行 Node.js。
+FROM --platform=$BUILDPLATFORM node:22-alpine AS frontend-builder
+
+WORKDIR /build/webview
+
+# 先按锁文件安装依赖，使源码变化可以复用依赖缓存。
+COPY webview/package.json webview/package-lock.json ./
+RUN --mount=type=cache,target=/root/.npm,sharing=locked \
+    npm ci
+
+COPY webview/ ./
+RUN npm run build:prod
+
 # 构建阶段固定使用构建机平台，通过 Go 原生交叉编译生成目标平台二进制，
 # 避免在 amd64 构建机上通过 QEMU 运行 arm64 编译器。
 FROM --platform=$BUILDPLATFORM golang:1.25-alpine AS builder
@@ -32,12 +45,11 @@ COPY docs ./docs
 RUN --mount=type=cache,target=/go/pkg/mod,sharing=locked \
     --mount=type=cache,target=/root/.cache/go-build,sharing=locked \
     CGO_ENABLED=0 GOOS="${TARGETOS}" GOARCH="${TARGETARCH}" \
-    go build -buildvcs=false -o /out/myobj ./src/cmd/server/main.go && \
+    go build -buildvcs=false -o /out/myobj ./src/cmd/server && \
     CGO_ENABLED=0 GOOS="${TARGETOS}" GOARCH="${TARGETARCH}" \
-    go build -buildvcs=false -o /out/myobj-cli ./src/cmd/cli/main.go
+    go build -buildvcs=false -o /out/myobj-cli ./src/cmd/cli
 
 # 运行镜像需要的静态资源不参与 Go 编译缓存计算。
-COPY webview/dist ./webview/dist
 COPY templates ./templates
 
 # 运行阶段
@@ -67,7 +79,7 @@ COPY --from=builder /out/myobj .
 COPY --from=builder /out/myobj-cli .
 
 # 复制前端静态文件
-COPY --from=builder /build/webview/dist ./webview/dist
+COPY --from=frontend-builder /build/webview/dist ./webview/dist
 
 # 复制模板文件
 COPY --from=builder /build/templates ./templates

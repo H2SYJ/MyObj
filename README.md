@@ -133,17 +133,13 @@ chmod +x *.sh
 
 ### 🐳 Docker
 
-使用 Compose 前先生成前端资源，再构建并启动服务：
+Dockerfile 会在镜像内依次构建前端和 Go 服务端，使用 Compose 可直接构建并启动：
 
 ```bash
-cd webview
-npm install
-npm run build:prod
-cd ..
 docker compose up -d --build
 ```
 
-`docker_image_build.sh myobj:latest` 可用于构建独立镜像；脚本同样会先更新前端资源，再通过 buildx 构建本机平台镜像。Compose 默认启动 MyObj 和 Redis；MySQL 服务模板默认注释。直接调用任何 Docker 构建命令前，都必须确保 `webview/dist` 已存在且是最新版本。详细挂载、反向代理和排错说明见 [DOCKER_DEPLOY.md](DOCKER_DEPLOY.md)。
+`docker_image_build.sh myobj:latest` 可用于构建独立镜像，脚本通过 buildx 构建本机平台镜像，前端资源也由 Dockerfile 自动生成。Compose 默认启动 MyObj 和 Redis；MySQL 服务模板默认注释。宿主机不需要预先安装前端依赖或生成 `webview/dist`。详细挂载、反向代理和排错说明见 [DOCKER_DEPLOY.md](DOCKER_DEPLOY.md)。
 
 ### 📥 预编译版本
 

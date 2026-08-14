@@ -13,17 +13,17 @@
 ### 方式一：使用 Docker Compose（推荐）
 
 ```bash
-# 构建并启动服务
-docker-compose up -d
+# 自动构建前端、服务端镜像并启动服务
+docker compose up -d --build
 
 # 查看日志
-docker-compose logs -f
+docker compose logs -f
 
 # 停止服务
-docker-compose down
+docker compose down
 
 # 停止并删除数据卷
-docker-compose down -v
+docker compose down -v
 ```
 
 ### 方式二：手动构建 Docker 镜像
@@ -64,7 +64,7 @@ Docker Compose 配置了以下挂载点：
 |---------|-----------|------|
 | 8080 | 8080 | HTTP 主服务 |
 | 8081 | 8081 | WebDAV 服务 |
-| 6379 | 6379 | Redis 缓存 |
+| 6379 | 不映射 | Redis 缓存，仅供 Compose 网络内部访问 |
 
 ## ⚙️ 配置文件
 
@@ -168,11 +168,11 @@ docker-compose exec redis sh
 
 ### 更新镜像
 ```bash
-# 重新构建镜像
-docker-compose build
+# 重新构建前端和服务端镜像
+docker compose build
 
 # 重新构建并启动
-docker-compose up -d --build
+docker compose up -d --build
 ```
 
 ### 清理资源
@@ -198,8 +198,8 @@ docker-compose logs myobj
 # 检查配置文件是否存在
 ls -la config.toml
 
-# 检查端口是否被占用
-netstat -tulpn | grep -E '8080|8081|6379'
+# 检查对外端口是否被占用
+netstat -tulpn | grep -E '8080|8081'
 ```
 
 ### 2. 无法连接 Redis
@@ -221,13 +221,14 @@ chmod -R 755 libs logs obj_data obj_temp
 
 ### 4. 前端页面无法访问
 
-检查 `webview/dist` 目录是否存在：
+检查镜像构建日志中的前端构建阶段：
 ```bash
-# 如果不存在，需要先构建前端
-cd webview
-npm install
-npm run build
+docker compose build --no-cache myobj
+docker compose up -d myobj
+docker compose logs myobj
 ```
+
+前端资源由 Dockerfile 在镜像内生成，宿主机不需要存在 `webview/dist`。
 
 ## 📊 性能优化
 

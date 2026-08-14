@@ -5,6 +5,7 @@
 .vscode
 
 webview/node_modules
+webview/dist
 node_modules
 
 logs
