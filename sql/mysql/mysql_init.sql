@@ -20,8 +20,11 @@ DROP TABLE IF EXISTS `tag_rule_set`;
 DROP TABLE IF EXISTS `file_metadata_state`;
 DROP TABLE IF EXISTS `file_metadata`;
 DROP TABLE IF EXISTS `user_file_tag_state`;
+DROP TABLE IF EXISTS `user_tag_stat`;
 DROP TABLE IF EXISTS `user_file_tag_exclusion`;
+DROP TABLE IF EXISTS `user_directory_tag`;
 DROP TABLE IF EXISTS `user_file_tag`;
+DROP TABLE IF EXISTS `user_tag_preference`;
 DROP TABLE IF EXISTS `tag_definition`;
 DROP TABLE IF EXISTS `tag_category`;
 DROP TABLE IF EXISTS `power`;
@@ -40,6 +43,9 @@ DROP TABLE IF EXISTS `subscription_run`;
 DROP TABLE IF EXISTS `subscription`;
 DROP TABLE IF EXISTS `installed_plugin`;
 DROP TABLE IF EXISTS `shares`;
+DROP TABLE IF EXISTS `recycled_directory_tag`;
+DROP TABLE IF EXISTS `recycled_directory_file`;
+DROP TABLE IF EXISTS `recycled_directory_node`;
 DROP TABLE IF EXISTS `recycled`;
 DROP TABLE IF EXISTS `disk`;
 DROP TABLE IF EXISTS `sys_config`;
@@ -480,6 +486,17 @@ CREATE TABLE `recycled_directory_file` (
     KEY `idx_recycled_file_dir` (`original_dir_id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='回收站目录文件成员';
 
+CREATE TABLE `recycled_directory_tag` (
+    `id` BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+    `recycled_id` VARCHAR(64) NOT NULL,
+    `original_dir_id` INT NOT NULL,
+    `tag_id` VARCHAR(64) NOT NULL,
+    PRIMARY KEY (`id`),
+    UNIQUE KEY `uk_recycled_directory_tag` (`recycled_id`, `original_dir_id`, `tag_id`),
+    KEY `idx_recycled_directory_tag_recycled_id` (`recycled_id`),
+    KEY `idx_recycled_directory_tag_original_dir_id` (`original_dir_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='回收站目录标签';
+
 -- ================================
 -- 7. 创建磁盘和系统配置表
 -- ================================
@@ -487,7 +504,7 @@ CREATE TABLE `recycled_directory_file` (
 -- 磁盘表
 CREATE TABLE `disk` (
     `id` VARCHAR(64) NOT NULL COMMENT '磁盘ID',
-    `size` INT NOT NULL COMMENT '磁盘总大小',
+    `size` BIGINT NOT NULL COMMENT '磁盘总大小（字节）',
     `disk_path` TEXT NOT NULL COMMENT '磁盘路径',
     `data_path` TEXT NOT NULL COMMENT '数据存储路径',
     PRIMARY KEY (`id`),
@@ -516,11 +533,30 @@ CREATE TABLE `tag_definition` (
     `name` VARCHAR(255) NOT NULL,
     `normalized_name` VARCHAR(191) NOT NULL,
     `category_id` VARCHAR(64) NOT NULL,
+    `system_code` VARCHAR(64) DEFAULT NULL,
+    `builtin` BOOLEAN NOT NULL DEFAULT FALSE,
     `created_at` DATETIME NOT NULL,
     PRIMARY KEY (`id`),
     UNIQUE KEY `uk_tag_definition` (`normalized_name`, `category_id`),
+    UNIQUE KEY `idx_tag_definition_system_code` (`system_code`),
     KEY `idx_tag_definition_category` (`category_id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='标签定义';
+
+CREATE TABLE `user_tag_preference` (
+    `user_id` VARCHAR(64) NOT NULL,
+    `tag_id` VARCHAR(64) NOT NULL,
+    `hidden` BOOLEAN NOT NULL DEFAULT FALSE,
+    `display_name` VARCHAR(255) DEFAULT NULL,
+    `normalized_display_name` VARCHAR(191) DEFAULT NULL,
+    `display_category_id` VARCHAR(64) DEFAULT NULL,
+    `created_at` DATETIME NOT NULL,
+    `updated_at` DATETIME NOT NULL,
+    PRIMARY KEY (`user_id`, `tag_id`),
+    KEY `idx_user_tag_preference_hidden` (`user_id`, `hidden`),
+    KEY `idx_user_tag_preference_display_name` (`user_id`, `normalized_display_name`),
+    KEY `idx_user_tag_preference_tag_id` (`tag_id`),
+    KEY `idx_user_tag_preference_display_category_id` (`display_category_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='用户标签偏好';
 
 CREATE TABLE `user_file_tag` (
     `id` VARCHAR(64) NOT NULL,
@@ -541,6 +577,19 @@ CREATE TABLE `user_file_tag` (
     KEY `idx_user_file_tag_visibility` (`visibility`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='用户文件标签来源';
 
+CREATE TABLE `user_directory_tag` (
+    `id` VARCHAR(64) NOT NULL,
+    `user_id` VARCHAR(64) NOT NULL,
+    `directory_id` INT NOT NULL,
+    `tag_id` VARCHAR(64) NOT NULL,
+    `created_by` VARCHAR(64) NOT NULL,
+    `created_at` DATETIME NOT NULL,
+    PRIMARY KEY (`id`),
+    UNIQUE KEY `uk_user_directory_tag` (`user_id`, `directory_id`, `tag_id`),
+    KEY `idx_user_directory_tag` (`user_id`, `directory_id`),
+    KEY `idx_user_directory_tag_tag_id` (`tag_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='用户目录标签';
+
 CREATE TABLE `user_file_tag_exclusion` (
     `user_id` VARCHAR(64) NOT NULL,
     `uf_id` VARCHAR(64) NOT NULL,
@@ -549,6 +598,16 @@ CREATE TABLE `user_file_tag_exclusion` (
     PRIMARY KEY (`user_id`, `uf_id`, `tag_id`),
     KEY `idx_tag_exclusion_uf` (`uf_id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='用户屏蔽的自动标签';
+
+CREATE TABLE `user_tag_stat` (
+    `user_id` VARCHAR(64) NOT NULL,
+    `tag_id` VARCHAR(64) NOT NULL,
+    `file_count` BIGINT NOT NULL DEFAULT 0,
+    `updated_at` DATETIME NOT NULL,
+    PRIMARY KEY (`user_id`, `tag_id`),
+    KEY `idx_user_tag_stat_count` (`user_id`, `file_count`),
+    KEY `idx_user_tag_stat_tag_id` (`tag_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='用户标签统计';
 
 CREATE TABLE `user_file_tag_state` (
     `uf_id` VARCHAR(64) NOT NULL,
@@ -694,7 +753,7 @@ CREATE TABLE `sys_config` (
 -- 插入组数据
 INSERT INTO `groups` (`id`, `name`, `created_at`, `group_default`, `space`) VALUES
 (1, 'administer', '2025-11-10 23:04:08', 0, NULL),
-(2, 'user', '2025-11-15 23:23:29', 1, 500);
+(2, 'user', '2025-11-15 23:23:29', 1, 536870912000);
 
 INSERT INTO `tag_category` (`id`, `code`, `name`, `color`, `sort_order`, `enabled`, `builtin`, `created_at`, `updated_at`) VALUES
 ('title', 'title', '标题', '#409eff', 10, TRUE, TRUE, '2026-08-04 00:00:00', '2026-08-04 00:00:00'),
@@ -779,6 +838,7 @@ INSERT INTO `group_power` (`group_id`, `power_id`) VALUES
 (1, 24),
 (1, 25),
 (1, 26),
+(2, 2),
 (2, 9),
 (2, 10),
 (2, 11),
@@ -790,6 +850,7 @@ INSERT INTO `group_power` (`group_id`, `power_id`) VALUES
 (2, 17),
 (2, 18),
 (2, 19),
+(2, 21),
 (2, 22),
 (2, 23),
 (2, 24),

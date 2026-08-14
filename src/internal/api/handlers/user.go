@@ -50,9 +50,9 @@ func (u *UserHandler) Router(c *gin.RouterGroup) {
 		r.POST("/updateFilePassword", middleware.PowerVerify("file:update:filePassword"), u.UserUpdateFilePassword)
 		r.GET("/info", u.GetUserInfo)
 		// API Key 相关路由
-		r.POST("/apiKey/generate", middleware.PowerVerify("user:update"), u.GenerateApiKey)
-		r.GET("/apiKey/list", middleware.PowerVerify("user:update"), u.ListApiKeys)
-		r.POST("/apiKey/delete", middleware.PowerVerify("user:update"), u.DeleteApiKey)
+		r.POST("/apiKey/generate", middleware.PowerVerify("apikey:create"), u.GenerateApiKey)
+		r.GET("/apiKey/list", middleware.PowerVerify("apikey:create"), u.ListApiKeys)
+		r.POST("/apiKey/delete", middleware.PowerVerify("apikey:delete"), u.DeleteApiKey)
 	}
 	logger.LOG.Info("[路由] 用户路由注册完成✔️")
 }

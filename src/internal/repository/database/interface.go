@@ -83,6 +83,9 @@ func migrateCurrentSchema(db *gorm.DB) (int64, error) {
 	if err := migrateTaggingSchema(db); err != nil {
 		return 0, fmt.Errorf("迁移文件标签结构失败: %w", err)
 	}
+	if err := migrateDefaultAccessData(db); err != nil {
+		return 0, fmt.Errorf("迁移默认用户组和权限失败: %w", err)
+	}
 	return migratedDisks, nil
 }
 

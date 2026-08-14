@@ -1126,6 +1126,7 @@ export default {
         'file:offLine': { name: '离线下载', description: '离线下载文件到磁盘' },
         'file:insurance': { name: '文件保险箱', description: '加密文件的上传修改下载' },
         'file:preview': { name: '文件预览', description: '查看文件和预览支持格式的文件' },
+        'file:tag': { name: '文件标签', description: '维护文件标签和个人分词词典' },
         'dir:create': { name: '创建目录', description: '创建文件目录' },
         'dir:delete': { name: '删除目录', description: '删除已经存在的目录' },
         'apikey:create': { name: '创建apikey', description: '创建当前用户权限的apikey' },

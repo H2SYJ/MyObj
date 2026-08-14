@@ -1138,6 +1138,7 @@ export default {
         'file:offLine': { name: 'Offline Download', description: 'Offline download files to disk' },
         'file:insurance': { name: 'File Vault', description: 'Upload, modify and download encrypted files' },
         'file:preview': { name: 'File Preview', description: 'View files and preview supported formats' },
+        'file:tag': { name: 'File Tags', description: 'Manage file tags and personal segmentation dictionary' },
         'dir:create': { name: 'Create Directory', description: 'Create file directories' },
         'dir:delete': { name: 'Delete Directory', description: 'Delete existing directories' },
         'apikey:create': { name: 'Create API Key', description: 'Create API key with current user permissions' },
