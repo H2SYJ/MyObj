@@ -40,44 +40,47 @@ func InitDataBase() {
 		logger.LOG.Error("[数据库] 不支持的数据库类型", "type", dbType)
 		panic(fmt.Sprintf("不支持的数据库类型: %s", dbType))
 	}
-	if err := migrateVirtualDirectorySchema(databasePool); err != nil {
-		logger.LOG.Error("迁移虚拟目录结构失败", "error", err)
-		panic(fmt.Sprintf("迁移虚拟目录结构失败: %v", err))
-	}
-	if err := migrateUserFileSearchIndexes(databasePool); err != nil {
-		logger.LOG.Error("迁移文件搜索索引失败", "error", err)
-		panic(fmt.Sprintf("迁移文件搜索索引失败: %v", err))
-	}
-	migratedDisks, err := migrateLegacyDiskSizes(databasePool)
+	migratedDisks, err := migrateCurrentSchema(databasePool)
 	if err != nil {
-		logger.LOG.Error("迁移磁盘容量单位失败", "error", err)
-		panic(fmt.Sprintf("迁移磁盘容量单位失败: %v", err))
+		logger.LOG.Error("迁移数据库结构失败", "error", err)
+		panic(fmt.Sprintf("迁移数据库结构失败: %v", err))
 	}
 	if migratedDisks > 0 {
 		logger.LOG.Info("磁盘容量单位迁移完成", "count", migratedDisks)
 	}
-	if err := migrateUploadTaskSchema(databasePool); err != nil {
-		logger.LOG.Error("迁移上传任务表失败", "error", err)
-		panic(fmt.Sprintf("迁移上传任务表失败: %v", err))
-	}
-	if err := migrateDownloadTaskSchema(databasePool); err != nil {
-		logger.LOG.Error("迁移下载任务表失败", "error", err)
-		panic(fmt.Sprintf("迁移下载任务表失败: %v", err))
-	}
-	if err := migrateSubscriptionSchema(databasePool); err != nil {
-		logger.LOG.Error("迁移插件订阅表失败", "error", err)
-		panic(fmt.Sprintf("迁移插件订阅表失败: %v", err))
-	}
-	if err := migrateRecycledSchema(databasePool); err != nil {
-		logger.LOG.Error("迁移回收站目录结构失败", "error", err)
-		panic(fmt.Sprintf("迁移回收站目录结构失败: %v", err))
-	}
-	if err := migrateTaggingSchema(databasePool); err != nil {
-		logger.LOG.Error("迁移文件标签结构失败", "error", err)
-		panic(fmt.Sprintf("迁移文件标签结构失败: %v", err))
-	}
 
 	logger.LOG.Info("[数据库] 数据库连接池初始化成功 ✓")
+}
+
+// migrateCurrentSchema 在已建立的连接上执行当前版本的增量迁移。
+// 服务启动和 SQLite→MySQL 迁移 CLI 共用此入口，避免两套迁移顺序发生偏差。
+func migrateCurrentSchema(db *gorm.DB) (int64, error) {
+	if err := migrateVirtualDirectorySchema(db); err != nil {
+		return 0, fmt.Errorf("迁移虚拟目录结构失败: %w", err)
+	}
+	if err := migrateUserFileSearchIndexes(db); err != nil {
+		return 0, fmt.Errorf("迁移文件搜索索引失败: %w", err)
+	}
+	migratedDisks, err := migrateLegacyDiskSizes(db)
+	if err != nil {
+		return 0, fmt.Errorf("迁移磁盘容量单位失败: %w", err)
+	}
+	if err := migrateUploadTaskSchema(db); err != nil {
+		return 0, fmt.Errorf("迁移上传任务表失败: %w", err)
+	}
+	if err := migrateDownloadTaskSchema(db); err != nil {
+		return 0, fmt.Errorf("迁移下载任务表失败: %w", err)
+	}
+	if err := migrateSubscriptionSchema(db); err != nil {
+		return 0, fmt.Errorf("迁移插件订阅表失败: %w", err)
+	}
+	if err := migrateRecycledSchema(db); err != nil {
+		return 0, fmt.Errorf("迁移回收站目录结构失败: %w", err)
+	}
+	if err := migrateTaggingSchema(db); err != nil {
+		return 0, fmt.Errorf("迁移文件标签结构失败: %w", err)
+	}
+	return migratedDisks, nil
 }
 
 // migrateUserFileSearchIndexes 为搜索最先使用的用户、公开状态和目录范围补齐复合索引。

@@ -458,6 +458,77 @@ go build -buildvcs=false -o myobj-cli.exe .\src\cmd\cli
 ./myobj-cli system stats
 ```
 
+### SQLite 迁移到 MySQL
+
+项目提供专用迁移命令。迁移只复制数据库元数据，不移动 `obj_data` 中的实体文件。目标 MySQL 必须由运维提前创建，并且是使用 `utf8mb4_unicode_ci` 的空库。
+
+迁移前必须停止 MyObj、WebDAV、上传下载、订阅和标签后台任务。CLI 会通过只读连接执行 `VACUUM INTO`，生成包含 WAL 数据的一致性快照；所有结构升级只作用于快照，不修改原 SQLite。
+
+#### 1. 创建目标数据库
+
+```sql
+CREATE DATABASE `my_obj`
+  CHARACTER SET utf8mb4
+  COLLATE utf8mb4_unicode_ci;
+```
+
+为迁移账号授予目标库的查询、写入、建表和索引权限。CLI 不会创建、删除或覆盖数据库；目标库中存在任何表时，正式迁移都会拒绝执行。
+
+#### 2. 编译 CLI 并设置目标 DSN
+
+```powershell
+go build -buildvcs=false -o myobj-cli.exe .\src\cmd\cli
+
+$env:MYOBJ_MIGRATE_MYSQL_DSN = "myobj:密码@tcp(mysql:3306)/my_obj?charset=utf8mb4&parseTime=true&loc=Asia%2FShanghai"
+```
+
+DSN 只从环境变量读取，CLI 输出和错误日志不会显示密码。如果 MySQL 与 MyObj 位于同一个 Docker 网络，主机名应填写 MySQL 服务名而不是 `127.0.0.1`。
+
+#### 3. 预演迁移
+
+```powershell
+.\myobj-cli.exe database migrate-sqlite-to-mysql `
+  --source .\libs\my_obj.db `
+  --batch-size 1000 `
+  --dry-run
+```
+
+`dry-run` 会创建并升级 SQLite 快照、检查源库完整性、检查目标库为空并输出逐表行数，但不会在 MySQL 中建表或写数据。默认快照保存在源文件旁，也可使用 `--snapshot` 指定已存在目录中的新文件名。
+
+#### 4. 正式迁移和复核
+
+```powershell
+.\myobj-cli.exe database migrate-sqlite-to-mysql `
+  --source .\libs\my_obj.db `
+  --batch-size 1000 `
+  --yes
+
+.\myobj-cli.exe database verify-sqlite-to-mysql `
+  --source .\libs\my_obj.db.mysql-migration-20260814-120000.snapshot.db
+```
+
+正式迁移按主键稳定排序、分批提交，并自动校验逐表行数、规范化 SHA-256 摘要、关键关联和自增值。任一步失败后都应保留原 SQLite 和快照，删除并重建目标空库后重新执行；首版不支持合并已有数据或断点续跑。
+
+#### 5. 切换与回滚
+
+迁移成功后将 `config.toml` 的数据库配置切换为 MySQL，再启动服务并验证登录、文件列表、目录、搜索、预览、上传下载、回收站、标签、订阅和 WebDAV。
+
+```toml
+[database]
+type = "mysql"
+host = "mysql"
+port = 3306
+user = "myobj"
+password = "请替换为实际密码"
+db_name = "my_obj"
+max_open = 20
+max_idle = 10
+max_life = 1
+max_idle_life = 10
+```
+
+开放 MySQL 写入前，可以通过恢复原 `config.toml` 直接回滚到未修改的 SQLite。开放写入后若再回滚，必须先处理 MySQL 中新增的数据，不能直接切回旧 SQLite。
+
 #### 历史视频缩略图补齐
 
 该命令只处理未加密视频，已有有效缩略图会自动跳过。宿主机执行前需要安装
