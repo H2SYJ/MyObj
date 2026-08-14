@@ -31,6 +31,7 @@ type cinemaVideoRow struct {
 	FileSize     int
 	MimeType     string
 	IsEnc        bool
+	Public       bool
 	ThumbnailImg string
 	CreatedAt    custom_type.JsonTime
 }
@@ -96,7 +97,7 @@ func cinemaDirectoryView(tree *cinemaTree, directory models.VirtualDirectory) re
 func (s *CinemaService) playableVideoQuery(ctx context.Context, userID string, directoryIDs []int) *gorm.DB {
 	return s.factory.DB().WithContext(ctx).Table("user_files AS uf").
 		Select(`uf.uf_id AS file_id, uf.file_name, uf.directory_id, fi.size AS file_size,
-			fi.mime AS mime_type, fi.is_enc, fi.thumbnail_img, uf.created_at`).
+			fi.mime AS mime_type, fi.is_enc, uf.public, fi.thumbnail_img, uf.created_at`).
 		Joins("JOIN file_info fi ON fi.id = uf.file_id").
 		Where("uf.user_id = ? AND uf.directory_id IN ? AND uf.deleted_at IS NULL", userID, directoryIDs).
 		Where("fi.mime LIKE ? AND (fi.path <> '' OR fi.enc_path <> '')", "video/%")
@@ -133,7 +134,7 @@ func (s *CinemaService) buildVideoItems(ctx context.Context, userID string, tree
 		}
 		items = append(items, response.CinemaVideoItem{
 			FileID: row.FileID, FileName: row.FileName, FileSize: row.FileSize, MimeType: row.MimeType,
-			IsEnc: row.IsEnc, HasThumbnail: row.ThumbnailImg != "", CreatedAt: row.CreatedAt,
+			IsEnc: row.IsEnc, Public: row.Public, HasThumbnail: row.ThumbnailImg != "", CreatedAt: row.CreatedAt,
 			Directory: cinemaDirectoryView(tree, directory), Tags: tags[row.FileID],
 		})
 	}

@@ -14,6 +14,7 @@ export interface CinemaVideo {
   file_size: number
   mime_type: string
   is_enc: boolean
+  public: boolean
   has_thumbnail: boolean
   created_at: string
   directory: CinemaDirectory

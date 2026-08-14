@@ -46,8 +46,11 @@
         :key="file.uf_id"
         shadow="hover"
         class="file-card"
+        tabindex="0"
         @click="handleFileClick(file)"
         @dblclick="handleFileClick(file)"
+        @contextmenu.prevent="openPublicFileContextMenu(file, $event)"
+        @keydown="handleFileCardKeydown(file, $event)"
       >
         <div class="file-icon">
           <el-icon :size="64" :color="getFileIconColor(file.mime_type)">
@@ -87,6 +90,7 @@
       :data="filteredFiles"
       style="width: 100%"
       @row-click="handleFileClick"
+      @row-contextmenu="handleRowContextMenu"
     >
       <el-table-column :label="t('square.fileName')" min-width="300">
         <template #default="{ row }">
@@ -121,7 +125,13 @@
 
     <!-- 移动端：卡片列表布局 -->
     <div v-else v-loading="loading" class="mobile-file-list">
-      <div v-for="file in filteredFiles" :key="file.uf_id" class="mobile-file-item" @click="handleFileClick(file)">
+      <div
+        v-for="file in filteredFiles"
+        :key="file.uf_id"
+        class="mobile-file-item"
+        @click="handleFileClick(file)"
+        @contextmenu.prevent="openPublicFileContextMenu(file, $event)"
+      >
         <div class="mobile-item-content">
           <div class="mobile-item-icon">
             <el-icon :size="40" :color="getFileIconColor(file.mime_type)">
@@ -178,6 +188,15 @@
     </template>
 
     <template #overlays>
+      <FileContextMenu
+        :visible="fileContextMenu.visible"
+        :x="fileContextMenu.x"
+        :y="fileContextMenu.y"
+        :title="fileContextMenu.file?.file_name"
+        :items="publicFileMenuItems"
+        @action="handlePublicFileMenuAction"
+        @close="closePublicFileContextMenu"
+      />
       <!-- 文件预览组件 -->
       <preview v-model="previewVisible" :file="previewFile" />
     </template>
@@ -185,7 +204,7 @@
 </template>
 
 <script setup lang="ts">
-  import { Box, Document, Headset, Menu, MoreFilled, Picture, VideoPlay } from '@element-plus/icons-vue'
+  import { Box, Document, Download, Headset, Menu, MoreFilled, Picture, VideoPlay, View } from '@element-plus/icons-vue'
   import { formatSize, formatDate } from '@/utils'
   import { useResponsive } from '@/composables/ui/useResponsive'
   import {
@@ -203,6 +222,8 @@
   import SegmentedControl from '@/components/SegmentedControl/index.vue'
   import WorkspacePage from '@/components/WorkspacePage/index.vue'
   import FileTags from '@/components/FileTags/index.vue'
+  import FileContextMenu from '@/views/Files/components/FileContextMenu.vue'
+  import type { ContextMenuItem } from '@/views/Files/types'
   import { parseSearchTagIds } from '@/composables/business/useFileSearchDraft'
   import type { CompactTag, FileItem } from '@/types'
 
@@ -278,6 +299,61 @@
     }
     return publicFiles.value || []
   })
+
+  const fileContextMenu = reactive<{
+    visible: boolean
+    x: number
+    y: number
+    file?: PublicFileItem
+  }>({ visible: false, x: 0, y: 0 })
+  const publicFileMenuItems = computed<ContextMenuItem[]>(() => [
+    { key: 'preview', label: t('files.preview'), icon: View },
+    { key: 'download', label: t('files.download'), icon: Download }
+  ])
+
+  const closePublicFileContextMenu = () => {
+    fileContextMenu.visible = false
+  }
+
+  const openPublicFileContextMenu = (file: PublicFileItem, event: MouseEvent | KeyboardEvent) => {
+    const rect = (event.currentTarget as HTMLElement | null)?.getBoundingClientRect()
+    const hasPointerPosition = event instanceof MouseEvent && (event.clientX || event.clientY)
+    Object.assign(fileContextMenu, {
+      visible: true,
+      x: hasPointerPosition ? event.clientX : (rect?.left || 0) + 24,
+      y: hasPointerPosition ? event.clientY : (rect?.top || 0) + 24,
+      file
+    })
+  }
+
+  const handleFileCardKeydown = (file: PublicFileItem, event: KeyboardEvent) => {
+    if (event.key === 'Enter') {
+      handleFileClick(file)
+      return
+    }
+    if (event.key === 'ContextMenu' || (event.shiftKey && event.key === 'F10')) {
+      event.preventDefault()
+      openPublicFileContextMenu(file, event)
+    }
+  }
+
+  const handleRowContextMenu = (file: PublicFileItem, _column: unknown, event: MouseEvent) => {
+    event.preventDefault()
+    openPublicFileContextMenu(file, event)
+  }
+
+  const handlePublicFileMenuAction = (key: string) => {
+    const file = fileContextMenu.file
+    closePublicFileContextMenu()
+    if (!file) {
+      return
+    }
+    if (key === 'preview') {
+      handleFileClick(file)
+    } else if (key === 'download') {
+      void handleDownload(file)
+    }
+  }
 
   // 获取文件图标名称
   const getFileIconName = (mimeType: string) => getFileIcon(mimeType).icon

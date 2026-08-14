@@ -43,6 +43,7 @@ const cinemaVideo = (id: number) => ({
   file_size: 1048576,
   mime_type: 'video/mp4',
   is_enc: false,
+  public: false,
   has_thumbnail: false,
   created_at: `2026-08-04T0${Math.min(id, 9)}:00:00Z`,
   directory: { id: 7, name: '影视库', parent_id: 0, path: '影视库' },
@@ -168,7 +169,24 @@ const mockApi = async (page: Page) => {
         has_more: false
       }
     } else if (path === '/file/search/user') {
-      data = { files: [], total: 0 }
+      data = {
+        files: [
+          {
+            id: 'desktop-search-file',
+            uf_id: 'desktop-search-file',
+            name: '搜索结果报告.pdf',
+            file_name: '搜索结果报告.pdf',
+            size: 4096,
+            mime: 'application/pdf',
+            created_at: '2026-07-23T00:00:00Z',
+            is_enc: false,
+            thumbnail_img: '',
+            public: false,
+            tags: []
+          }
+        ],
+        total: 1
+      }
     } else if (path === '/file/tag-categories') {
       data = [
         { id: 'other', code: 'other', name: '其他', color: '#909399' },
@@ -232,7 +250,25 @@ const mockApi = async (page: Page) => {
           visibility: 'inherit'
         }
       ]
-    } else if (path === '/file/search/public' || path === '/file/public/list') {
+    } else if (path === '/file/search/public') {
+      data = {
+        files: [
+          {
+            id: 'public-search-file',
+            uf_id: 'public-search-file',
+            name: '公开搜索结果.mp4',
+            file_name: '公开搜索结果.mp4',
+            size: 8192,
+            mime: 'video/mp4',
+            created_at: '2026-07-23T00:00:00Z',
+            owner_name: '桌面端管理员',
+            thumbnail_img: '',
+            tags: []
+          }
+        ],
+        total: 1
+      }
+    } else if (path === '/file/public/list') {
       data = { files: [], total: 0 }
     } else if (path === '/admin/user/list') {
       data = {
@@ -379,6 +415,10 @@ test('影视模式桌面布局、隐藏横向滚动条和路由前进后退', as
     'hidden'
   )
   await expect(rail.locator('.cinema-video-card')).toHaveCount(6)
+  await rail.locator('.cinema-video-card').first().click({ button: 'right' })
+  await expect(page.locator('.file-context-menu')).toBeVisible()
+  await expect(page.locator('.file-context-menu .context-menu-item')).toHaveCount(8)
+  await page.keyboard.press('Escape')
   expect(await rail.evaluate(element => getComputedStyle(element).scrollbarWidth)).toBe('none')
   expect(
     await rail
@@ -539,6 +579,21 @@ test('桌面搜索栏通过井号选择标签并在提交后跨目录任一匹�
   await expect(page.locator('.desktop-header__search .file-search-input__tag')).toContainText(['#4K', '#电影'])
   await page.locator('.desktop-header__search .file-search-input__clear').click()
   await expect(page).not.toHaveURL(/(?:search|tags)=/)
+})
+
+test('个人和公开文件搜索结果支持对应的右键菜单', async ({ page }) => {
+  await page.goto('/files?search=报告')
+  const personalResult = page.locator('[data-entry-key="file:desktop-search-file"]')
+  await expect(personalResult).toBeVisible()
+  await personalResult.click({ button: 'right' })
+  await expect(page.locator('.file-context-menu .context-menu-item')).toHaveCount(8)
+  await page.keyboard.press('Escape')
+
+  await page.goto('/square?search=公开')
+  const publicResult = page.locator('.file-card').first()
+  await expect(publicResult).toContainText('公开搜索结果.mp4')
+  await publicResult.click({ button: 'right' })
+  await expect(page.locator('.file-context-menu .context-menu-item')).toHaveCount(2)
 })
 
 test('任务查询参数、账户概览和设置分区可直接访问', async ({ page }, testInfo) => {

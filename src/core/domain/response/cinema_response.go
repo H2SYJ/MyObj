@@ -15,6 +15,7 @@ type CinemaVideoItem struct {
 	FileSize     int                  `json:"file_size"`
 	MimeType     string               `json:"mime_type"`
 	IsEnc        bool                 `json:"is_enc"`
+	Public       bool                 `json:"public"`
 	HasThumbnail bool                 `json:"has_thumbnail"`
 	CreatedAt    custom_type.JsonTime `json:"created_at"`
 	Directory    CinemaDirectory      `json:"directory"`

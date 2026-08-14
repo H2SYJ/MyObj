@@ -41,4 +41,14 @@ describe('Files 页面工作区结构', () => {
     expect(result.code).toContain('@media (prefers-reduced-motion: reduce)')
     expect(result.code).not.toContain('.desktop-shell')
   })
+
+  it('个人文件搜索结果继续复用文件条目右键菜单', () => {
+    const filename = fileURLToPath(new URL('./index.vue', import.meta.url))
+    const source = readFileSync(filename, { encoding: 'utf-8' })
+
+    expect(source).toContain('hasActiveSearch.value ? searchResults.value : fileListData.value')
+    expect(source).toContain('...displayData.value.files.map(fileEntry)')
+    expect(source).toContain('@entry-context="openEntryContextMenu"')
+    expect(source).toContain('<FileContextMenu')
+  })
 })
