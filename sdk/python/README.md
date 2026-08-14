@@ -89,6 +89,7 @@ result = client.list_files(directory_id=1, page=1, page_size=20)
 print(result["data"])
 
 # 搜索文件；关键词和 Tag 至少提供一项，可限制在当前目录
+# keyword 只匹配文件名，tag_ids 继续按 tag_mode 独立筛选
 result = client.search_files("报告", directory_id=12, page=1, page_size=20)
 tag_result = client.search_files(tag_ids=["标签ID一", "标签ID二"], tag_mode="all")
 
@@ -112,6 +113,8 @@ client.delete_files(["用户文件ID一", "用户文件ID二"])
 ```
 
 接口使用的是文件列表返回的用户文件 ID（通常为 `uf_id`），不是底层存储文件 ID。
+
+`ensure_directory()` 会按分页结果查找同名目录，未找到时创建后再次查询，因此目录不在第一页时也不会重复创建。可通过 `page_size` 调整每页数量。
 
 ## 文件标签和个人词典
 

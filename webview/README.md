@@ -1,137 +1,124 @@
-![Logo](src/assets/images/LOGO.png)
-# MyObj 网盘系统 - 前端项目
+![MyObj Logo](src/assets/images/LOGO.png)
 
-基于Vue3 + Vite构建的现代化网盘系统前端界面。
+# 🎨 MyObj Web 前端
 
-## 🚀 功能特性
+MyObj Web 端使用 Vue 3、TypeScript、Vite、Element Plus 和 Pinia 构建，同时适配桌面与移动布局。该目录只包含前端源码；认证、文件数据、下载任务和插件执行均由 MyObj Go 服务端提供。
 
-### 核心功能
-- ✨ **文件管理** - 文件上传、下载、删除、重命名、移动、复制
-- 📁 **文件夹操作** - 创建、删除、重命名文件夹
-- 🔍 **搜索功能** - 快速搜索文件
-- 📤 **分享功能** - 生成分享链接、限时分享
-- 🚀 **离线下载** - 远程资源异步下载
-- 📦 **种子下载** - 支持磁力链和.torrent文件
-- 👥 **用户管理** - 登录、注册、个人设置
-- 💾 **存储管理** - 存储空间查看和配额管理
+## ✨ 当前功能
 
-### 界面特性
-- 🎨 现代化设计风格
-- 📱 响应式布局
-- 🌈 双视图模式（网格/列表）
-- ⚡ 流畅的交互动画
-- 🔐 安全的身份验证
+- 📁 文件、目录、上传下载、回收站、分享和公开文件广场。
+- 🏷️ 文件名关键词搜索、多标签筛选、标签云和个人标签显示偏好。
+- 🚀 HTTP/HLS/Torrent 离线下载与上传、下载任务实时状态。
+- 🎬 影视模式、最新视频、视频在线播放和缩略图管理。
+- 🧩 WASM 插件、订阅计划和订阅执行记录。
+- 🌐 用户资料、外观设置、中英文界面和响应式布局。
+- 🛡️ 管理员用户、用户组、权限、磁盘、系统配置、插件和标签规则管理。
 
-## 📦 快速开始
+## 📋 环境要求
 
-### 安装依赖
+- Node.js `^20.19.0` 或 `>=22.12.0`。
+- npm。
+- 本地联调时需要 MyObj 后端默认运行在 `http://localhost:8080`。
+
+## 🚀 开发与验证
+
 ```bash
 npm install
-```
-
-### 开发模式
-```bash
 npm run dev
 ```
-开发服务器默认运行在 `http://localhost:5173`
-API请求会发送到 `http://localhost:8080` (Go后端服务器)
 
-### 生产构建
+开发服务器默认监听 `0.0.0.0:5173` 并自动打开浏览器。`/dev-api` 请求由 Vite 代理到 `VITE_APP_BASE_URL`，随后重写为后端 `/api`。
+
+常用命令：
+
 ```bash
-npm run build
-# 或
-npm run build:prod
+npm run build          # 普通生产构建
+npm run build:prod     # 显式使用 production 模式
+npm run preview        # 预览 dist
+npm run test:unit      # Vitest 单元测试
+npm run test:e2e       # Playwright 端到端测试
+npm run type-check     # TypeScript 检查
+npm run lint:check     # ESLint，只检查不修复
+npm run format:check   # Prettier，只检查不改写
+npm run code-check     # 类型、ESLint、Prettier 串行检查
+npm run analyze        # 生产构建与产物分析
 ```
 
-构建产物将输出到 `dist/` 目录。
+`npm run lint` 和 `npm run format` 会直接修改源码，审查工作区时应优先使用带 `:check` 的命令。
 
-### 预览生产构建
-```bash
-npm run preview
-```
+## ⚙️ 环境变量
 
-## ⚙️ 环境配置
+| 变量 | 开发默认值 | 生产默认值 | 用途 |
+| --- | --- | --- | --- |
+| `VITE_APP_BASE_API` | `/dev-api` | `/api` | 浏览器请求使用的 API 前缀 |
+| `VITE_APP_BASE_URL` | `http://localhost:8080` | `http://localhost:8080` | Vite 开发代理目标 |
+| `VITE_APP_BASE_PATH` | `/` | `/` | Vite 构建和部署基础路径 |
+| `VITE_APP_PORT` | `5173` | `5173` | 开发服务器和 HMR 端口 |
+| `VITE_BUILD_COMPRESS` | 空 | `gzip` | 构建压缩格式，可用 `gzip`、`brotli` 或逗号组合 |
+| `VITE_LOG_LEVEL` | `debug` | `error` | 前端日志级别 |
+| `VITE_LOG_ENABLE` | `true` | `true` | 是否启用前端日志 |
 
-### 开发环境
-默认配置在 `.env.development` 文件中。
-- API地址: `http://localhost:8080`
-- 自动配置，无需额外设置
-
-### 生产环境
-生产环境有两种配置方式：
-
-#### 方式1：使用当前域名（推荐）
-前端和后端部署在同一域名下，API请求会自动使用当前域名。
-
-#### 方式2：使用meta标签
-在 `index.html` 中设置API地址：
-```html
-<meta name="api-url" content="http://your-api-domain.com">
-```
-
-后端可以在渲染HTML时动态注入此标签。
+生产环境默认使用同源 `/api`。如果前后端分开部署，需要让 Web 服务器代理 `/api`，或在构建前调整 `VITE_APP_BASE_API`；当前请求实现不会从 HTML 的 `api-url` meta 标签读取运行时地址。
 
 ## 📁 项目结构
 
-```
+```text
 webview/
+├── e2e/                  Playwright 端到端测试
+├── public/               原样复制的静态资源
+├── scripts/              构建分析脚本
 ├── src/
-│   ├── api/              # API接口定义
-│   │   └── auth.js       # 认证相关API
-│   ├── components/       # Vue组件
-│   │   ├── Navbar.vue    # 顶部导航栏
-│   │   ├── Sidebar.vue   # 侧边栏
-│   │   └── FileList.vue  # 文件列表
-│   ├── views/            # 页面视图
-│   │   └── Login.vue     # 登录页面
-│   ├── config/           # 配置文件
-│   │   └── api.js        # API配置
-│   ├── utils/            # 工具函数
-│   │   └── request.js    # HTTP请求封装
-│   ├── App.vue           # 根组件
-│   ├── main.js           # 入口文件
-│   └── style.css         # 全局样式
-├── public/               # 静态资源
-├── .env.development      # 开发环境配置
-├── .env.production       # 生产环境配置
-├── index.html            # HTML模板
-├── package.json          # 项目配置
-└── vite.config.js        # Vite配置
+│   ├── api/              按业务域划分的 API 封装
+│   ├── assets/           图片、图标与全局样式
+│   ├── components/       公共组件
+│   ├── composables/      组合式函数
+│   ├── config/           API 等运行配置
+│   ├── i18n/             中文和英文文案
+│   ├── layout/           桌面与移动布局
+│   ├── plugins/          缓存、日志等 Vue 插件
+│   ├── router/           路由与访问控制
+│   ├── stores/           Pinia 状态
+│   ├── theme/            主题能力
+│   ├── types/            TypeScript 类型
+│   ├── utils/            网络、任务、文件和 UI 工具
+│   ├── views/            文件、影视、离线下载、订阅、管理等页面
+│   ├── App.vue
+│   └── main.ts
+├── vite/                 Vite 插件配置
+├── package.json
+├── vite.config.ts
+├── vitest.config.ts
+└── playwright.config.ts
 ```
 
-## 🔌 API集成
+HTTP 请求统一由 `src/utils/network/request.ts` 处理，API 前缀定义在 `src/config/api.ts`。会话 Token 从本地缓存读取并放入 `Authorization: Bearer ...`；只有后端明确返回会话缺失、失效、过期或撤销原因时才清除本地登录态。
 
-### 请求配置
-所有API请求通过 `src/utils/request.js` 统一处理：
-- 自动添加 Authorization Token
-- 统一错误处理
-- 401状态自动跳转登录
+实时任务使用 `GET /api/events` 的 Server-Sent Events。反向代理必须关闭该端点的缓冲和缓存，并设置足够长的读取超时。
 
-### API端点
-详见 `src/config/api.js`，包含：
-- 认证接口 (登录、注册、登出)
-- 用户接口 (信息、设置)
-- 文件接口 (上传、下载、管理)
-- 分享接口 (创建、访问、管理)
-- 下载接口 (离线、种子)
+## 📦 生产部署
 
-## 🚢 部署方案
+推荐先生成静态资源，再由 Go 服务端从 `webview/dist` 提供页面：
 
-### Nginx部署
+```bash
+npm run build:prod
+cd ..
+go run ./src/cmd/server/main.go
+```
+
+项目根目录的跨平台脚本和 Docker 镜像都会采用同一目录布局。若独立使用 Nginx 托管前端，可参考：
+
 ```nginx
 server {
     listen 80;
-    server_name your-domain.com;
-    
-    # 前端静态文件
+    server_name example.com;
+    root /srv/myobj/webview/dist;
+
     location / {
-        root /path/to/dist;
         try_files $uri $uri/ /index.html;
     }
-    
-    # API代理到Go后端
+
     location = /api/events {
-        proxy_pass http://localhost:8080;
+        proxy_pass http://127.0.0.1:8080;
         proxy_http_version 1.1;
         proxy_set_header Host $host;
         proxy_set_header X-Real-IP $remote_addr;
@@ -141,71 +128,12 @@ server {
         add_header X-Accel-Buffering no always;
     }
 
-    location /api {
-        proxy_pass http://localhost:8080;
+    location /api/ {
+        proxy_pass http://127.0.0.1:8080;
         proxy_set_header Host $host;
         proxy_set_header X-Real-IP $remote_addr;
     }
 }
 ```
 
-### Docker部署
-```dockerfile
-FROM node:18-alpine as builder
-WORKDIR /app
-COPY package*.json ./
-RUN npm install
-COPY . .
-RUN npm run build
-
-FROM nginx:alpine
-COPY --from=builder /app/dist /usr/share/nginx/html
-COPY nginx.conf /etc/nginx/conf.d/default.conf
-EXPOSE 80
-CMD ["nginx", "-g", "daemon off;"]
-```
-
-## 📝 开发说明
-
-### 技术栈
-- **Vue 3** - 渐进式JavaScript框架
-- **Vite** - 下一代前端构建工具
-- **原生CSS** - CSS变量主题系统
-- **Fetch API** - 原生HTTP请求
-
-### 代码规范
-- 使用 Composition API
-- 组件采用 `<script setup>` 语法
-- 样式使用 scoped 隔离
-- 遵循Vue 3最佳实践
-
-### 添加新功能
-1. 在 `src/api/` 添加API接口
-2. 在 `src/components/` 或 `src/views/` 创建组件
-3. 在组件中调用API并处理数据
-4. 更新路由和导航
-
-## 🔧 配置说明
-
-### Vite配置
-`vite.config.js` 可配置：
-- 开发服务器端口
-- 代理配置
-- 构建优化
-- 插件扩展
-
-### API配置
-`src/config/api.js` 包含：
-- API基础URL配置
-- 环境判断逻辑
-- 端点定义
-- 超时设置
-
-## 📞 联系支持
-
-- 项目主页: [GitHub Repository]
-- 问题反馈: [GitHub Issues]
-
----
-
-**注意**: 本前端项目需要配合Go后端服务使用，确保后端服务运行在 `http://localhost:8080`
+完整项目构建、Docker、WebDAV 和 SDK 文档请返回查看[根 README](../README.md)。

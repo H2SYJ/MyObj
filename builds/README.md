@@ -1,162 +1,104 @@
-# MyObj 跨平台编译脚本
+# 🧰 MyObj 跨平台构建脚本
 
-本目录包含了在不同操作系统上编译 MyObj 项目的脚本。
+本目录提供 Windows、Linux 和 macOS 构建机到 Windows、Linux 和 macOS 目标平台的脚本。当前所有脚本固定输出 `amd64` 产物，并在每次运行时重建整个 `bin/` 目录。
 
-## 脚本说明
+## 📋 环境要求
 
-### Windows 平台脚本 (.bat)
+- Go 1.25 或更高版本。
+- Node.js `^20.19.0` 或 `>=22.12.0`，以及 npm。
+- 首次构建需要网络下载 Go 和 npm 依赖。
+- 运行 `.sh` 脚本需要 Bash。
 
-在 Windows 系统上使用以下脚本：
+## 🗺️ 脚本矩阵
 
-- **windows-build-windows.bat** - 编译 Windows 版本
-- **windows-build-linux.bat** - 编译 Linux 版本
-- **windows-build-mac.bat** - 编译 Mac 版本
+| 构建机 | Windows 目标 | Linux 目标 | macOS 目标 |
+| --- | --- | --- | --- |
+| Windows | `windows-build-windows.bat` | `windows-build-linux.bat` | `windows-build-mac.bat` |
+| Linux | `linux-build-windows.sh` | `linux-build-linux.sh` | `linux-build-mac.sh` |
+| macOS | `mac-build-windows.sh` | `mac-build-linux.sh` | `mac-build-mac.sh` |
 
-使用方法：
-```cmd
-# 双击运行或在命令行中执行
-windows-build-windows.bat
+从本目录执行脚本。例如：
+
+```powershell
+cd builds
+.\windows-build-windows.bat
 ```
 
-### Mac 平台脚本 (.sh)
-
-在 Mac 系统上使用以下脚本：
-
-- **mac-build-mac.sh** - 编译 Mac 版本
-- **mac-build-linux.sh** - 编译 Linux 版本
-- **mac-build-windows.sh** - 编译 Windows 版本
-
-使用方法：
 ```bash
-# 添加执行权限
-chmod +x mac-build-mac.sh
-
-# 运行脚本
-./mac-build-mac.sh
-```
-
-### Linux 平台脚本 (.sh)
-
-在 Linux 系统上使用以下脚本：
-
-- **linux-build-linux.sh** - 编译 Linux 版本
-- **linux-build-mac.sh** - 编译 Mac 版本
-- **linux-build-windows.sh** - 编译 Windows 版本
-
-使用方法：
-```bash
-# 添加执行权限
-chmod +x linux-build-linux.sh
-
-# 运行脚本
+cd builds
+chmod +x *.sh
 ./linux-build-linux.sh
 ```
 
-## 编译过程
+## 🏗️ 构建流程
 
-所有脚本都会执行以下步骤：
+每个脚本都会：
 
-1. **清理旧文件** - 删除旧的 bin 目录
-2. **构建前端** - 编译 Vue.js 前端项目
-3. **复制前端产物** - 将前端构建文件复制到 bin/webview/dist
-4. **编译后端** - 编译 Go 服务端和 CLI 工具
-5. **复制依赖** - 复制所有必要的配置文件和依赖
+1. 删除并重新创建项目根目录的 `bin/`。
+2. 在 `webview/` 执行 `npm install` 和 `npm run build`。
+3. 将 `webview/dist` 复制到 `bin/webview/dist`。
+4. 构建 Go 服务端和 CLI，使用 `-ldflags="-s -w"` 减小体积。
+5. 复制 `libs`、`templates`、`docs` 和 `config.toml`，并生成 `README.txt`。
 
-## 输出目录
+除 Windows 构建 Windows 的脚本设置 `CGO_ENABLED=1` 外，其余脚本都设置 `CGO_ENABLED=0`。项目使用纯 Go SQLite 驱动，跨平台产物不依赖目标系统的 C 工具链。
 
-编译完成后，所有文件都在 `bin/` 目录下，包含：
+## 📦 输出内容
 
-```
+```text
 bin/
-├── server 或 server.exe    # 服务端程序
-├── cli 或 cli.exe          # CLI 工具
-├── webview/                # 前端资源
-│   └── dist/
-├── libs/                   # 数据库文件（如有）
-├── templates/              # HTML 模板
-├── docs/                   # API 文档（如有）
-├── config.toml            # 配置文件
-└── README.txt             # 使用说明
+├── server 或 server.exe    服务端程序
+├── cli 或 cli.exe          CLI 管理工具
+├── webview/dist/           前端静态资源
+├── libs/                   数据库目录及仓库中已有内容
+├── templates/              HTML 模板
+├── docs/                   Swagger 与使用文档
+├── config.toml             配置文件
+└── README.txt              目标平台启动说明
 ```
 
-## 部署说明
+脚本会复制仓库当前的 `libs/` 内容。如果构建工作区含有本地数据库或其他运行数据，发布前必须检查 `bin/libs/`，避免把开发数据带入发布包。
 
-### Windows 部署
+## 🚀 部署
 
-1. 将 `bin/` 目录复制到目标 Windows 系统
-2. 修改 `config.toml` 配置
-3. 双击运行 `server.exe`
+将完整 `bin/` 目录复制到目标机器，先修改 `config.toml`，再启动：
 
-### Linux/Mac 部署
-
-1. 将 `bin/` 目录复制到目标系统
-2. 修改 `config.toml` 配置
-3. 添加执行权限：`chmod +x server`
-4. 运行服务：`./server`
-
-## 注意事项
-
-### 前提条件
-
-- **Node.js** - 用于编译前端（需要 npm）
-- **Go** - 用于编译后端（建议 Go 1.25+）
-- **网络连接** - 首次运行需要下载 npm 依赖
-
-### 编译选项
-
-- **CGO_ENABLED=0** - 跨平台编译时禁用 CGO，确保二进制文件可移植
-- **CGO_ENABLED=1** - Windows 编译 Windows 时启用 CGO，支持 SQLite
-- **-ldflags="-s -w"** - 减小二进制文件体积
-
-### 配置文件
-
-编译后需要修改 `bin/config.toml` 中的配置：
-
-- 数据库路径（使用相对路径，如 `./libs/my_obj.db`）
-- 服务器监听地址和端口
-- 日志目录（使用相对路径，如 `./logs/`）
-- 文件存储目录（使用相对路径，如 `./obj_data/`）
-
-### 跨平台兼容性
-
-- 路径分隔符在配置文件中统一使用 `/`
-- SQLite 数据库文件可跨平台使用
-- 确保目标系统有足够的权限创建目录和文件
-
-## 常见问题
-
-### 1. 前端编译失败
+```powershell
+.\server.exe
+```
 
 ```bash
-# 先安装依赖
+chmod +x server cli
+./server
+```
+
+默认 HTTP 地址为 `http://localhost:8080`，WebDAV 地址为 `http://localhost:8081/dav`。数据库、日志、文件和临时目录都按 `config.toml` 中的相对路径解析，因此应从发布目录启动服务。
+
+## 🔧 常见问题
+
+### 1. 🎨 前端依赖或构建失败
+
+```bash
 cd webview
 npm install
-cd ..
+npm run build
 ```
 
-### 2. Go 编译失败
+确认 Node.js 满足 Vite 7 的版本要求，并优先保留命令输出中的第一个错误。
+
+### 2. 🐹 Go 依赖或编译失败
 
 ```bash
-# 确保 Go modules 是最新的
-go mod tidy
 go mod download
+go test ./...
 ```
 
-### 3. 权限问题（Linux/Mac）
+不建议仅为解决构建问题执行 `go mod tidy`，因为它会修改 `go.mod` 和 `go.sum`。
 
-```bash
-# 给脚本添加执行权限
-chmod +x builds/*.sh
-```
+### 3. 💻 目标平台无法运行
 
-### 4. 跨平台编译的二进制无法运行
+- 确认目标系统为 `amd64`；现有脚本不生成 `arm64`。
+- 确认选用了正确的 `GOOS` 目标脚本。
+- Linux/macOS 需要为二进制添加执行权限。
+- 前端空白时检查 `webview/dist/index.html` 和 `webview/dist/assets` 是否完整。
 
-- 检查目标平台的 GOOS 和 GOARCH 设置是否正确
-- 确保 CGO_ENABLED=0 用于跨平台编译
-
-## 技术支持
-
-如遇问题，请查看：
-- 项目 README.md
-- 部署说明.md
-- GitHub Issues
+更多运行、Docker 和验证说明见[项目根 README](../README.md)。

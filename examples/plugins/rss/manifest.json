@@ -1,0 +1,26 @@
+{
+  "id": "org.myobj.rss",
+  "name": "RSS/Atom 订阅",
+  "version": "1.0.0",
+  "api_version": "2",
+  "author": "MyObj",
+  "description": "从 RSS 或 Atom 的 enclosure 链接创建 HTTP/HLS 离线下载任务",
+  "permissions": [
+    "network.public_http"
+  ],
+  "config_fields": [
+    {
+      "key": "feed_url",
+      "label": "订阅地址",
+      "type": "text",
+      "required": true,
+      "affects_source": true
+    },
+    {
+      "key": "relative_save_path",
+      "label": "订阅保存目录下的相对目录",
+      "type": "text",
+      "default": "RSS"
+    }
+  ]
+}
