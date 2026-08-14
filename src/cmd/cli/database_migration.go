@@ -135,6 +135,8 @@ func migrationMySQLDSN() (string, error) {
 
 func printMigrationProgress(progress database.MigrationProgress) {
 	switch {
+	case progress.Stage == "preflight" && progress.Table != "" && progress.Total > 0:
+		pterm.Info.Printf("预检 %-28s %d/%d\n", progress.Table, progress.Completed, progress.Total)
 	case progress.Stage == "copy" && progress.Table != "" && progress.Total > 0:
 		pterm.Info.Printf("迁移 %-28s %d/%d\n", progress.Table, progress.Completed, progress.Total)
 	case progress.Message != "":

@@ -86,6 +86,76 @@ func TestSQLiteToMySQLMigrationIntegration(t *testing.T) {
 	}
 }
 
+// TestSQLiteToMySQLPreflightAggregatesAndCleansTarget 需要可重建的专用MySQL测试库。
+func TestSQLiteToMySQLPreflightAggregatesAndCleansTarget(t *testing.T) {
+	dsn := os.Getenv("MYOBJ_TEST_MYSQL_DSN")
+	if dsn == "" || os.Getenv("MYOBJ_TEST_MYSQL_ALLOW_RESET") != "1" {
+		t.Skip("未配置专用MySQL迁移测试库")
+	}
+	config, err := mysqldriver.ParseDSN(dsn)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.HasPrefix(strings.ToLower(config.DBName), "myobj_test") {
+		t.Fatal("MYOBJ_TEST_MYSQL_DSN必须指向名称以myobj_test开头的专用测试库")
+	}
+	resetMigrationMySQLTestDatabase(t, dsn)
+	defer resetMigrationMySQLTestDatabase(t, dsn)
+
+	tempDir := t.TempDir()
+	sourcePath := filepath.Join(tempDir, "invalid-source.db")
+	source, err := openSQLiteForMigration(sourcePath, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := prepareSQLiteSnapshot(source); err != nil {
+		closeGormDB(source)
+		t.Fatal(err)
+	}
+	now := custom_type.JsonTime(time.Date(2026, 8, 14, 1, 2, 3, 0, time.UTC))
+	if err := source.Create(&models.Group{
+		ID: 7, Name: strings.Repeat("组", 256), GroupDefault: 0, CreatedAt: now,
+	}).Error; err != nil {
+		closeGormDB(source)
+		t.Fatal(err)
+	}
+	if err := source.Create(&models.UserInfo{
+		ID: "orphan-user", Name: "悬空用户", UserName: "orphan", Password: "hash",
+		Email: "orphan@example.com", Phone: "13800000000", GroupID: 999, CreatedAt: now,
+	}).Error; err != nil {
+		closeGormDB(source)
+		t.Fatal(err)
+	}
+	closeGormDB(source)
+
+	_, err = MigrateSQLiteToMySQL(context.Background(), SQLiteToMySQLOptions{
+		SourcePath: sourcePath, SnapshotPath: filepath.Join(tempDir, "invalid-snapshot.db"), MySQLDSN: dsn,
+		BatchSize: 100, Timezone: "Asia/Shanghai",
+	})
+	if err == nil {
+		t.Fatal("不兼容数据应在预检阶段失败")
+	}
+	for _, expected := range []string{"迁移预检失败", "表groups", "MySQL错误1406", "关联完整性", "已自动清理目标结构"} {
+		if !strings.Contains(err.Error(), expected) {
+			t.Fatalf("预检错误缺少%q: %v", expected, err)
+		}
+	}
+
+	target, err := gorm.Open(mysql.Open(dsn), &gorm.Config{Logger: logger.Default.LogMode(logger.Silent)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer closeGormDB(target)
+	var tableCount int64
+	if err := target.Raw(`SELECT COUNT(*) FROM information_schema.TABLES
+		WHERE TABLE_SCHEMA = DATABASE() AND TABLE_TYPE = 'BASE TABLE'`).Scan(&tableCount).Error; err != nil {
+		t.Fatal(err)
+	}
+	if tableCount != 0 {
+		t.Fatalf("预检失败后目标库仍有%d张表", tableCount)
+	}
+}
+
 func resetMigrationMySQLTestDatabase(t *testing.T, dsn string) {
 	t.Helper()
 	db, err := gorm.Open(mysql.Open(dsn), &gorm.Config{Logger: logger.Default.LogMode(logger.Silent)})

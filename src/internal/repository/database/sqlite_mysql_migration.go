@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -77,6 +78,22 @@ type migrationColumn struct {
 	DataType          string
 	Nullable          bool
 	DatetimePrecision int
+}
+
+type migrationPreflightIssue struct {
+	Table    string
+	Category string
+	Count    int64
+	Examples []string
+}
+
+type migrationPreflightIssues struct {
+	issues map[string]*migrationPreflightIssue
+}
+
+type migrationUniqueIndex struct {
+	Name    string
+	Columns []string
 }
 
 type fileState struct {
@@ -153,6 +170,13 @@ func MigrateSQLiteToMySQL(ctx context.Context, options SQLiteToMySQLOptions) (*S
 	emitMigrationProgress(options.Progress, MigrationProgress{Stage: "schema", Message: "正在创建MySQL目标结构"})
 	if err := autoMigrateCurrentModels(targetDB); err != nil {
 		return nil, fmt.Errorf("创建MySQL目标结构失败，目标库需要重建后重试: %w", err)
+	}
+	emitMigrationProgress(options.Progress, MigrationProgress{Stage: "preflight", Message: "正在预检全部数据与MySQL约束"})
+	if err := preflightAllMigrationTables(ctx, snapshotDB, targetDB, location, options.BatchSize, options.Progress); err != nil {
+		if cleanupErr := cleanupEmptyMigrationTargetSchema(targetDB); cleanupErr != nil {
+			return nil, fmt.Errorf("迁移预检失败，尚未写入业务数据，但自动清理目标结构失败（%v），目标库需要重建后重试: %w", cleanupErr, err)
+		}
+		return nil, fmt.Errorf("迁移预检失败，尚未写入业务数据且已自动清理目标结构，修复全部列出问题后可直接重试: %w", err)
 	}
 
 	report.Tables, err = copyAllMigrationTables(ctx, snapshotDB, targetDB, location, options.BatchSize, options.Progress)
@@ -504,6 +528,249 @@ func collectDryRunCounts(source *gorm.DB) ([]TableMigrationReport, error) {
 	return reports, nil
 }
 
+func preflightAllMigrationTables(ctx context.Context, source, target *gorm.DB, location *time.Location, batchSize int, progress func(MigrationProgress)) error {
+	issues := &migrationPreflightIssues{issues: make(map[string]*migrationPreflightIssue)}
+	if err := preflightSourceRelationships(source, issues); err != nil {
+		return err
+	}
+	for _, table := range currentMigrationTables() {
+		columns, err := loadMySQLColumns(target, table.Name)
+		if err != nil {
+			return err
+		}
+		if err := ensureSQLiteColumns(source, table.Name, columns); err != nil {
+			return err
+		}
+		primaryKeys, err := loadMySQLPrimaryKeys(target, table.Name)
+		if err != nil {
+			return err
+		}
+		uniqueIndexes, err := loadMySQLUniqueIndexes(target, table.Name)
+		if err != nil {
+			return err
+		}
+		if err := preflightSQLiteUniqueIndexes(source, table.Name, uniqueIndexes, issues); err != nil {
+			return err
+		}
+		var total int64
+		if err := source.Table(table.Name).Count(&total).Error; err != nil {
+			return fmt.Errorf("统计预检表%s失败: %w", table.Name, err)
+		}
+		emitMigrationProgress(progress, MigrationProgress{Stage: "preflight", Table: table.Name, Total: total})
+		if err := preflightMigrationTable(ctx, source, target, table.Name, columns, primaryKeys, location, batchSize, total, progress, issues); err != nil {
+			return err
+		}
+	}
+	if len(issues.issues) > 0 {
+		return issues
+	}
+	return nil
+}
+
+func cleanupEmptyMigrationTargetSchema(target *gorm.DB) error {
+	var tables []string
+	if err := target.Raw(`SELECT TABLE_NAME FROM information_schema.TABLES
+		WHERE TABLE_SCHEMA = DATABASE() AND TABLE_TYPE = 'BASE TABLE' ORDER BY TABLE_NAME`).Scan(&tables).Error; err != nil {
+		return fmt.Errorf("读取目标表清单失败: %w", err)
+	}
+	expected := make(map[string]struct{}, len(currentMigrationTables()))
+	for _, table := range currentMigrationTables() {
+		expected[table.Name] = struct{}{}
+	}
+	for _, table := range tables {
+		if _, ok := expected[table]; !ok {
+			return fmt.Errorf("目标库出现非迁移表%s，拒绝自动清理", table)
+		}
+		var count int64
+		if err := target.Table(table).Count(&count).Error; err != nil {
+			return fmt.Errorf("统计目标表%s失败: %w", table, err)
+		}
+		if count != 0 {
+			return fmt.Errorf("目标表%s已有%d行数据，拒绝自动清理", table, count)
+		}
+	}
+	for index := len(tables) - 1; index >= 0; index-- {
+		if err := target.Exec("DROP TABLE " + quoteIdentifier(tables[index], '`')).Error; err != nil {
+			return fmt.Errorf("删除本次创建的空表%s失败: %w", tables[index], err)
+		}
+	}
+	return nil
+}
+
+func preflightSourceRelationships(source *gorm.DB, issues *migrationPreflightIssues) error {
+	for _, check := range migrationRelationshipChecks() {
+		var count int64
+		if err := source.Raw(check.query).Scan(&count).Error; err != nil {
+			return fmt.Errorf("预检%s失败: %w", check.name, err)
+		}
+		if count > 0 {
+			issues.addCount("关联完整性", check.name, count, fmt.Sprintf("发现%d条悬空记录", count))
+		}
+	}
+	return nil
+}
+
+func preflightMigrationTable(ctx context.Context, source, target *gorm.DB, table string, columns []migrationColumn, primaryKeys []string, location *time.Location, batchSize int, total int64, progress func(MigrationProgress), issues *migrationPreflightIssues) error {
+	columnNames := migrationColumnNames(columns)
+	selectSQL := "SELECT " + quoteIdentifiers(columnNames, '"') + " FROM " + quoteIdentifier(table, '"')
+	if len(primaryKeys) > 0 {
+		selectSQL += " ORDER BY " + quoteIdentifiers(primaryKeys, '"')
+	}
+	rows, err := source.WithContext(ctx).Raw(selectSQL).Rows()
+	if err != nil {
+		return fmt.Errorf("读取表%s用于预检失败: %w", table, err)
+	}
+	defer rows.Close()
+
+	placeholders := strings.TrimSuffix(strings.Repeat("?,", len(columns)), ",")
+	insertSQL := "INSERT INTO " + quoteIdentifier(table, '`') + " (" + quoteIdentifiers(columnNames, '`') + ") VALUES (" + placeholders + ")"
+	tx := target.WithContext(ctx).Begin()
+	if tx.Error != nil {
+		return tx.Error
+	}
+	stmt, err := tx.Raw("SELECT 1").Statement.ConnPool.PrepareContext(ctx, insertSQL)
+	if err != nil {
+		tx.Rollback()
+		return fmt.Errorf("准备表%s预检语句失败: %w", table, err)
+	}
+
+	var processed int64
+	for rows.Next() {
+		rawValues, scanErr := scanRowValues(rows, len(columns))
+		if scanErr != nil {
+			stmt.Close()
+			tx.Rollback()
+			return fmt.Errorf("读取表%s预检第%d行失败: %w", table, processed+1, scanErr)
+		}
+		key := migrationRowKey(columnNames, primaryKeys, rawValues)
+		values, normalizeErr := normalizeRowValues(rawValues, columns, location)
+		if normalizeErr != nil {
+			issues.add(table, "数据转换", fmt.Sprintf("主键[%s]: %v", key, normalizeErr))
+		} else if _, execErr := stmt.ExecContext(ctx, values...); execErr != nil {
+			category, isDataIssue := migrationPreflightErrorCategory(execErr)
+			if !isDataIssue {
+				stmt.Close()
+				tx.Rollback()
+				return fmt.Errorf("执行表%s预检写入失败: %w", table, execErr)
+			}
+			issues.add(table, category, fmt.Sprintf("主键[%s]: %v", key, execErr))
+		}
+		processed++
+		if processed%int64(batchSize) == 0 || processed == total {
+			emitMigrationProgress(progress, MigrationProgress{Stage: "preflight", Table: table, Completed: processed, Total: total})
+		}
+	}
+	if err := rows.Err(); err != nil {
+		stmt.Close()
+		tx.Rollback()
+		return fmt.Errorf("遍历表%s预检数据失败: %w", table, err)
+	}
+	if err := stmt.Close(); err != nil {
+		tx.Rollback()
+		return fmt.Errorf("关闭表%s预检语句失败: %w", table, err)
+	}
+	if err := tx.Rollback().Error; err != nil && !errors.Is(err, sql.ErrTxDone) {
+		return fmt.Errorf("回滚表%s预检事务失败: %w", table, err)
+	}
+	return nil
+}
+
+func preflightSQLiteUniqueIndexes(source *gorm.DB, table string, indexes []migrationUniqueIndex, issues *migrationPreflightIssues) error {
+	for _, index := range indexes {
+		if len(index.Columns) == 0 {
+			continue
+		}
+		quotedColumns := quoteIdentifiers(index.Columns, '"')
+		notNull := make([]string, len(index.Columns))
+		for columnIndex, column := range index.Columns {
+			notNull[columnIndex] = quoteIdentifier(column, '"') + " IS NOT NULL"
+		}
+		query := "SELECT " + quotedColumns + ", COUNT(*) FROM " + quoteIdentifier(table, '"') +
+			" WHERE " + strings.Join(notNull, " AND ") +
+			" GROUP BY " + quotedColumns + " HAVING COUNT(*) > 1"
+		rows, err := source.Raw(query).Rows()
+		if err != nil {
+			return fmt.Errorf("预检表%s唯一索引%s失败: %w", table, index.Name, err)
+		}
+		for rows.Next() {
+			values := make([]interface{}, len(index.Columns))
+			destinations := make([]interface{}, 0, len(index.Columns)+1)
+			for valueIndex := range values {
+				destinations = append(destinations, &values[valueIndex])
+			}
+			var count int64
+			destinations = append(destinations, &count)
+			if err := rows.Scan(destinations...); err != nil {
+				rows.Close()
+				return fmt.Errorf("读取表%s唯一索引%s预检结果失败: %w", table, index.Name, err)
+			}
+			issues.addCount(table, "唯一索引"+index.Name, count, migrationRowKey(index.Columns, index.Columns, values))
+		}
+		if err := rows.Err(); err != nil {
+			rows.Close()
+			return err
+		}
+		if err := rows.Close(); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func migrationPreflightErrorCategory(err error) (string, bool) {
+	var mysqlErr *mysqldriver.MySQLError
+	if errors.As(err, &mysqlErr) {
+		switch mysqlErr.Number {
+		case 1048, 1062, 1264, 1265, 1292, 1366, 1406, 3140, 3819, 4025:
+			return fmt.Sprintf("MySQL错误%d", mysqlErr.Number), true
+		default:
+			return "", false
+		}
+	}
+	return "写入约束", true
+}
+
+func (issues *migrationPreflightIssues) add(table, category, example string) {
+	issues.addCount(table, category, 1, example)
+}
+
+func (issues *migrationPreflightIssues) addCount(table, category string, count int64, example string) {
+	key := table + "\x00" + category
+	issue := issues.issues[key]
+	if issue == nil {
+		issue = &migrationPreflightIssue{Table: table, Category: category}
+		issues.issues[key] = issue
+	}
+	issue.Count += count
+	if len(issue.Examples) < 3 {
+		issue.Examples = append(issue.Examples, example)
+	}
+}
+
+func (issues *migrationPreflightIssues) Error() string {
+	ordered := make([]*migrationPreflightIssue, 0, len(issues.issues))
+	var affected int64
+	for _, issue := range issues.issues {
+		ordered = append(ordered, issue)
+		affected += issue.Count
+	}
+	sort.Slice(ordered, func(left, right int) bool {
+		if ordered[left].Table == ordered[right].Table {
+			return ordered[left].Category < ordered[right].Category
+		}
+		return ordered[left].Table < ordered[right].Table
+	})
+	var message strings.Builder
+	fmt.Fprintf(&message, "发现%d类不兼容问题，累计命中%d次数据校验", len(ordered), affected)
+	for _, issue := range ordered {
+		fmt.Fprintf(&message, "\n- 表%s / %s: %d次", issue.Table, issue.Category, issue.Count)
+		for _, example := range issue.Examples {
+			fmt.Fprintf(&message, "\n  - %s", example)
+		}
+	}
+	return message.String()
+}
+
 func copyAllMigrationTables(ctx context.Context, source, target *gorm.DB, location *time.Location, batchSize int, progress func(MigrationProgress)) ([]TableMigrationReport, error) {
 	reports := make([]TableMigrationReport, 0, len(currentMigrationTables()))
 	for _, table := range currentMigrationTables() {
@@ -780,6 +1047,32 @@ func loadMySQLPrimaryKeys(db *gorm.DB, table string) ([]string, error) {
 	return keys, nil
 }
 
+func loadMySQLUniqueIndexes(db *gorm.DB, table string) ([]migrationUniqueIndex, error) {
+	rows, err := db.Raw(`SELECT INDEX_NAME, COLUMN_NAME FROM information_schema.STATISTICS
+		WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = ? AND NON_UNIQUE = 0 AND COLUMN_NAME IS NOT NULL
+		ORDER BY INDEX_NAME, SEQ_IN_INDEX`, table).Rows()
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	indexes := make([]migrationUniqueIndex, 0)
+	indexPositions := make(map[string]int)
+	for rows.Next() {
+		var name, column string
+		if err := rows.Scan(&name, &column); err != nil {
+			return nil, err
+		}
+		position, ok := indexPositions[name]
+		if !ok {
+			position = len(indexes)
+			indexPositions[name] = position
+			indexes = append(indexes, migrationUniqueIndex{Name: name})
+		}
+		indexes[position].Columns = append(indexes[position].Columns, column)
+	}
+	return indexes, rows.Err()
+}
+
 func ensureSQLiteColumns(db *gorm.DB, table string, columns []migrationColumn) error {
 	rows, err := db.Raw("PRAGMA table_info(" + quoteIdentifier(table, '"') + ")").Rows()
 	if err != nil {
@@ -830,6 +1123,9 @@ func normalizeRowValues(values []interface{}, columns []migrationColumn, locatio
 
 func normalizeMigrationValue(value interface{}, column migrationColumn, location *time.Location) (interface{}, error) {
 	if value == nil {
+		if !column.Nullable {
+			return nil, errors.New("非空列不能写入NULL")
+		}
 		return nil, nil
 	}
 	switch strings.ToLower(column.DataType) {
@@ -1000,11 +1296,13 @@ func writeCanonicalRow(hash interface{ Write([]byte) (int, error) }, columns []m
 	}
 }
 
-func verifyTargetRelationships(db *gorm.DB) error {
-	checks := []struct {
-		name  string
-		query string
-	}{
+type migrationRelationshipCheck struct {
+	name  string
+	query string
+}
+
+func migrationRelationshipChecks() []migrationRelationshipCheck {
+	return []migrationRelationshipCheck{
 		{"用户组引用", "SELECT COUNT(*) FROM user_info u LEFT JOIN groups g ON g.id = u.group_id WHERE g.id IS NULL"},
 		{"用户组权限引用", "SELECT COUNT(*) FROM group_power gp LEFT JOIN groups g ON g.id = gp.group_id LEFT JOIN power p ON p.id = gp.power_id WHERE g.id IS NULL OR p.id IS NULL"},
 		{"用户文件用户引用", "SELECT COUNT(*) FROM user_files uf LEFT JOIN user_info u ON u.id = uf.user_id WHERE u.id IS NULL"},
@@ -1017,14 +1315,21 @@ func verifyTargetRelationships(db *gorm.DB) error {
 		{"订阅插件引用", "SELECT COUNT(*) FROM subscription s LEFT JOIN installed_plugin p ON p.id = s.plugin_id WHERE p.id IS NULL"},
 		{"订阅条目引用", "SELECT COUNT(*) FROM subscription_item i LEFT JOIN subscription s ON s.id = i.subscription_id WHERE s.id IS NULL"},
 	}
-	for _, check := range checks {
+}
+
+func verifyTargetRelationships(db *gorm.DB) error {
+	var failures []string
+	for _, check := range migrationRelationshipChecks() {
 		var count int64
 		if err := db.Raw(check.query).Scan(&count).Error; err != nil {
 			return fmt.Errorf("检查%s失败: %w", check.name, err)
 		}
 		if count != 0 {
-			return fmt.Errorf("%s存在%d条悬空记录", check.name, count)
+			failures = append(failures, fmt.Sprintf("%s存在%d条悬空记录", check.name, count))
 		}
+	}
+	if len(failures) > 0 {
+		return errors.New(strings.Join(failures, "；"))
 	}
 	return nil
 }

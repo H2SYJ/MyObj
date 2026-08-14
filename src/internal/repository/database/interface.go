@@ -83,10 +83,43 @@ func migrateCurrentSchema(db *gorm.DB) (int64, error) {
 	if err := migrateTaggingSchema(db); err != nil {
 		return 0, fmt.Errorf("迁移文件标签结构失败: %w", err)
 	}
+	if err := migrateLegacyGroupDefaults(db); err != nil {
+		return 0, fmt.Errorf("迁移用户组默认标志失败: %w", err)
+	}
 	if err := migrateDefaultAccessData(db); err != nil {
 		return 0, fmt.Errorf("迁移默认用户组和权限失败: %w", err)
 	}
+	if err := migrateLegacyGroupPowerDuplicates(db); err != nil {
+		return 0, fmt.Errorf("清理重复用户组权限失败: %w", err)
+	}
 	return migratedDisks, nil
+}
+
+// migrateLegacyGroupDefaults 将旧 SQLite 宽松结构中的空标志还原为 Go 模型的零值。
+// group_default 为 0 表示非默认组，已有的默认组标志 1 保持不变。
+func migrateLegacyGroupDefaults(db *gorm.DB) error {
+	if !db.Migrator().HasTable(&models.Group{}) || !db.Migrator().HasColumn(&models.Group{}, "GroupDefault") {
+		return nil
+	}
+	return db.Model(&models.Group{}).
+		Where("group_default IS NULL").
+		Update("group_default", 0).Error
+}
+
+// migrateLegacyGroupPowerDuplicates 清理旧 SQLite 表缺少联合唯一约束时产生的重复授权。
+// 组权限是集合关系，同一 group_id、power_id 只保留一条不会损失业务信息。
+func migrateLegacyGroupPowerDuplicates(db *gorm.DB) error {
+	if db.Dialector.Name() != "sqlite" || !db.Migrator().HasTable(&models.GroupPower{}) {
+		return nil
+	}
+	if !db.Migrator().HasColumn(&models.GroupPower{}, "GroupID") ||
+		!db.Migrator().HasColumn(&models.GroupPower{}, "PowerID") {
+		return nil
+	}
+	return db.Exec(`DELETE FROM group_power
+		WHERE rowid NOT IN (
+			SELECT MIN(rowid) FROM group_power GROUP BY group_id, power_id
+		)`).Error
 }
 
 // migrateUserFileSearchIndexes 为搜索最先使用的用户、公开状态和目录范围补齐复合索引。
