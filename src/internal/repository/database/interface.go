@@ -55,6 +55,9 @@ func InitDataBase() {
 // migrateCurrentSchema 在已建立的连接上执行当前版本的增量迁移。
 // 服务启动和 SQLite→MySQL 迁移 CLI 共用此入口，避免两套迁移顺序发生偏差。
 func migrateCurrentSchema(db *gorm.DB) (int64, error) {
+	if err := autoMigrateMissingModels(db); err != nil {
+		return 0, fmt.Errorf("补齐缺失数据表失败: %w", err)
+	}
 	if err := migrateVirtualDirectorySchema(db); err != nil {
 		return 0, fmt.Errorf("迁移虚拟目录结构失败: %w", err)
 	}

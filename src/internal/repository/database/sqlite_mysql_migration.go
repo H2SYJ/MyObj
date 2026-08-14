@@ -375,15 +375,15 @@ func prepareSQLiteSnapshot(db *gorm.DB) error {
 	return autoMigrateMissingModels(db)
 }
 
-// autoMigrateMissingModels 只补建源快照中不存在的表，不用当前约束重建历史基础表。
-// 历史 SQLite 可能包含 MySQL 不接受的宽松 NULL 数据，正式复制时会按目标列约束明确报错。
+// autoMigrateMissingModels 只补建不存在的表，不用当前约束重建历史基础表。
+// 这样既能初始化全新数据库，也能保留历史 SQLite 中可能存在的宽松 NULL 数据。
 func autoMigrateMissingModels(db *gorm.DB) error {
 	for _, table := range currentMigrationTables() {
 		if db.Migrator().HasTable(table.Name) {
 			continue
 		}
 		if err := db.AutoMigrate(table.Model); err != nil {
-			return fmt.Errorf("补建SQLite快照表%s失败: %w", table.Name, err)
+			return fmt.Errorf("补建数据表%s失败: %w", table.Name, err)
 		}
 	}
 	return nil
