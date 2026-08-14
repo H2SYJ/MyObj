@@ -275,7 +275,6 @@ func createSQLiteSnapshot(ctx context.Context, sourcePath, snapshotPath string) 
 		return fmt.Errorf("快照目录不存在或不可用: %s", parent)
 	}
 
-	before := captureSQLiteFileStates(sourcePath)
 	db, err := openSQLiteForMigration(sourcePath, true)
 	if err != nil {
 		return fmt.Errorf("只读打开源SQLite失败: %w", err)
@@ -306,6 +305,9 @@ func createSQLiteSnapshot(ctx context.Context, sourcePath, snapshotPath string) 
 	if err := conn.QueryRowContext(ctx, "PRAGMA data_version").Scan(&dataVersionBefore); err != nil {
 		return err
 	}
+	// WAL 模式下，只读连接也可能创建 WAL/SHM 协调文件。连接建立后再记录基线，
+	// 避免把迁移进程自身的初始化动作误判成外部写入。
+	before := captureSQLiteFileStates(sourcePath)
 	escapedSnapshot := strings.ReplaceAll(filepath.ToSlash(snapshotPath), "'", "''")
 	if _, err := conn.ExecContext(ctx, "VACUUM INTO '"+escapedSnapshot+"'"); err != nil {
 		return fmt.Errorf("创建SQLite一致性快照失败: %w", err)
@@ -1090,8 +1092,10 @@ func quoteIdentifier(name string, quote rune) string {
 }
 
 func captureSQLiteFileStates(sourcePath string) map[string]fileState {
-	states := make(map[string]fileState, 3)
-	for _, path := range []string{sourcePath, sourcePath + "-wal", sourcePath + "-shm"} {
+	// SHM 是 WAL 模式的共享内存协调文件，只读连接也可能更新它，
+	// 因此仅比较承载持久化数据的主库和 WAL 文件。
+	states := make(map[string]fileState, 2)
+	for _, path := range []string{sourcePath, sourcePath + "-wal"} {
 		info, err := os.Stat(path)
 		if err != nil {
 			states[path] = fileState{}

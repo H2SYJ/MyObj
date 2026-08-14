@@ -50,6 +50,80 @@ func TestCreateSQLiteSnapshotKeepsSourceUnchangedAndIncludesWAL(t *testing.T) {
 	}
 }
 
+func TestCreateSQLiteSnapshotAfterSourceClosed(t *testing.T) {
+	tempDir := t.TempDir()
+	sourcePath := filepath.Join(tempDir, "source.db")
+	snapshotPath := filepath.Join(tempDir, "snapshot.db")
+	db, err := openSQLiteForMigration(sourcePath, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Exec("PRAGMA journal_mode=WAL").Error; err != nil {
+		closeGormDB(db)
+		t.Fatal(err)
+	}
+	if err := db.Exec("CREATE TABLE sample (id INTEGER PRIMARY KEY, value TEXT NOT NULL)").Error; err != nil {
+		closeGormDB(db)
+		t.Fatal(err)
+	}
+	if err := db.Exec("INSERT INTO sample(id, value) VALUES(1, ?)", "停服快照").Error; err != nil {
+		closeGormDB(db)
+		t.Fatal(err)
+	}
+	closeGormDB(db)
+
+	if err := createSQLiteSnapshot(context.Background(), sourcePath, snapshotPath); err != nil {
+		t.Fatal(err)
+	}
+	snapshot, err := openSQLiteForMigration(snapshotPath, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer closeGormDB(snapshot)
+	var value string
+	if err := snapshot.Raw("SELECT value FROM sample WHERE id = 1").Scan(&value).Error; err != nil {
+		t.Fatal(err)
+	}
+	if value != "停服快照" {
+		t.Fatalf("停服后生成的快照数据错误: %q", value)
+	}
+}
+
+func TestCaptureSQLiteFileStatesIgnoresSharedMemory(t *testing.T) {
+	sourcePath := filepath.Join(t.TempDir(), "source.db")
+	states := captureSQLiteFileStates(sourcePath)
+	if _, exists := states[sourcePath+"-shm"]; exists {
+		t.Fatal("SHM协调文件不应参与源数据变化判断")
+	}
+	if _, exists := states[sourcePath]; !exists {
+		t.Fatal("主数据库文件必须参与源数据变化判断")
+	}
+	if _, exists := states[sourcePath+"-wal"]; !exists {
+		t.Fatal("WAL文件必须参与源数据变化判断")
+	}
+}
+
+func TestSameSQLiteFileStatesDetectsDatabaseAndWALChanges(t *testing.T) {
+	sourcePath := filepath.Join(t.TempDir(), "source.db")
+	baseTime := time.Unix(1, 0)
+	before := map[string]fileState{
+		sourcePath:          {Exists: true, Size: 100, ModTime: baseTime},
+		sourcePath + "-wal": {Exists: true, Size: 20, ModTime: baseTime},
+	}
+	for _, changedPath := range []string{sourcePath, sourcePath + "-wal"} {
+		after := map[string]fileState{
+			sourcePath:          before[sourcePath],
+			sourcePath + "-wal": before[sourcePath+"-wal"],
+		}
+		state := after[changedPath]
+		state.Size++
+		after[changedPath] = state
+		if sameSQLiteFileStates(before, after) {
+			t.Fatalf("未检测到持久化文件变化: %s", changedPath)
+		}
+	}
+}
+
 func TestPrepareSQLiteSnapshotCreatesCurrentTables(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "current.db")
 	db, err := openSQLiteForMigration(path, false)
