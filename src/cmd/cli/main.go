@@ -42,6 +42,7 @@ func main() {
 		Usage:   "MyObj 系统管理工具",
 		Before:  initialize,
 		Commands: []*cli.Command{
+			databaseCommand(),
 			{
 				Name:  "plugin",
 				Usage: "WASM订阅插件开发工具",
@@ -225,7 +226,7 @@ func backfillVideoThumbnailsAction(c *cli.Context) error {
 
 // initialize 初始化系统组件
 func initialize(c *cli.Context) error {
-	if len(os.Args) > 1 && os.Args[1] == "plugin" {
+	if len(os.Args) > 1 && (os.Args[1] == "plugin" || os.Args[1] == "database") {
 		return nil
 	}
 	pterm.DefaultHeader.WithFullWidth().Println("MyObj CLI 管理工具")

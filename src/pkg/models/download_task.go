@@ -8,21 +8,21 @@ import (
 // DownloadTask 下载任务表
 type DownloadTask struct {
 	// 任务 ID
-	ID string `gorm:"column:id;type:text;primaryKey"`
+	ID string `gorm:"column:id;type:varchar(64);primaryKey"`
 	// 用户 ID
-	UserID string `gorm:"column:user_id;type:text;index;index:idx_download_user_type_state_create,priority:1"`
+	UserID string `gorm:"column:user_id;type:varchar(64);index;index:idx_download_user_type_state_create,priority:1"`
 	// 文件 ID
 	FileID string `gorm:"column:file_id;type:text"`
 	// 文件名
 	FileName string `gorm:"column:file_name;type:text"`
 	// 文件大小
-	FileSize int64 `gorm:"column:file_size;type:integer"`
+	FileSize int64 `gorm:"column:file_size;type:bigint"`
 	// 已下载大小
-	DownloadedSize int64 `gorm:"column:downloaded_size;type:integer;default:0"`
+	DownloadedSize int64 `gorm:"column:downloaded_size;type:bigint;default:0"`
 	// 下载进度 (0-100)
 	Progress int `gorm:"column:progress;type:integer;default:0"`
 	// 下载速度 (字节/秒)
-	Speed int64 `gorm:"column:speed;type:integer;default:0"`
+	Speed int64 `gorm:"column:speed;type:bigint;default:0"`
 	// 任务类型
 	Type int `gorm:"column:type;type:integer;not null;index:idx_download_user_type_state_create,priority:2;index:idx_download_schedule,priority:2"`
 	// 下载URL
@@ -42,7 +42,7 @@ type DownloadTask struct {
 	// 是否加密存储
 	EnableEncryption bool `gorm:"column:enable_encryption;type:boolean;default:false"`
 	// 种子InfoHash（BT/磁力链任务）
-	InfoHash string `gorm:"column:info_hash;type:text;index"`
+	InfoHash string `gorm:"column:info_hash;type:text;index,length:255"`
 	// 种子内文件索引（BT/磁力链任务）
 	FileIndex int `gorm:"column:file_index;type:integer"`
 	// 种子名称（BT/磁力链任务）
