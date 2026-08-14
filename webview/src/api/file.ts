@@ -1,9 +1,16 @@
-import { get, post, upload } from '@/utils/network/request'
+import { get, post, putFormData, upload } from '@/utils/network/request'
 import { filterParams } from '@/utils/common/params'
 import { API_ENDPOINTS, API_BASE_URL } from '@/config/api'
 import type { FileListRequest, FileListResponse, ApiResponse, CompactTag } from '@/types'
 import logger from '@/plugins/logger'
 import cache from '@/plugins/cache'
+
+const thumbnailCacheVersions = new Map<string, number>()
+
+export const invalidateThumbnailCache = (fileId: string) => {
+  const previousVersion = thumbnailCacheVersions.get(fileId) || 0
+  thumbnailCacheVersions.set(fileId, Math.max(Date.now(), previousVersion + 1))
+}
 
 // 文件搜索请求参数
 export interface FileSearchParams {
@@ -58,12 +65,18 @@ export const getFileList = (params: FileListRequest) => {
 /**
  * 获取文件缩略图（带鉴权）
  */
-export const getThumbnail = async (fileId: string): Promise<string> => {
+export const getThumbnail = async (fileId: string, refresh = false): Promise<string> => {
   try {
-    const url = `${API_BASE_URL}${API_ENDPOINTS.FILE.THUMBNAIL}/${fileId}`
+    if (refresh) {
+      invalidateThumbnailCache(fileId)
+    }
+    const version = thumbnailCacheVersions.get(fileId)
+    const cacheBust = version ? `?v=${version}` : ''
+    const url = `${API_BASE_URL}${API_ENDPOINTS.FILE.THUMBNAIL}/${fileId}${cacheBust}`
 
     const response = await fetch(url, {
       method: 'GET',
+      cache: refresh ? 'no-store' : 'default',
       headers: {
         Authorization: `Bearer ${cache.local.get('token') || ''}`
       }
@@ -85,6 +98,20 @@ export const getThumbnail = async (fileId: string): Promise<string> => {
  * 获取文件缩略图URL
  */
 export const getThumbnailUrl = (fileId: string) => `${API_ENDPOINTS.FILE.THUMBNAIL}/${fileId}`
+
+/**
+ * 修改文件缩略图
+ */
+export const updateThumbnail = (fileId: string, thumbnail: File) => {
+  const formData = new FormData()
+  formData.append('thumbnail', thumbnail)
+  return putFormData<ApiResponse>(`${API_ENDPOINTS.FILE.THUMBNAIL}/${fileId}`, formData).then(response => {
+    if (response.code === 200) {
+      invalidateThumbnailCache(fileId)
+    }
+    return response
+  })
+}
 
 /**
  * 搜索当前用户的文件

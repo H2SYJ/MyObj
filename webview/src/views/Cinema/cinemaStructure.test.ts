@@ -81,4 +81,15 @@ describe('影视模式页面结构', () => {
     expect(source).toContain(':file-id="video.file_id"')
     expect(source).toContain('@updated="handleTagsUpdated"')
   })
+
+  it('影视文件右键菜单支持手动更新缩略图', () => {
+    const source = readSource('./components/CinemaFileContextMenu.vue')
+
+    expect(source).toContain("key: 'update-thumbnail'")
+    expect(source).toContain('accept=".jpg,.jpeg,image/jpeg"')
+    expect(source).toContain('disabled: current.is_enc || updatingThumbnail.value')
+    expect(source).toContain('useThumbnailUpdate(')
+    expect(source).toContain('refreshCinema')
+    expect(source).toContain('return openThumbnailUpload(current)')
+  })
 })

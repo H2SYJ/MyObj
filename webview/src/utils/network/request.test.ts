@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { get } from './request'
+import { get, putFormData } from './request'
 
 vi.mock('@/config/api', () => ({ API_BASE_URL: '/dev-api' }))
 vi.mock('@/plugins/cache', () => ({
@@ -44,5 +44,17 @@ describe('GET 请求参数序列化', () => {
     )
     expect(requestURL).not.toContain('undefined')
     expect(requestURL).not.toContain('null')
+  })
+
+  it('PUT 表单保留 FormData 并由浏览器生成 Content-Type boundary', async () => {
+    const formData = new FormData()
+    formData.append('thumbnail', new Blob(['jpeg'], { type: 'image/jpeg' }), 'cover.jpg')
+
+    await putFormData('/file/thumbnail/uf-1', formData)
+
+    const options = fetchMock.mock.calls[0][1] as RequestInit
+    expect(options.method).toBe('PUT')
+    expect(options.body).toBe(formData)
+    expect(options.headers).not.toHaveProperty('Content-Type')
   })
 })

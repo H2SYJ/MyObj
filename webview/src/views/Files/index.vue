@@ -189,6 +189,15 @@
         @close="closeContextMenu"
       />
 
+      <input
+        ref="thumbnailInputRef"
+        class="thumbnail-file-input"
+        type="file"
+        accept=".jpg,.jpeg,image/jpeg"
+        hidden
+        @change="handleThumbnailSelected"
+      />
+
       <el-dialog v-model="showNewFolderDialog" :title="t('files.newFolder')" width="500px" @close="handleDialogClose">
         <el-form ref="folderFormRef" :model="folderForm" :rules="folderRules" label-width="100px">
           <el-form-item :label="t('files.folderName')" prop="dir_path">
@@ -399,6 +408,7 @@
   import { useFileSearch } from './composables/useFileSearch'
   import { parseSearchTagIds } from '@/composables/business/useFileSearchDraft'
   import { useFileViewMode } from './composables/useFileViewMode'
+  import { useThumbnailUpdate } from './composables/useThumbnailUpdate'
   import WorkspacePage from '@/components/WorkspacePage/index.vue'
   import FileTagManager from '@/components/FileTagManager/index.vue'
   import DirectoryTagManager from '@/components/DirectoryTagManager/index.vue'
@@ -424,12 +434,16 @@
     loadFileList,
     navigateToPath,
     getThumbnailUrl,
+    refreshThumbnail,
     loadThumbnails,
     loading: fileListLoading,
     sortBy,
     sortOrder,
     setSorting
   } = useFileList()
+  const { thumbnailInputRef, updatingThumbnail, openThumbnailUpload, handleThumbnailSelected } = useThumbnailUpdate(
+    file => refreshThumbnail(file.file_id)
+  )
 
   const {
     searchKeyword,
@@ -719,6 +733,12 @@
       { key: 'download-selection', label: t('files.download'), icon: Download },
       { key: 'share', label: t('files.share'), icon: Share },
       { key: 'manage-tags', label: t('tags.manage'), icon: PriceTag },
+      {
+        key: 'update-thumbnail',
+        label: t('files.updateThumbnail'),
+        icon: Upload,
+        disabled: entry.file.is_enc || updatingThumbnail.value
+      },
       { key: 'rename', label: t('files.rename'), icon: EditPen },
       { key: 'move-selection', label: t('files.move'), icon: FolderOpened },
       {
@@ -796,6 +816,11 @@
           return openTagManager([entry.file.file_id], entry.file.file_name)
         }
         return openTagManager()
+      case 'update-thumbnail':
+        if (entry?.type === 'file') {
+          return openThumbnailUpload(entry.file)
+        }
+        break
       case 'rename':
         if (entry?.type === 'file') {
           handleRenameFile(entry.file)

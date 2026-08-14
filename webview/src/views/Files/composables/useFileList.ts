@@ -30,6 +30,7 @@ export function useFileList() {
   const currentDirectoryId = ref(0)
   const thumbnailCache = ref<Map<string, string>>(new Map())
   const loadingThumbnailIds = new Set<string>()
+  const thumbnailRequestVersions = new Map<string, number>()
   const loading = ref(false)
   const cachedSortBy = cache.local.get(SORT_BY_KEY)
   const cachedSortOrder = cache.local.get(SORT_ORDER_KEY)
@@ -56,17 +57,23 @@ export function useFileList() {
         file => file.has_thumbnail && !thumbnailCache.value.has(file.file_id) && !loadingThumbnailIds.has(file.file_id)
       )
       .map(async file => {
+        const requestVersion = thumbnailRequestVersions.get(file.file_id) || 0
+        thumbnailRequestVersions.set(file.file_id, requestVersion)
         loadingThumbnailIds.add(file.file_id)
         try {
           const blobUrl = await getThumbnail(file.file_id)
-          if (blobUrl) {
+          if (blobUrl && thumbnailRequestVersions.get(file.file_id) === requestVersion) {
             thumbnailCache.value.set(file.file_id, blobUrl)
+          } else if (blobUrl) {
+            URL.revokeObjectURL(blobUrl)
           }
         } catch (error) {
           // 缩略图加载失败不影响主流程
           proxy?.$log.warn(t('files.thumbnailLoadFailed') + `: ${file.file_id}`, error)
         } finally {
-          loadingThumbnailIds.delete(file.file_id)
+          if (thumbnailRequestVersions.get(file.file_id) === requestVersion) {
+            loadingThumbnailIds.delete(file.file_id)
+          }
         }
       })
 
@@ -123,6 +130,30 @@ export function useFileList() {
 
   const getThumbnailUrl = (fileId: string) => thumbnailCache.value.get(fileId) || ''
 
+  const refreshThumbnail = async (fileId: string) => {
+    const requestVersion = (thumbnailRequestVersions.get(fileId) || 0) + 1
+    thumbnailRequestVersions.set(fileId, requestVersion)
+    loadingThumbnailIds.add(fileId)
+    const cachedUrl = thumbnailCache.value.get(fileId)
+    if (cachedUrl) {
+      URL.revokeObjectURL(cachedUrl)
+      thumbnailCache.value.delete(fileId)
+    }
+
+    try {
+      const blobUrl = await getThumbnail(fileId, true)
+      if (blobUrl && thumbnailRequestVersions.get(fileId) === requestVersion) {
+        thumbnailCache.value.set(fileId, blobUrl)
+      } else if (blobUrl) {
+        URL.revokeObjectURL(blobUrl)
+      }
+    } finally {
+      if (thumbnailRequestVersions.get(fileId) === requestVersion) {
+        loadingThumbnailIds.delete(fileId)
+      }
+    }
+  }
+
   const handlePageChange = (page: number) => {
     currentPage.value = page
     loadFileList()
@@ -174,6 +205,7 @@ export function useFileList() {
     loadFileList,
     navigateToPath: navigateToDirectory,
     getThumbnailUrl,
+    refreshThumbnail,
     loadThumbnails,
     handlePageChange,
     handleSizeChange,

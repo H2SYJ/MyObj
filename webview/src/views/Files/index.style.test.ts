@@ -51,4 +51,15 @@ describe('Files 页面工作区结构', () => {
     expect(source).toContain('@entry-context="openEntryContextMenu"')
     expect(source).toContain('<FileContextMenu')
   })
+
+  it('单个普通文件右键菜单支持手动更新缩略图', () => {
+    const filename = fileURLToPath(new URL('./index.vue', import.meta.url))
+    const source = readFileSync(filename, { encoding: 'utf-8' })
+
+    expect(source).toContain("key: 'update-thumbnail'")
+    expect(source).toContain('accept=".jpg,.jpeg,image/jpeg"')
+    expect(source).toContain('disabled: entry.file.is_enc || updatingThumbnail.value')
+    expect(source).toContain("import { useThumbnailUpdate } from './composables/useThumbnailUpdate'")
+    expect(source).toContain('file => refreshThumbnail(file.file_id)')
+  })
 })

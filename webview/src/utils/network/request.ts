@@ -71,10 +71,11 @@ const responseInterceptor = async <T = any>(response: Response): Promise<T> => {
 
 // 基础请求方法
 const request = async <T = any>(url: string, options: RequestConfig = {}): Promise<T> => {
+  const isFormData = typeof FormData !== 'undefined' && options.body instanceof FormData
   const config: RequestConfig = {
     ...options,
     headers: {
-      'Content-Type': 'application/json',
+      ...(isFormData ? {} : { 'Content-Type': 'application/json' }),
       ...options.headers
     }
   }
@@ -132,6 +133,14 @@ export const put = <T = any>(url: string, data: any = {}, options: RequestConfig
     ...options
   })
 }
+
+// PUT multipart/form-data 请求。Content-Type 由浏览器自动补充 boundary。
+export const putFormData = <T = any>(url: string, data: FormData, options: RequestConfig = {}): Promise<T> =>
+  request<T>(url, {
+    method: 'PUT',
+    body: data,
+    ...options
+  })
 
 // DELETE请求
 export const del = <T = any>(url: string, options: RequestConfig = {}): Promise<T> => {
@@ -295,6 +304,7 @@ export default {
   get,
   post,
   put,
+  putFormData,
   del,
   upload,
   download

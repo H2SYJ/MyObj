@@ -9,6 +9,15 @@
     @close="$emit('close')"
   />
 
+  <input
+    ref="thumbnailInputRef"
+    class="thumbnail-file-input"
+    type="file"
+    accept=".jpg,.jpeg,image/jpeg"
+    hidden
+    @change="handleThumbnailSelected"
+  />
+
   <el-dialog v-model="showMoveDialog" :title="t('files.move')" width="500px">
     <el-form label-width="100px">
       <el-form-item :label="t('files.selectedItems')">
@@ -114,6 +123,7 @@
     PriceTag,
     Share,
     Unlock,
+    Upload,
     VideoPlay
   } from '@element-plus/icons-vue'
   import type { CinemaVideo } from '@/api/cinema'
@@ -124,6 +134,7 @@
   import { useFileOperations } from '@/views/Files/composables/useFileOperations'
   import { useMoveFile } from '@/views/Files/composables/useMoveFile'
   import { useRename } from '@/views/Files/composables/useRename'
+  import { useThumbnailUpdate } from '@/views/Files/composables/useThumbnailUpdate'
   import type { ContextMenuItem } from '@/views/Files/types'
 
   const props = defineProps<{
@@ -175,6 +186,8 @@
     emit('refresh')
     return Promise.resolve()
   }
+  const { thumbnailInputRef, updatingThumbnail, openThumbnailUpload, handleThumbnailSelected } =
+    useThumbnailUpdate(refreshCinema)
   const clearSelection = () => {
     selectedFileIds.value = []
   }
@@ -225,6 +238,12 @@
       { key: 'download', label: t('files.download'), icon: Download },
       { key: 'share', label: t('files.share'), icon: Share },
       { key: 'manage-tags', label: t('tags.manage'), icon: PriceTag },
+      {
+        key: 'update-thumbnail',
+        label: t('files.updateThumbnail'),
+        icon: Upload,
+        disabled: current.is_enc || updatingThumbnail.value
+      },
       { key: 'rename', label: t('files.rename'), icon: EditPen },
       { key: 'move', label: t('files.move'), icon: FolderOpened },
       {
@@ -256,6 +275,8 @@
         tagManagerFileName.value = current.file_name
         showTagManager.value = true
         return
+      case 'update-thumbnail':
+        return openThumbnailUpload(current)
       case 'rename':
         return handleRenameFile(current)
       case 'move':
