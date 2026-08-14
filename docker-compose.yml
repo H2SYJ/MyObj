@@ -25,6 +25,8 @@ services:
       - TZ=Asia/Shanghai
     depends_on:
       - redis
+      # 启用下方 MySQL 服务并切换 config.toml 的数据库配置后，取消此行注释
+      # - mysql
     networks:
       - myobj-network
 
@@ -35,16 +37,36 @@ services:
     ports:
       - "6379:6379"
     volumes:
-      # Redis 数据持久化
-      - redis-data:/data
+      # 冒号左侧为宿主机持久化目录，可按需修改
+      - ./redis-data:/data
     command: redis-server --appendonly yes
     networks:
       - myobj-network
 
+  # MySQL 默认不启用。如需使用，请取消本服务和 myobj.depends_on 的注释，
+  # 并同步切换 config.toml 中的数据库配置。
+  # mysql:
+  #   image: mysql:8.0
+  #   container_name: myobj-mysql
+  #   restart: unless-stopped
+  #   ports:
+  #     - "3306:3306"
+  #   environment:
+  #     - TZ=Asia/Shanghai
+  #     - MYSQL_ROOT_PASSWORD=root_password
+  #     - MYSQL_DATABASE=my_obj
+  #     - MYSQL_USER=myobj
+  #     - MYSQL_PASSWORD=password
+  #   command:
+  #     - --character-set-server=utf8mb4
+  #     - --collation-server=utf8mb4_unicode_ci
+  #   volumes:
+  #     # 冒号左侧为宿主机持久化目录，可按需修改
+  #     - ./mysql-data:/var/lib/mysql
+  #     - ./sql/mysql/mysql_init.sql:/docker-entrypoint-initdb.d/mysql_init.sql:ro
+  #   networks:
+  #     - myobj-network
+
 networks:
   myobj-network:
     driver: bridge
-
-volumes:
-  redis-data:
-    driver: local

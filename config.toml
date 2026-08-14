@@ -14,13 +14,15 @@ max_size = 10
 max_age = 7
 
 [database]
+# 默认使用 SQLite。如需使用 Docker Compose 中的 MySQL，请注释上方两项，
+# 再取消下方 MySQL 配置的注释。
 type = "sqlite"
 host = "./libs/my_obj.db"
-# host = "E:\\codes\\myobj\\libs\\my_obj.db"
+# type = "mysql"
+# host = "mysql"
 # port = 3306
-# user = "root"
+# user = "myobj"
 # password = "password"
-# database = "database"
 # db_name = "my_obj"
 max_open = 10
 max_idle = 5
@@ -61,7 +63,7 @@ expose_headers = "*"
 
 [cache]
 type = "redis"
-host = "127.0.0.1"
+host = "redis"
 port = 6379
 password = ""
 db = 0
