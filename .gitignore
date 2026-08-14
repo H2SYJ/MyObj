@@ -1,12 +1,12 @@
-/logs/
 /bin/
 .idea
 .vscode
-/obj_temp/
 
-# Docker 镜像导出文件
-/myobj-linux-arm64.tar
-/myobj-linux-arm64.tar.tmp
+# docker 持久化数据
+/logs/
+/libs/
+/obj_data/
+/obj_temp/
 
 # Python SDK 构建与测试产物
 __pycache__/
