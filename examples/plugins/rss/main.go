@@ -8,7 +8,7 @@ import (
 	"strings"
 	"time"
 
-	myobjplugin "github.com/dromara/MyObj/sdk/tinygo"
+	myobjplugin "github.com/H2SYJ/MyObj/sdk/tinygo"
 )
 
 type handler struct{}

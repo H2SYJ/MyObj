@@ -10,7 +10,7 @@
 
 [功能概览](#-功能概览) · [快速开始](#-快速开始) · [部署与构建](#-部署与构建) · [CLI](#-cli-管理工具) · [测试](#-测试)
 
-[Gitee](https://gitee.com/dromara/my-obj) · [GitHub](https://github.com/dromara/MyObj) · [Docker Hub](https://hub.docker.com/r/myobj/myobj)
+[GitHub](https://github.com/H2SYJ/MyObj)
 
 </div>
 
@@ -66,7 +66,7 @@ MyObj 是一个面向个人和家庭场景的开源私有云文件管理系统�
 ### 1. 📥 获取源码
 
 ```bash
-git clone https://github.com/dromara/MyObj.git
+git clone https://github.com/H2SYJ/MyObj.git
 cd MyObj
 ```
 
@@ -143,7 +143,7 @@ docker compose up -d --build
 
 ### 📥 预编译版本
 
-可从 [GitHub Releases](https://github.com/dromara/MyObj/releases) 获取已发布产物。解压后检查 `config.toml`，再运行 `server` 或 `server.exe`。
+可从 [GitHub Releases](https://github.com/H2SYJ/MyObj/releases) 获取已发布产物。解压后检查 `config.toml`，再运行 `server` 或 `server.exe`。
 
 ## 🔧 CLI 管理工具
 
@@ -274,7 +274,7 @@ MySQL 专用迁移测试需要显式提供测试 DSN；未配置时，相关用�
 
 ## 🤝 贡献
 
-提交代码前请同步更新受影响的文档，并至少运行与改动范围对应的测试。Bug 和功能建议可提交到 [Gitee Issues](https://gitee.com/dromara/my-obj/issues) 或 [GitHub Issues](https://github.com/dromara/MyObj/issues)。
+提交代码前请同步更新受影响的文档，并至少运行与改动范围对应的测试。Bug 和功能建议可提交到 [GitHub Issues](https://github.com/H2SYJ/MyObj/issues)。
 
 ## 📄 许可证
 
