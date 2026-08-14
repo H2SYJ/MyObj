@@ -457,6 +457,7 @@ test('影视模式桌面布局、隐藏横向滚动条和路由前进后退', as
   await expect(addPanel).toBeVisible()
   await addPanel.locator('.el-select').first().click()
   await page.getByRole('option', { name: '电影' }).click()
+  await expect(addPanel).toBeVisible()
   await addPanel.locator('.editable-file-tags__actions .el-button--primary').click()
   await expect(page.locator('.editable-file-tags__tag', { hasText: '电影' })).toBeVisible()
 

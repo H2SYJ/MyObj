@@ -57,6 +57,7 @@
           default-first-option
           remote
           reserve-keyword
+          :teleported="false"
           :remote-method="loadSuggestions"
           :loading="suggestionsLoading"
           :multiple-limit="20"
@@ -68,7 +69,7 @@
         <div class="editable-file-tags__fields">
           <label>
             <span>{{ t('tags.inlineNewCategory') }}</span>
-            <el-select v-model="categoryId" :placeholder="t('tags.categoryPlaceholder')">
+            <el-select v-model="categoryId" :placeholder="t('tags.categoryPlaceholder')" :teleported="false">
               <el-option
                 v-for="category in categories"
                 :key="category.id"

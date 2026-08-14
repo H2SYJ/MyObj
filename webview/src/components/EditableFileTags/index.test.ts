@@ -31,7 +31,7 @@ const ElPopover = {
 }
 const ElSelect = {
   name: 'ElSelect',
-  props: ['modelValue'],
+  props: ['modelValue', 'teleported'],
   emits: ['update:modelValue'],
   template: '<div class="select"><slot /></div>'
 }
@@ -179,6 +179,8 @@ describe('EditableFileTags', () => {
     await wrapper.get('.editable-file-tags__add').trigger('click')
     await flushPromises()
     const selects = wrapper.findAllComponents(ElSelect)
+    expect(selects).toHaveLength(2)
+    expect(selects.every(select => select.props('teleported') === false)).toBe(true)
     selects[0].vm.$emit('update:modelValue', ['电影', '  自定义  ', '自定义', ''])
     selects[1].vm.$emit('update:modelValue', 'other')
     wrapper.getComponent(ElRadioGroup).vm.$emit('update:modelValue', 'public')
