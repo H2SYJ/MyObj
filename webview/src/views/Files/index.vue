@@ -189,6 +189,9 @@
         @close="closeContextMenu"
       />
 
+      <!-- 在线编辑文本文件（独立入口） -->
+      <EditorDialog v-model="showEditDialog" :file="editingFile" @saved="handleEditorSaved" />
+
       <input
         ref="thumbnailInputRef"
         class="thumbnail-file-input"
@@ -412,6 +415,8 @@
   import WorkspacePage from '@/components/WorkspacePage/index.vue'
   import FileTagManager from '@/components/FileTagManager/index.vue'
   import DirectoryTagManager from '@/components/DirectoryTagManager/index.vue'
+  import EditorDialog from '@/components/TextEditor/EditorDialog.vue'
+  import { isEditableTextFile } from '@/utils/ui/preview'
   import { cinemaRouteForFolder } from './folderNavigation'
 
   const { t } = useI18n()
@@ -600,6 +605,17 @@
     entry: FileEntry | null
   }>({ visible: false, x: 0, y: 0, kind: 'page', entry: null })
 
+  // ---- 在线编辑（独立入口） ----
+  const showEditDialog = ref(false)
+  const editingFile = ref<FileItem | null>(null)
+  const openEditDialog = (file: FileItem) => {
+    editingFile.value = file
+    showEditDialog.value = true
+  }
+  const handleEditorSaved = async () => {
+    await reloadDisplayData()
+  }
+
   const boxSelection = reactive({
     active: false,
     pointerId: -1,
@@ -730,6 +746,9 @@
     }
     return [
       { key: 'preview', label: t('files.preview'), icon: View },
+      ...(isEditableTextFile(entry.file)
+        ? [{ key: 'edit-online', label: t('files.editOnline'), icon: EditPen }]
+        : []),
       { key: 'download-selection', label: t('files.download'), icon: Download },
       { key: 'share', label: t('files.share'), icon: Share },
       { key: 'manage-tags', label: t('tags.manage'), icon: PriceTag },
@@ -799,6 +818,11 @@
       case 'preview':
         if (entry?.type === 'file') {
           return handleFilePreview(entry.file)
+        }
+        break
+      case 'edit-online':
+        if (entry?.type === 'file') {
+          return openEditDialog(entry.file)
         }
         break
       case 'download-selection':

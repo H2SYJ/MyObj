@@ -87,6 +87,10 @@ func (f *FileHandler) Router(c *gin.RouterGroup) {
 		fileGroup.POST("/deleteBatch", f.DeleteItems)
 		// 重命名文件（业务逻辑已验证文件所有权，无需额外权限验证）
 		fileGroup.POST("/rename", f.RenameFile)
+		// 在线编辑文本文件
+		fileGroup.POST("/edit/save", middleware.PowerVerify("file:edit"), f.SaveFileContent)
+		// 加载可编辑文本内容（UTF-8 解码 + 编码/base_hash 元数据）
+		fileGroup.GET("/edit/load", middleware.PowerVerify("file:edit"), f.LoadFileContent)
 		// 重命名目录（业务逻辑已验证目录所有权，无需额外权限验证）
 		fileGroup.POST("/renameDir", f.RenameDir)
 		// 删除目录（业务逻辑已验证目录所有权，无需额外权限验证）
@@ -793,6 +797,72 @@ func (f *FileHandler) DeleteFile(c *gin.Context) {
 		return
 	}
 	c.JSON(200, result)
+}
+
+// SaveFileContent godoc
+// @Summary 在线编辑文本文件
+// @Description 保存文本文件的新内容（按原编码写回；加密文件需提供密码；base_hash 不匹配返回 409）
+// @Tags 文件管理
+// @Accept json
+// @Produce json
+// @Security BearerAuth
+// @Param request body request.EditFileContentRequest true "编辑请求"
+// @Success 200 {object} models.JsonResponse{data=response.EditFileContentResponse} "保存结果"
+// @Failure 400 {object} models.JsonResponse "参数错误"
+// @Failure 409 {object} models.JsonResponse "文件内容已被他人修改"
+// @Failure 500 {object} models.JsonResponse "保存失败"
+// @Router /file/edit/save [post]
+func (f *FileHandler) SaveFileContent(c *gin.Context) {
+	req := new(request.EditFileContentRequest)
+	if err := c.ShouldBindJSON(req); err != nil {
+		c.JSON(200, models.NewJsonResponse(400, "参数错误", err.Error()))
+		return
+	}
+	result, err := f.service.EditFileContent(c.Request.Context(), c.GetString("userID"), req)
+	if err != nil {
+		if errors.Is(err, service.ErrFileContentConflict) {
+			c.JSON(http.StatusConflict, models.NewJsonResponse(409, "保存冲突", err.Error()))
+			return
+		}
+		c.JSON(http.StatusInternalServerError, models.NewJsonResponse(500, "保存文件失败", err.Error()))
+		return
+	}
+	c.JSON(200, models.NewJsonResponse(200, "保存成功", result))
+}
+
+// LoadFileContent godoc
+// @Summary 加载可编辑文本内容
+// @Description 加载文本文件并解码为 UTF-8，响应头携带 X-File-Encoding（原编码）与 X-File-Hash（明文 blake3，即保存时的 base_hash）
+// @Tags 文件管理
+// @Produce text/plain
+// @Security BearerAuth
+// @Param file_id query string true "用户文件ID（UserFiles的UfID）"
+// @Param file_password query string false "文件解密密码（加密文件必需）"
+// @Success 200 {string} string "UTF-8 解码后的文本内容"
+// @Header 200 {string} X-File-Encoding "原文件编码"
+// @Header 200 {string} X-File-Hash "明文文件 blake3 哈希（base_hash）"
+// @Failure 400 {object} models.JsonResponse "参数错误或文件不可编辑"
+// @Failure 403 {object} models.JsonResponse "无权限"
+// @Failure 500 {object} models.JsonResponse "加载失败"
+// @Router /file/edit/load [get]
+func (f *FileHandler) LoadFileContent(c *gin.Context) {
+	fileID := c.Query("file_id")
+	if fileID == "" {
+		c.JSON(http.StatusBadRequest, models.NewJsonResponse(400, "参数错误：file_id不能为空", nil))
+		return
+	}
+	result, err := f.service.LoadFileContent(c.Request.Context(), c.GetString("userID"), fileID, c.Query("file_password"))
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			c.JSON(http.StatusNotFound, models.NewJsonResponse(404, "文件不存在", err.Error()))
+			return
+		}
+		c.JSON(http.StatusBadRequest, models.NewJsonResponse(400, "加载文件失败", err.Error()))
+		return
+	}
+	c.Header("X-File-Encoding", result.Encoding)
+	c.Header("X-File-Hash", result.FileHash)
+	c.Data(http.StatusOK, "text/plain; charset=utf-8", []byte(result.Content))
 }
 
 // DeleteItems 批量删除文件和目录，并按项目类型校验权限。

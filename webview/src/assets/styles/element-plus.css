@@ -51,13 +51,13 @@
   transform: scale(0.92);
 }
 
-.el-button--primary {
+.el-button--primary:not(.is-plain) {
   background-color: var(--primary-color);
   border-color: var(--primary-color);
 }
 
-.el-button--primary:hover,
-.el-button--primary:focus {
+.el-button--primary:not(.is-plain):hover,
+.el-button--primary:not(.is-plain):focus {
   background-color: var(--primary-hover);
   border-color: var(--primary-hover);
 }

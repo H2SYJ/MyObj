@@ -185,6 +185,14 @@ func (r *userFilesRepository) Update(ctx context.Context, userFile *models.UserF
 	return r.db.WithContext(ctx).Where("user_id = ? and file_id = ?", userFile.UserID, userFile.FileID).Save(userFile).Error
 }
 
+// UpdateFileID 将指定用户文件引用（uf_id）重定向到新的物理文件ID（在线编辑去重安全：引用计数>1时使用）。
+// 旧物理文件保持原样，供其他引用继续使用。
+func (r *userFilesRepository) UpdateFileID(ctx context.Context, ufID, newFileID string) error {
+	return r.db.WithContext(ctx).Model(&models.UserFiles{}).
+		Where("uf_id = ?", ufID).
+		Update("file_id", newFileID).Error
+}
+
 func (r *userFilesRepository) Delete(ctx context.Context, userID, fileID string) error {
 	return r.db.WithContext(ctx).Where("user_id = ? AND uf_id = ?", userID, fileID).
 		Delete(&models.UserFiles{}).Error
@@ -286,6 +294,14 @@ func (r *userFilesRepository) GetByUfID(ctx context.Context, ufID string) (*mode
 		return nil, err
 	}
 	return &userFile, nil
+}
+
+// CountByFileID 统计引用同一物理文件的用户文件关联数量（用于在线编辑去重安全判断）
+func (r *userFilesRepository) CountByFileID(ctx context.Context, fileID string) (int64, error) {
+	var count int64
+	err := r.db.WithContext(ctx).Model(&models.UserFiles{}).
+		Where("file_id = ?", fileID).Count(&count).Error
+	return count, err
 }
 
 // ListByDirectoryID 查询指定目录下的user_files记录（避免file_id重复问题）

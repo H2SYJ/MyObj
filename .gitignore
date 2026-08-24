@@ -16,3 +16,4 @@ __pycache__/
 
 # 后端测试运行日志
 /src/tests/logs/
+/.workbuddy

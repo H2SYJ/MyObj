@@ -79,6 +79,18 @@ type DeleteFileRequest struct {
 	FileIDs []string `json:"file_ids" binding:"required"`
 }
 
+// EditFileContentRequest 在线编辑文本文件内容请求
+type EditFileContentRequest struct {
+	// 用户文件ID（UserFiles的UfID）
+	FileID string `json:"file_id" binding:"required"`
+	// 编辑后的文本内容
+	Content string `json:"content" binding:"required"`
+	// 文件解密密码（加密文件必填）
+	FilePassword string `json:"file_password"`
+	// 编辑器加载时的文件哈希，用于并发防覆盖（可选，传了才校验）
+	BaseHash string `json:"base_hash"`
+}
+
 // FileUploadRequest 文件上传请求
 type FileUploadRequest struct {
 	// 预检ID

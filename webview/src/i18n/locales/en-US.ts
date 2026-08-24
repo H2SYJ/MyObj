@@ -218,6 +218,7 @@ export default {
     share: 'Share',
     download: 'Download',
     preview: 'Preview',
+    editOnline: 'Edit Online',
     updateThumbnail: 'Update Thumbnail',
     updateThumbnailSuccess: 'Thumbnail updated successfully',
     updateThumbnailFailed: 'Failed to update thumbnail',
@@ -1221,8 +1222,11 @@ export default {
     loading: 'Loading...',
     encrypted: {
       title: 'This file is encrypted',
-      desc: 'Encrypted files cannot be previewed. Please download to view',
-      download: 'Download File'
+      desc: 'Encrypted files cannot be previewed directly. Please download to view; text files can be unlocked with a password for preview or online editing',
+      download: 'Download File',
+      unlock: 'Unlock Preview',
+      edit: 'Edit Online',
+      unlockFailed: 'Failed to unlock. Please check the password'
     },
     error: {
       retry: 'Retry'
@@ -1262,12 +1266,14 @@ export default {
     text: {
       title: 'Text Preview',
       download: 'Download',
-      print: 'Print'
+      print: 'Print',
+      edit: 'Edit'
     },
     code: {
       title: 'Code Preview',
       download: 'Download',
-      print: 'Print'
+      print: 'Print',
+      edit: 'Edit'
     },
     office: {
       download: 'Download',
@@ -1286,6 +1292,24 @@ export default {
       label: 'File Password',
       placeholder: 'Please enter file password'
     }
+  },
+  editor: {
+    title: 'Edit Online',
+    unlockTitle: 'Enter File Password',
+    unlockDesc: 'This file is encrypted. Enter the password to edit online',
+    encoding: 'Encoding',
+    size: 'Size',
+    save: 'Save',
+    saveSuccess: 'Saved successfully',
+    saveFailed: 'Failed to save',
+    loadFailed: 'Failed to load file content',
+    conflictTitle: 'Content Conflict',
+    conflictMessage: 'The file has been modified by someone else. Reloading will discard your changes. Reload the latest content?',
+    conflictReloaded: 'Latest content reloaded. Please edit again',
+    reload: 'Reload',
+    closeTitle: 'Unsaved Changes',
+    closeConfirm: 'You have unsaved changes. Discard them?',
+    discard: 'Discard Changes'
   },
   searchSuggestions: {
     title: 'Search Suggestions',

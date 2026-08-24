@@ -219,6 +219,7 @@ export default {
     share: '分享',
     download: '下载',
     preview: '预览',
+    editOnline: '在线编辑',
     updateThumbnail: '更新缩略图',
     updateThumbnailSuccess: '缩略图更新成功',
     updateThumbnailFailed: '缩略图更新失败',
@@ -1204,8 +1205,11 @@ export default {
     loading: '加载中...',
     encrypted: {
       title: '该文件已加密',
-      desc: '加密文件不支持预览，请下载后查看',
-      download: '下载文件'
+      desc: '加密文件不支持直接预览，请下载后查看；文本类文件可输入密码后解锁预览或在线编辑',
+      download: '下载文件',
+      unlock: '解锁预览',
+      edit: '在线编辑',
+      unlockFailed: '解锁失败，请检查密码'
     },
     error: {
       retry: '重试'
@@ -1245,12 +1249,14 @@ export default {
     text: {
       title: '文本预览',
       download: '下载',
-      print: '打印'
+      print: '打印',
+      edit: '编辑'
     },
     code: {
       title: '代码预览',
       download: '下载',
-      print: '打印'
+      print: '打印',
+      edit: '编辑'
     },
     office: {
       download: '下载',
@@ -1269,6 +1275,24 @@ export default {
       label: '文件密码',
       placeholder: '请输入文件密码'
     }
+  },
+  editor: {
+    title: '在线编辑',
+    unlockTitle: '请输入文件密码',
+    unlockDesc: '该文件已加密，输入密码后即可在线编辑',
+    encoding: '编码',
+    size: '大小',
+    save: '保存',
+    saveSuccess: '保存成功',
+    saveFailed: '保存失败',
+    loadFailed: '加载文件内容失败',
+    conflictTitle: '内容冲突',
+    conflictMessage: '文件已被他人修改，重新加载将丢弃当前修改。是否重新加载最新内容？',
+    conflictReloaded: '已重新加载最新内容，请重新编辑',
+    reload: '重新加载',
+    closeTitle: '未保存的修改',
+    closeConfirm: '当前有未保存的修改，确定要放弃吗？',
+    discard: '放弃修改'
   },
   searchSuggestions: {
     title: '搜索建议',

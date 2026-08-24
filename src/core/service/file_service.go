@@ -11,11 +11,14 @@ import (
 	"myobj/src/internal/repository/impl"
 	"myobj/src/pkg/cache"
 	"myobj/src/pkg/custom_type"
+	"myobj/src/pkg/download"
+	"myobj/src/pkg/hash"
 	"myobj/src/pkg/logger"
 	"myobj/src/pkg/models"
 	"myobj/src/pkg/repository"
 	"myobj/src/pkg/tagging"
 	"myobj/src/pkg/upload"
+	"myobj/src/pkg/util"
 	"myobj/src/pkg/virtualpath"
 	"os"
 	"path/filepath"
@@ -31,12 +34,16 @@ import (
 // ErrInvalidFileSearch 表示搜索条件本身无效，处理器应返回 HTTP 400。
 var ErrInvalidFileSearch = errors.New("文件搜索参数无效")
 
+// ErrFileContentConflict 表示编辑保存时文件内容已被他人修改（base_hash 不匹配），处理器应返回 HTTP 409。
+var ErrFileContentConflict = errors.New("文件内容已被修改，请刷新后重试")
+
 const maxFileTagFilterCount = 100
 
 // 全局上传锁，用于防止同一文件的并发处理
 var uploadLocks sync.Map          // key: userID+fileName, value: *sync.Mutex
 var processingFiles sync.Map      // key: userID+fileName, value: bool (标记文件是否正在处理)
 var thumbnailUpdateLocks sync.Map // key: fileInfoID, value: *sync.Mutex
+var editLocks sync.Map            // key: ufID, value: *sync.Mutex（在线编辑锁，防止同一文件并发覆盖）
 
 // FileService 文件服务
 type FileService struct {
@@ -2000,4 +2007,342 @@ func calculateUploadTaskProgress(task *models.UploadTask) float64 {
 		return 90
 	}
 	return progress
+}
+
+// EditFileContent 在线编辑文本文件内容。
+//
+// 校验顺序：归属 → 文本/大小 → 并发锁 → base_hash 防覆盖 → 解密取原文 → 编码检测 →
+// 按原编码回写新内容 → 引用计数去重安全（唯一引用原地覆盖 / 多引用新建物理文件并重定向）→
+// 配额 delta → 标签重排。base_hash 语义为「当前明文文件原始字节的 blake3 hex」，
+// 前端在编辑器加载内容时记录、保存时回传；为空时跳过并发校验。
+func (f *FileService) EditFileContent(ctx context.Context, userID string, req *request.EditFileContentRequest) (*response.EditFileContentResponse, error) {
+	if userID == "" {
+		return nil, fmt.Errorf("用户未登录")
+	}
+
+	// 1-2. 归属与可编辑性校验（与 LoadFileContent 共用 helper，保证判定一致）
+	userFile, fileInfo, err := f.resolveEditableTextFile(ctx, userID, req.FileID)
+	if err != nil {
+		return nil, err
+	}
+
+	// 3. 单进程编辑锁（按 ufID），防止同一文件并发覆盖
+	lockVal, _ := editLocks.LoadOrStore(req.FileID, &sync.Mutex{})
+	lock := lockVal.(*sync.Mutex)
+	lock.Lock()
+	defer lock.Unlock()
+
+	// 4. 定位磁盘并创建编辑会话目录（同盘 temp 下，用于放置待提交的新内容）
+	diskPath := download.ExtractDiskPathFromFilePath(fileInfo.Path)
+	if diskPath == "" {
+		return nil, fmt.Errorf("无法定位文件存储磁盘")
+	}
+	sessionDir := filepath.Join(diskPath, "temp", fmt.Sprintf("edit_%s", uuid.NewString()[:8]))
+	if err := os.MkdirAll(sessionDir, 0755); err != nil {
+		return nil, fmt.Errorf("创建临时目录失败: %w", err)
+	}
+	defer os.RemoveAll(sessionDir)
+
+	// 5. 获取明文内容：加密文件先解密（内部完成密码校验），非加密文件直接使用数据路径
+	var plainPath string
+	if fileInfo.IsEnc {
+		dlResult, err := download.PrepareLocalFileDownload(ctx, fileInfo.ID, userID, "", f.factory,
+			&download.LocalFileDownloadOptions{FilePassword: req.FilePassword})
+		if err != nil {
+			return nil, err
+		}
+		plainPath = dlResult.TempFilePath
+		if download.IsTempPath(plainPath) {
+			defer os.RemoveAll(filepath.Dir(plainPath))
+		}
+	} else {
+		plainPath = fileInfo.Path
+	}
+
+	// 6. 读取原文（一次读入，同时用于 base_hash 校验与编码检测）
+	rawBytes, err := os.ReadFile(plainPath)
+	if err != nil {
+		return nil, fmt.Errorf("读取文件内容失败: %w", err)
+	}
+	currentHash := hash.ComputeBytes(rawBytes)
+	if req.BaseHash != "" && req.BaseHash != currentHash {
+		return nil, ErrFileContentConflict
+	}
+	enc := util.DetectEncoding(rawBytes)
+	if _, err := util.DecodeToUTF8(rawBytes, enc); err != nil {
+		return nil, fmt.Errorf("解码文件内容失败: %w", err)
+	}
+
+	// 7. 按原编码编码新内容，并校验大小上限
+	newBytes, err := util.EncodeFromUTF8(req.Content, enc)
+	if err != nil {
+		return nil, err
+	}
+	if len(newBytes) > util.MaxEditableFileSize {
+		return nil, fmt.Errorf("编辑后文件超过 %dMB，保存失败", util.MaxEditableFileSize/1024/1024)
+	}
+
+	// 8. 生成新内容文件（加密文件重新加密），得到待落盘字节、大小与哈希
+	storedPath, storedSize, newPlainHash, newEncHash, err := f.prepareEditedContent(fileInfo, newBytes, sessionDir, userID, req.FilePassword)
+	if err != nil {
+		return nil, err
+	}
+
+	// 9. 引用计数去重安全判断：唯一引用原地覆盖；多引用新建物理文件并重定向当前引用
+	refCount, err := f.factory.UserFiles().CountByFileID(ctx, fileInfo.ID)
+	if err != nil {
+		return nil, fmt.Errorf("统计文件引用失败: %w", err)
+	}
+	delta := storedSize - int64(fileInfo.Size)
+
+	if refCount <= 1 {
+		// 9.1 原地覆盖：先提交事务，成功后才把内容文件原子替换进数据目录，失败则磁盘不受影响
+		err = f.factory.DB().WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+			fileInfo.Size = int(storedSize)
+			fileInfo.FileHash = newPlainHash
+			fileInfo.FileEncHash = newEncHash
+			fileInfo.HasFullHash = true
+			fileInfo.UpdatedAt = custom_type.Now()
+			if err := f.factory.WithTx(tx).FileInfo().Update(ctx, fileInfo); err != nil {
+				return fmt.Errorf("更新文件信息失败: %w", err)
+			}
+			if err := updateUserFreeSpaceByDelta(ctx, tx, userID, delta); err != nil {
+				return err
+			}
+			if err := tagging.QueueUserFile(ctx, tx, userID, userFile.UfID); err != nil {
+				return fmt.Errorf("写入文件标签任务失败: %w", err)
+			}
+			return nil
+		})
+		if err != nil {
+			return nil, err
+		}
+		if err := os.Rename(storedPath, fileInfo.Path); err != nil {
+			logger.LOG.Error("编辑保存后替换文件失败", "fileID", fileInfo.ID, "path", fileInfo.Path, "error", err)
+			return nil, fmt.Errorf("文件落盘失败: %w", err)
+		}
+		// .info 文件尽力更新（失败不影响主流程）
+		if err := upload.WriteInfoFile(fileInfo.Path, newPlainHash, newEncHash); err != nil {
+			logger.LOG.Warn("更新.info文件失败", "path", fileInfo.Path, "error", err)
+		}
+	} else {
+		// 9.2 多引用：新建物理文件，旧文件保留给其他引用；事务失败则清理新文件
+		newFileID := uuid.Must(uuid.NewV7()).String()
+		newRandomName := util.GenerateUniqueFilename()
+		fileNameWithoutExt := strings.TrimSuffix(fileInfo.Name, filepath.Ext(fileInfo.Name))
+		storageDir := filepath.Join(diskPath, "data", fileNameWithoutExt)
+		if err := os.MkdirAll(storageDir, 0755); err != nil {
+			return nil, fmt.Errorf("创建存储目录失败: %w", err)
+		}
+		newPath := filepath.Join(storageDir, newRandomName+".data")
+		if err := os.Rename(storedPath, newPath); err != nil {
+			return nil, fmt.Errorf("存储文件失败: %w", err)
+		}
+
+		newFileInfo := &models.FileInfo{
+			ID:           newFileID,
+			Name:         fileInfo.Name,
+			RandomName:   newRandomName,
+			Size:         int(storedSize),
+			Mime:         fileInfo.Mime,
+			ThumbnailImg: fileInfo.ThumbnailImg,
+			Path:         newPath,
+			FileHash:     newPlainHash,
+			FileEncHash:  newEncHash,
+			HasFullHash:  true,
+			IsEnc:        fileInfo.IsEnc,
+			IsChunk:      false,
+			ChunkCount:   0,
+			EncPath:      "",
+			CreatedAt:    custom_type.Now(),
+			UpdatedAt:    custom_type.Now(),
+		}
+		if fileInfo.IsEnc {
+			newFileInfo.EncPath = newPath
+		}
+
+		err = f.factory.DB().WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+			txFactory := f.factory.WithTx(tx)
+			if err := txFactory.FileInfo().Create(ctx, newFileInfo); err != nil {
+				return fmt.Errorf("写入文件信息失败: %w", err)
+			}
+			if err := txFactory.UserFiles().UpdateFileID(ctx, userFile.UfID, newFileID); err != nil {
+				return fmt.Errorf("重定向用户文件引用失败: %w", err)
+			}
+			if err := updateUserFreeSpaceByDelta(ctx, tx, userID, delta); err != nil {
+				return err
+			}
+			if err := tagging.QueueUserFile(ctx, tx, userID, userFile.UfID); err != nil {
+				return fmt.Errorf("写入文件标签任务失败: %w", err)
+			}
+			return nil
+		})
+		if err != nil {
+			// 事务失败：清理新建的物理文件与 .info
+			_ = os.Remove(newPath)
+			_ = os.Remove(strings.TrimSuffix(newPath, ".data") + ".info")
+			return nil, err
+		}
+		if err := upload.WriteInfoFile(newPath, newPlainHash, newEncHash); err != nil {
+			logger.LOG.Warn("写入.info文件失败", "path", newPath, "error", err)
+		}
+	}
+
+	f.factory.NotifyUserFileQueued()
+	logger.LOG.Info("文本文件编辑保存成功", "ufID", userFile.UfID, "fileID", fileInfo.ID, "size", storedSize, "encoding", enc)
+	return &response.EditFileContentResponse{
+		FileID:   userFile.UfID,
+		Size:     storedSize,
+		FileHash: newPlainHash,
+		Encoding: enc,
+	}, nil
+}
+
+// LoadFileContentResult 文本文件加载结果（编辑器/带密码预览共用）。
+type LoadFileContentResult struct {
+	// Content UTF-8 解码后的文本内容
+	Content string
+	// Encoding 检测到的原文件编码（utf-8 / utf-8-bom / utf-16le / utf-16be / gb18030）
+	Encoding string
+	// FileHash 明文文件原始字节的 blake3 hex（作为后续保存的 base_hash）
+	FileHash string
+	// Size 明文文件大小（字节）
+	Size int64
+}
+
+// LoadFileContent 加载可编辑文本文件内容：校验归属与文本类型，解密（如需要）、检测编码并解码为 UTF-8。
+// 返回的 FileHash 即 base_hash，前端在编辑器加载时记录、保存时回传做并发防覆盖。
+func (f *FileService) LoadFileContent(ctx context.Context, userID, ufID, filePassword string) (*LoadFileContentResult, error) {
+	if userID == "" {
+		return nil, fmt.Errorf("用户未登录")
+	}
+	_, fileInfo, err := f.resolveEditableTextFile(ctx, userID, ufID)
+	if err != nil {
+		return nil, err
+	}
+
+	// 解密（内部完成密码校验）；非加密文件直接使用数据路径
+	var plainPath string
+	if fileInfo.IsEnc {
+		dlResult, err := download.PrepareLocalFileDownload(ctx, fileInfo.ID, userID, "", f.factory,
+			&download.LocalFileDownloadOptions{FilePassword: filePassword})
+		if err != nil {
+			return nil, err
+		}
+		plainPath = dlResult.TempFilePath
+		if download.IsTempPath(plainPath) {
+			defer os.RemoveAll(filepath.Dir(plainPath))
+		}
+	} else {
+		plainPath = fileInfo.Path
+	}
+
+	rawBytes, err := os.ReadFile(plainPath)
+	if err != nil {
+		return nil, fmt.Errorf("读取文件内容失败: %w", err)
+	}
+	enc := util.DetectEncoding(rawBytes)
+	content, err := util.DecodeToUTF8(rawBytes, enc)
+	if err != nil {
+		return nil, fmt.Errorf("解码文件内容失败: %w", err)
+	}
+
+	return &LoadFileContentResult{
+		Content:  content,
+		Encoding: enc,
+		FileHash: hash.ComputeBytes(rawBytes),
+		Size:     int64(len(rawBytes)),
+	}, nil
+}
+
+// resolveEditableTextFile 校验用户对 ufID 文件的归属，并确认其是可在线编辑的文本文件。
+// 判定条件：非分片、文本 MIME、大小不超过 MaxEditableFileSize。
+func (f *FileService) resolveEditableTextFile(ctx context.Context, userID, ufID string) (*models.UserFiles, *models.FileInfo, error) {
+	// 归属校验：必须存在当前用户对 ufID 的引用
+	userFile, err := f.factory.UserFiles().GetByUserIDAndUfID(ctx, userID, ufID)
+	if err != nil {
+		return nil, nil, fmt.Errorf("文件不存在或无权编辑")
+	}
+
+	// 物理文件校验：仅支持非分片文本文件，且大小不超过上限
+	fileInfo, err := f.factory.FileInfo().GetByID(ctx, userFile.FileID)
+	if err != nil {
+		return nil, nil, fmt.Errorf("文件不存在")
+	}
+	if fileInfo.IsChunk {
+		return nil, nil, fmt.Errorf("分片存储的大文件暂不支持在线编辑")
+	}
+	if !util.IsTextMime(fileInfo.Mime) {
+		return nil, nil, fmt.Errorf("仅支持文本类型文件在线编辑")
+	}
+	if fileInfo.Size > util.MaxEditableFileSize {
+		return nil, nil, fmt.Errorf("文件超过 %dMB，暂不支持在线编辑", util.MaxEditableFileSize/1024/1024)
+	}
+	return userFile, fileInfo, nil
+}
+
+// prepareEditedContent 生成编辑后的新内容文件（明文或加密），返回待落盘文件路径、存储大小与哈希。
+// 加密文件使用与上传一致的密钥派生与加密方式重新加密。
+func (f *FileService) prepareEditedContent(fileInfo *models.FileInfo, newBytes []byte, workDir, userID, filePassword string) (storedPath string, storedSize int64, plainHash, encHash string, err error) {
+	plainHash = hash.ComputeBytes(newBytes)
+	if !fileInfo.IsEnc {
+		storedPath = filepath.Join(workDir, "content.data")
+		if err := os.WriteFile(storedPath, newBytes, 0644); err != nil {
+			return "", 0, "", "", fmt.Errorf("写入新内容失败: %w", err)
+		}
+		return storedPath, int64(len(newBytes)), plainHash, "", nil
+	}
+
+	plainTmp := filepath.Join(workDir, "plain.tmp")
+	if err := os.WriteFile(plainTmp, newBytes, 0644); err != nil {
+		return "", 0, "", "", fmt.Errorf("写入明文临时文件失败: %w", err)
+	}
+	encryptionKey := util.DeriveEncryptionKey(filePassword, userID)
+	crypto := util.NewFileCrypto(encryptionKey)
+	encTmp := filepath.Join(workDir, "content.enc")
+	if err := crypto.EncryptFile(plainTmp, encTmp); err != nil {
+		return "", 0, "", "", fmt.Errorf("文件重新加密失败: %w", err)
+	}
+	st, err := os.Stat(encTmp)
+	if err != nil {
+		return "", 0, "", "", fmt.Errorf("读取加密文件信息失败: %w", err)
+	}
+	encHasher := hash.NewFastBlake3Hasher()
+	encHash, _, err = encHasher.ComputeFileHash(encTmp)
+	if err != nil {
+		return "", 0, "", "", fmt.Errorf("计算加密文件hash失败: %w", err)
+	}
+	return encTmp, st.Size(), plainHash, encHash, nil
+}
+
+// updateUserFreeSpaceByDelta 按编辑前后存储大小差调整用户剩余空间（delta>0 扣减、delta<0 返还），
+// 与上传/删除的配额语义保持一致；无限空间用户跳过。
+func updateUserFreeSpaceByDelta(ctx context.Context, tx *gorm.DB, userID string, delta int64) error {
+	if delta == 0 {
+		return nil
+	}
+	var user models.UserInfo
+	if err := tx.WithContext(ctx).Where("id = ?", userID).First(&user).Error; err != nil {
+		return fmt.Errorf("查询用户信息失败: %w", err)
+	}
+	if user.Space <= 0 {
+		return nil // 无限空间
+	}
+	query := tx.Model(&models.UserInfo{}).Where("id = ?", userID)
+	if delta > 0 {
+		result := query.Where("free_space >= ?", delta).
+			UpdateColumn("free_space", gorm.Expr("free_space - ?", delta))
+		if result.Error != nil {
+			return fmt.Errorf("更新用户剩余空间失败: %w", result.Error)
+		}
+		if result.RowsAffected != 1 {
+			return fmt.Errorf("用户可用空间不足")
+		}
+	} else {
+		result := query.UpdateColumn("free_space", gorm.Expr("free_space + ?", -delta))
+		if result.Error != nil {
+			return fmt.Errorf("更新用户剩余空间失败: %w", result.Error)
+		}
+	}
+	return nil
 }

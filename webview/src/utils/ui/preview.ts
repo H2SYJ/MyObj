@@ -213,6 +213,45 @@ export const getCodeLanguage = (fileName: string): string => {
 }
 
 /**
+ * 可在线编辑的最大文本文件大小（10MB，与后端 MaxEditableFileSize 一致）
+ */
+export const MAX_EDITABLE_FILE_SIZE = 10 * 1024 * 1024
+
+// 文本类 MIME 精确白名单（与后端 util.IsTextMime 保持一致）
+const TEXT_MIME_EXACT = new Set([
+  'application/json',
+  'application/xml',
+  'application/xhtml+xml',
+  'application/x-httpd-php',
+  'application/x-sh',
+  'application/x-shellscript',
+  'application/x-yaml',
+  'application/javascript',
+  'application/x-javascript',
+  'application/ecmascript',
+  'application/x-python-code',
+  'application/x-python',
+  'application/x-perl',
+  'application/x-ruby',
+  'application/sql',
+  'application/x-www-form-urlencoded',
+  'application/vnd.yaml',
+  'application/graphql'
+])
+
+/**
+ * 判断文件是否支持在线编辑（文本/代码类型且不超过大小上限）
+ */
+export const isEditableTextFile = (file: FileItem): boolean => {
+  if (!file?.mime_type) return false
+  const mime = file.mime_type.toLowerCase().trim()
+  const isText = mime.startsWith('text/') || TEXT_MIME_EXACT.has(mime)
+  if (!isText) return false
+  if ((file.file_size || 0) > MAX_EDITABLE_FILE_SIZE) return false
+  return true
+}
+
+/**
  * 判断文件是否可预览
  * @param file 文件对象
  * @returns 是否可预览

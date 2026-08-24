@@ -17,6 +17,9 @@
     <div class="preview-text-header">
       <span class="text-type-label">{{ type === 'code' ? t('preview.code.title') : t('preview.text.title') }}</span>
       <el-button-group>
+        <el-button v-if="canEdit" icon="EditPen" size="small" type="primary" plain @click="$emit('edit')">{{
+          t('preview.text.edit')
+        }}</el-button>
         <el-button v-if="canPrint" icon="Printer" size="small" @click="$emit('print')">{{
           t('preview.text.print')
         }}</el-button>
@@ -38,9 +41,10 @@
     content?: string
     language?: string
     canPrint: boolean
+    canEdit?: boolean
   }>()
 
-  defineEmits<{ load: []; error: []; print: []; download: [] }>()
+  defineEmits<{ load: []; error: []; print: []; download: []; edit: [] }>()
   const { t } = useI18n()
 </script>
 

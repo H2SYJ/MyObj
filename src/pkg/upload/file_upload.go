@@ -438,7 +438,7 @@ func ProcessUploadedFile(data *FileUploadData, repoFactory *impl.RepositoryFacto
 	repoFactory.NotifyUserFileQueued()
 
 	// 10.5 写入.info文件（保存hash信息）
-	if err := writeInfoFile(mainFilePath, fullHash, fileEncHash); err != nil {
+	if err := WriteInfoFile(mainFilePath, fullHash, fileEncHash); err != nil {
 		logger.LOG.Warn("写入.info文件失败", "error", err)
 		// .info文件写入失败不影响主流程
 	}
@@ -694,8 +694,8 @@ type FileHashInfo struct {
 	FileEncHash string `json:"file_enc_hash"` // 加密文件hash
 }
 
-// writeInfoFile 写入.info文件（保存hash信息的JSON格式）
-func writeInfoFile(dataFilePath, fileHash, fileEncHash string) error {
+// WriteInfoFile 写入.info文件（保存hash信息的JSON格式）
+func WriteInfoFile(dataFilePath, fileHash, fileEncHash string) error {
 	// 生成.info文件路径：将.data后缀替换为.info
 	infoFilePath := strings.TrimSuffix(dataFilePath, ".data") + ".info"
 

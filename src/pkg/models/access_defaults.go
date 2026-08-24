@@ -31,6 +31,7 @@ var DefaultPowerDefinitions = []DefaultPowerDefinition{
 	{Name: "离线下载", Description: "离线下载文件到磁盘", Characteristic: "file:offLine", GrantToDefaultUser: true},
 	{Name: "文件保险箱", Description: "加密文件的上传修改下载", Characteristic: "file:insurance", GrantToDefaultUser: true},
 	{Name: "文件预览", Description: "查看文件和预览支持格式的文件", Characteristic: "file:preview", GrantToDefaultUser: true},
+	{Name: "文件编辑", Description: "在线编辑文本文件内容", Characteristic: "file:edit", GrantToDefaultUser: true},
 	{Name: "文件标签", Description: "维护文件标签和个人分词词典", Characteristic: "file:tag", GrantToDefaultUser: true},
 	{Name: "用户文件密码", Description: "设置，修改文件密码", Characteristic: "file:update:filePassword", GrantToDefaultUser: true},
 	{Name: "移动文件/目录", Description: "移动文件或目录至其他虚拟目录", Characteristic: "file:move", GrantToDefaultUser: true},

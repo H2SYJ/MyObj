@@ -12,7 +12,7 @@ import (
 	"myobj/src/pkg/models"
 )
 
-const defaultAccessSeedVersion = "20260814_default_access_seed"
+const defaultAccessSeedVersion = "20260824_file_edit_seed"
 
 // migrateDefaultAccessData 统一补齐空库和历史初始化脚本所需的默认组、权限及授权关系。
 func migrateDefaultAccessData(db *gorm.DB) error {

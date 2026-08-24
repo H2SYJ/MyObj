@@ -15,16 +15,33 @@
       <p>{{ t('preview.loading') }}</p>
     </div>
 
-    <!-- 加密文件提示 -->
-    <div v-else-if="currentFile?.is_enc" class="preview-encrypted">
+    <!-- 加密文件提示（可编辑文本解锁后不再显示） -->
+    <div v-else-if="showEncryptedBlock" class="preview-encrypted">
       <el-icon :size="64" class="encrypted-icon"><Lock /></el-icon>
       <p class="encrypted-title">{{ t('preview.encrypted.title') }}</p>
       <p class="encrypted-desc">{{ t('preview.encrypted.desc') }}</p>
-      <div class="encrypted-actions">
-        <el-button type="primary" icon="Download" @click="handleDownload">{{
-          t('preview.encrypted.download')
-        }}</el-button>
-      </div>
+      <template v-if="isEncEditableText">
+        <el-input
+          v-model="unlockPassword"
+          type="password"
+          show-password
+          class="encrypted-password-input"
+          :placeholder="t('preview.downloadPassword.placeholder')"
+          @keyup.enter="handleUnlockPreview"
+        />
+        <div class="encrypted-actions">
+          <el-button :loading="unlocking" @click="handleUnlockPreview">{{ t('preview.encrypted.unlock') }}</el-button>
+          <el-button type="primary" @click="handleOpenEditor">{{ t('preview.encrypted.edit') }}</el-button>
+          <el-button icon="Download" @click="handleDownload">{{ t('preview.encrypted.download') }}</el-button>
+        </div>
+      </template>
+      <template v-else>
+        <div class="encrypted-actions">
+          <el-button type="primary" icon="Download" @click="handleDownload">{{
+            t('preview.encrypted.download')
+          }}</el-button>
+        </div>
+      </template>
     </div>
 
     <!-- 错误状态 -->
@@ -75,10 +92,12 @@
       :content="textContent"
       :language="codeLanguage"
       :can-print="canPrint"
+      :can-edit="canEditText"
       @load="handlePdfLoad"
       @error="handlePdfError"
       @print="handlePrint"
       @download="handleDownload"
+      @edit="handleOpenEditor"
     />
 
     <UnsupportedPreviewRenderer
@@ -115,13 +134,22 @@
         }}</el-button>
       </template>
     </el-dialog>
+
+    <!-- 在线文本编辑器 -->
+    <EditorDialog
+      v-model="showEditDialog"
+      :file="currentFile"
+      :initial-password="unlockPassword"
+      @saved="handleEditorSaved"
+    />
   </el-dialog>
 </template>
 
 <script setup lang="ts">
   import type { FileItem } from '@/types'
   import type { PreviewType, PreviewOptions } from '@/types/preview'
-  import { detectFileType, getFilePreviewUrl, getFileTextContent, getCodeLanguage } from '@/utils/ui/preview'
+  import { detectFileType, getFilePreviewUrl, getFileTextContent, getCodeLanguage, isEditableTextFile } from '@/utils/ui/preview'
+  import { loadFileContent as apiLoadFileContent } from '@/api/file'
   import { useFileDownload } from '@/composables/business/useFileDownload'
   import { createVideoPlayPrecheck, getVideoStreamUrl } from '@/api/video'
   import {
@@ -138,6 +166,7 @@
   import MediaPreviewRenderer from './renderers/MediaPreviewRenderer.vue'
   import DocumentPreviewRenderer from './renderers/DocumentPreviewRenderer.vue'
   import UnsupportedPreviewRenderer from './renderers/UnsupportedPreviewRenderer.vue'
+  import EditorDialog from '@/components/TextEditor/EditorDialog.vue'
   import { usePreviewObjectUrls, type PreviewUrlKind } from './usePreviewObjectUrls'
 
   const { t } = useI18n()
@@ -201,6 +230,35 @@
   const textContent = ref('')
   const codeLanguage = ref('')
   let loadVersion = 0
+
+  // ---- 在线编辑相关状态 ----
+  /** 当前文件是否为可编辑文本（text/code 且满足类型与大小限制） */
+  const canEditText = computed(() => {
+    if (!currentFile.value) return false
+    if (previewType.value === 'pdf') return false
+    return isEditableTextFile(currentFile.value)
+  })
+  /** 加密文件且为可编辑文本 */
+  const isEncEditableText = computed(() => {
+    if (!currentFile.value?.is_enc) return false
+    return isEditableTextFile(currentFile.value)
+  })
+  /** 是否显示加密提示块（加密且未解锁的可编辑文本，或不可编辑的加密文件） */
+  const showEncryptedBlock = computed(() => {
+    if (!currentFile.value?.is_enc) return false
+    if (isEncEditableText.value && unlocked.value) return false
+    return true
+  })
+  /** 加密文本文件是否已解锁预览 */
+  const unlocked = ref(false)
+  /** 加密文本文件的解锁密码（同时用于打开编辑器时预填） */
+  const unlockPassword = ref('')
+  const unlocking = ref(false)
+  const showEditDialog = ref(false)
+  /** 当前预览内容的 base_hash（保存时回传，用于并发防覆盖） */
+  const baseHash = ref('')
+  /** 当前预览内容的原始编码 */
+  const encoding = ref('utf-8')
 
   // 加载视频内容
   const loadVideoContent = async (fileId: string) => {
@@ -355,10 +413,14 @@
     textContent.value = ''
     codeLanguage.value = ''
 
-    // 如果文件已加密，不加载预览
+    // 加密文件：可编辑文本解锁后走正常加载；其余不加载预览（显示加密提示块）
     if (currentFile.value.is_enc) {
-      loading.value = false
-      return
+      if (isEncEditableText.value && unlocked.value) {
+        // 已解锁，继续加载
+      } else {
+        loading.value = false
+        return
+      }
     }
 
     loading.value = true
@@ -391,7 +453,15 @@
           break
         case 'text':
         case 'code':
-          {
+          if (canEditText.value) {
+            // 可编辑文本：通过编辑加载端点读取（自动解码为 UTF-8，并携带 base_hash / 原始编码）
+            const result = await apiLoadFileContent(fileId, file.is_enc ? unlockPassword.value : undefined)
+            if (requestVersion !== loadVersion || !visible.value) break
+            textContent.value = result.content
+            baseHash.value = result.baseHash || ''
+            encoding.value = result.encoding || 'utf-8'
+          } else {
+            // 超出可编辑上限（>10MB）等不可编辑文本：回退到原始预览接口（仅只读查看）
             const content = await getFileTextContent(fileId)
             if (requestVersion !== loadVersion || !visible.value) break
             textContent.value = content
@@ -531,6 +601,50 @@
     loadFileContent()
   }
 
+  // 解锁加密文本文件预览
+  const handleUnlockPreview = async () => {
+    if (!currentFile.value) return
+    if (!unlockPassword.value) {
+      proxy?.$modal.msgWarning(t('preview.downloadPassword.placeholder'))
+      return
+    }
+    const requestVersion = ++loadVersion
+    unlocking.value = true
+    try {
+      const result = await apiLoadFileContent(currentFile.value.file_id, unlockPassword.value)
+      if (requestVersion !== loadVersion || !visible.value) return
+      textContent.value = result.content
+      baseHash.value = result.baseHash || ''
+      encoding.value = result.encoding || 'utf-8'
+      unlocked.value = true
+    } catch (err: any) {
+      if (requestVersion === loadVersion) {
+        proxy?.$log.error('解锁预览失败:', err)
+        proxy?.$modal.msgError(err?.message || t('preview.encrypted.unlockFailed'))
+      }
+    } finally {
+      unlocking.value = false
+    }
+  }
+
+  // 打开在线编辑器
+  const handleOpenEditor = () => {
+    if (!currentFile.value) return
+    showEditDialog.value = true
+  }
+
+  // 编辑器保存成功：刷新预览内容
+  const handleEditorSaved = async () => {
+    if (
+      currentFile.value &&
+      visible.value &&
+      (previewType.value === 'text' || previewType.value === 'code') &&
+      (canEditText.value || unlocked.value)
+    ) {
+      await loadFileContent()
+    }
+  }
+
   // 清理blob URL
   const cleanupBlobUrls = () => {
     clearPreviewUrls()
@@ -556,6 +670,13 @@
     imagePosition.value = { x: 0, y: 0 }
     isDragging.value = false
     isFullscreen.value = false
+    // 重置编辑状态
+    unlocked.value = false
+    unlockPassword.value = ''
+    unlocking.value = false
+    showEditDialog.value = false
+    baseHash.value = ''
+    encoding.value = 'utf-8'
   }
 
   // 图片加载完成
@@ -687,6 +808,11 @@
 
   .preview-encrypted .encrypted-actions {
     margin-top: 24px;
+  }
+
+  .preview-encrypted .encrypted-password-input {
+    max-width: 320px;
+    margin-top: 8px;
   }
 
   .preview-loading p,

@@ -76,7 +76,7 @@ func PrepareLocalFileDownload(
 	}
 
 	// 4. 需要临时文件，在文件所在磁盘的temp目录下创建
-	diskPath := extractDiskPathFromFilePath(fileInfo.Path)
+	diskPath := ExtractDiskPathFromFilePath(fileInfo.Path)
 	if diskPath == "" {
 		return nil, fmt.Errorf("无法提取磁盘路径: %s", fileInfo.Path)
 	}
@@ -250,10 +250,10 @@ func copyFile(src, dst string) error {
 	return err
 }
 
-// extractDiskPathFromFilePath 从文件路径中提取磁盘路径
+// ExtractDiskPathFromFilePath 从文件路径中提取磁盘路径
 // 文件路径格式: {DiskPath}/data/{原文件名不带后缀}/{文件}
 // 返回: {DiskPath}
-func extractDiskPathFromFilePath(filePath string) string {
+func ExtractDiskPathFromFilePath(filePath string) string {
 	// 规范化路径
 	filePath = filepath.Clean(filePath)
 

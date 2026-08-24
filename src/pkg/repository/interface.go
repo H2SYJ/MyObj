@@ -134,6 +134,10 @@ type UserFilesRepository interface {
 	GetByUserIDAndUfID(ctx context.Context, userID, ufID string) (*models.UserFiles, error)
 	// GetByUfID 通过 uf_id 查询文件（用于公开文件访问，不要求 user_id）
 	GetByUfID(ctx context.Context, ufID string) (*models.UserFiles, error)
+	// CountByFileID 统计引用同一物理文件的 user_files 关联数量（用于在线编辑去重安全判断）
+	CountByFileID(ctx context.Context, fileID string) (int64, error)
+	// UpdateFileID 将指定用户文件引用（uf_id）重定向到新的物理文件ID（在线编辑去重安全：引用计数>1时使用）
+	UpdateFileID(ctx context.Context, ufID, newFileID string) error
 	ListByDirectoryID(ctx context.Context, userID string, directoryID int, offset, limit int) ([]*models.UserFiles, error)
 	ListByDirectoryIDSorted(ctx context.Context, userID string, directoryID int, sortBy, sortOrder string, offset, limit int) ([]*models.UserFiles, error)
 	ListFiltered(ctx context.Context, query UserFileQuery) ([]*models.UserFiles, error)

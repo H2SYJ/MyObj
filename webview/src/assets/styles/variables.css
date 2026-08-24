@@ -117,4 +117,11 @@ html.dark {
   --el-fill-color-lighter: rgba(255, 255, 255, 0.02);
   --el-fill-color-extra-light: rgba(255, 255, 255, 0.01);
   --el-fill-color-blank: var(--el-bg-color);
+
+  /* 主色浅色调阶梯（暗色模式下必须为深色，否则选中/高亮会变回亮色 #ecf5ff） */
+  --el-color-primary-light-3: #1e3a5f;
+  --el-color-primary-light-5: #182f4d;
+  --el-color-primary-light-7: #142640;
+  --el-color-primary-light-8: #102033;
+  --el-color-primary-light-9: #0d1a2b;
 }

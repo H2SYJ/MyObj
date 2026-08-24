@@ -251,3 +251,15 @@ type UploadTaskListResponse struct {
 	// 每页数量
 	PageSize int `json:"page_size"`
 }
+
+// EditFileContentResponse 在线编辑文本文件保存成功后的响应
+type EditFileContentResponse struct {
+	// 用户文件ID（UserFiles的UfID）
+	FileID string `json:"file_id"`
+	// 新文件大小（明文大小，字节）
+	Size int64 `json:"size"`
+	// 新明文哈希（blake3 hex，可作为下一次编辑的 base_hash）
+	FileHash string `json:"file_hash"`
+	// 检测到的原文件编码（utf-8 / utf-8-bom / utf-16le / utf-16be / gb18030）
+	Encoding string `json:"encoding"`
+}

@@ -418,3 +418,103 @@ export interface SetFilePublicRequest {
  * 设置文件公开状态
  */
 export const setFilePublic = (data: SetFilePublicRequest) => post<ApiResponse>(API_ENDPOINTS.FILE.SET_PUBLIC, data)
+
+/**
+ * 在线编辑保存请求参数
+ */
+export interface SaveFileContentRequest {
+  file_id: string
+  content: string
+  file_password?: string
+  base_hash?: string
+}
+
+/**
+ * 在线编辑保存结果
+ */
+export interface SaveFileContentResult {
+  file_id: string
+  size: number
+  file_hash: string
+  encoding: string
+}
+
+/**
+ * 保存文本文件内容（在线编辑）。
+ * 使用 fetch 实现以保留 HTTP 状态码：409 表示内容冲突（base_hash 不匹配）。
+ */
+export const saveFileContent = async (data: SaveFileContentRequest): Promise<ApiResponse<SaveFileContentResult>> => {
+  const token = cache.local.get('token')
+  const response = await fetch(`${API_BASE_URL}${API_ENDPOINTS.FILE.EDIT_SAVE}`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: token ? `Bearer ${token}` : ''
+    },
+    body: JSON.stringify(data)
+  })
+
+  let body: ApiResponse<SaveFileContentResult> | null = null
+  try {
+    body = await response.json()
+  } catch {
+    // 非 JSON 响应
+  }
+
+  if (!response.ok) {
+    // 409：内容冲突，抛带状态码的错误供调用方识别
+    if (response.status === 409) {
+      const conflictError: Error & { status?: number } = new Error(body?.message || '保存冲突')
+      conflictError.status = 409
+      throw conflictError
+    }
+    if (response.status === 401 || response.status === 403) {
+      throw new Error(body?.message || '身份认证失败或权限不足')
+    }
+    throw new Error(body?.message || '保存文件失败')
+  }
+
+  // 服务端始终返回 { code, message, data }；非 JSON 响应时兜底构造
+  if (!body) {
+    return { code: 200, message: '保存成功', data: {} as SaveFileContentResult }
+  }
+  return body
+}
+
+/**
+ * 加载可编辑文本内容（UTF-8 解码 + 编码/base_hash 元数据）。
+ * 用于编辑器加载，也用于加密文本文件的带密码预览。
+ */
+export const loadFileContent = async (
+  fileId: string,
+  filePassword?: string
+): Promise<{ content: string; encoding: string; baseHash: string }> => {
+  const token = cache.local.get('token')
+  const query = new URLSearchParams({ file_id: fileId })
+  if (filePassword) query.set('file_password', filePassword)
+
+  const response = await fetch(`${API_BASE_URL}${API_ENDPOINTS.FILE.EDIT_LOAD}?${query.toString()}`, {
+    method: 'GET',
+    headers: {
+      Authorization: token ? `Bearer ${token}` : ''
+    }
+  })
+
+  if (!response.ok) {
+    let message = '加载文件内容失败'
+    try {
+      const body = await response.json()
+      message = body?.message || message
+    } catch {
+      // 非 JSON 响应时使用默认错误信息
+    }
+    throw new Error(message)
+  }
+
+  return {
+    content: await response.text(),
+    encoding: response.headers.get('X-File-Encoding') || 'utf-8',
+    baseHash: response.headers.get('X-File-Hash') || ''
+  }
+}
+
