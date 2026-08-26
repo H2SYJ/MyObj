@@ -7,7 +7,7 @@ export interface PluginConfigField {
   key: string
   label: string
   description?: string
-  type: 'text' | 'password' | 'number' | 'boolean' | 'select'
+  type: 'text' | 'password' | 'number' | 'boolean' | 'select' | 'list'
   required?: boolean
   secret?: boolean
   affects_source?: boolean

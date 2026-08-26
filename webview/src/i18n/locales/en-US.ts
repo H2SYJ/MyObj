@@ -871,6 +871,8 @@ export default {
     enabled: 'Enabled',
     operation: 'Actions',
     runNow: 'Run Now',
+    configListAdd: 'Add item',
+    configListPlaceholder: 'Enter a value',
     history: 'History',
     confirmPermissions: 'Confirm Permissions',
     empty: 'No subscriptions',

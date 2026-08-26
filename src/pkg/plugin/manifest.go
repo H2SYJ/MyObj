@@ -90,9 +90,14 @@ func ParseManifest(data []byte) (*Manifest, error) {
 		}
 		fieldKeys[field.Key] = true
 		switch field.Type {
-		case "text", "password", "number", "boolean", "select":
+		case "text", "password", "number", "boolean", "select", "list":
 		default:
 			return nil, fmt.Errorf("不支持的插件配置字段类型: %s", field.Type)
+		}
+		if field.Type == "list" && field.Default != nil {
+			if _, ok := field.Default.([]interface{}); !ok {
+				return nil, fmt.Errorf("list 类型配置字段的默认值必须是字符串数组")
+			}
 		}
 	}
 	return &manifest, nil

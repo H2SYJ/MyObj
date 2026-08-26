@@ -133,6 +133,29 @@
                   :value="option.value"
                 />
               </el-select>
+              <div v-else-if="field.type === 'list'" class="config-list-editor">
+                <div
+                  v-for="(item, index) in ((form.config[field.key] as string[]) || [])"
+                  :key="index"
+                  class="config-list-row"
+                >
+                  <el-input
+                    v-model="(form.config[field.key] as string[])[index]"
+                    :placeholder="field.description || t('subscriptions.configListPlaceholder')"
+                  />
+                  <el-button
+                    type="danger"
+                    plain
+                    icon="Delete"
+                    circle
+                    :aria-label="t('common.delete')"
+                    @click="removeListItem(field.key, index)"
+                  />
+                </div>
+                <el-button type="primary" plain icon="Plus" @click="addListItem(field.key)">
+                  {{ t('subscriptions.configListAdd') }}
+                </el-button>
+              </div>
               <el-input
                 v-else
                 v-model="form.config[field.key]"
@@ -391,8 +414,13 @@
   const pluginChanged = () => {
     form.config = {}
     form.granted_permissions = selectedPlugin.value?.permissions.filter(value => value === 'network.public_http') || []
-    for (const field of selectedPlugin.value?.config_fields || [])
-      if (field.default !== undefined) form.config[field.key] = field.default
+    for (const field of selectedPlugin.value?.config_fields || []) {
+      if (field.type === 'list') {
+        form.config[field.key] = Array.isArray(field.default) ? [...(field.default as unknown[])] : []
+      } else if (field.default !== undefined) {
+        form.config[field.key] = field.default
+      }
+    }
   }
   const resetForm = () =>
     Object.assign(form, {
@@ -415,8 +443,24 @@
   const openEdit = (row: Subscription) => {
     editingId.value = row.id
     configuredSecrets.value = [...(row.secret_fields_configured || [])]
-    Object.assign(form, { ...row, config: { ...(row.config || {}) } })
+    const plugin = plugins.value.find(value => value.id === row.plugin_id)
+    const config = { ...(row.config || {}) }
+    for (const field of plugin?.config_fields || []) {
+      if (field.type === 'list' && !Array.isArray(config[field.key])) {
+        config[field.key] = Array.isArray(field.default) ? [...(field.default as unknown[])] : []
+      }
+    }
+    Object.assign(form, { ...row, config })
     dialogVisible.value = true
+  }
+  const addListItem = (key: string) => {
+    const current = form.config[key]
+    if (!Array.isArray(current)) form.config[key] = []
+    ;(form.config[key] as string[]).push('')
+  }
+  const removeListItem = (key: string, index: number) => {
+    const current = form.config[key]
+    if (Array.isArray(current)) current.splice(index, 1)
   }
   const save = async () => {
     if (!form.name || !form.plugin_id || !form.schedule_time) {
@@ -562,6 +606,20 @@
   .history-error {
     color: var(--danger-color) !important;
   }
+  .config-list-editor {
+    display: grid;
+    gap: 8px;
+    width: 100%;
+  }
+  .config-list-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .config-list-row .el-input {
+    flex: 1;
+  }
+
   .subscription-fab {
     position: fixed;
     right: 18px;

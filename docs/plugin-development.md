@@ -264,12 +264,12 @@ manifest 必须是 UTF-8 无 BOM 的单个 JSON 对象。未知字段、尾随�
 | `key` | 是 | 1–64 个字符；以 ASCII 字母开头，后续可使用字母、数字、`_`、`.`、`-`；同一 manifest 内不能重复。 |
 | `label` | 建议 | 用户界面标签。虽然解析器目前不强制非空，但发布插件不应省略。 |
 | `description` | 否 | 输入提示和用途说明。 |
-| `type` | 是 | `text`、`password`、`number`、`boolean`、`select` 之一。 |
+| `type` | 是 | `text`、`password`、`number`、`boolean`、`select`、`list` 之一。`list` 类型在订阅表单中渲染为可逐条增删、逐条编辑的字符串数组输入框；其值以 JSON 字符串数组形式传给插件，因此 `list` 字段的 `default`（若有）必须是字符串数组，例如 `["a", "b"]`。 |
 | `required` | 否 | 告知界面该字段必填。业务上的必填仍必须由 `ValidateConfig` 检查。 |
 | `secret` | 否 | 标记敏感字段。界面只显示“已配置”，更新时空值会保留原值，不回显明文。通常与 `password` 一起使用。 |
 | `affects_source` | 否 | 值变化时开始新的来源代次，旧条目的去重记录不阻止新来源首次抓取。源地址、频道 ID、账号等应设为 `true`。 |
-| `default` | 否 | 表单默认值，类型应与 `type` 一致。插件仍应为缺失值提供合理兜底，以兼容 API 客户端。 |
-| `options` | `select` 建议 | 选项数组，每项包含 `label` 和 `value`。`value` 可以是 JSON 字符串、数字或布尔值。 |
+| `default` | 否 | 表单默认值，类型应与 `type` 一致：标量类型给标量，`list` 给字符串数组。插件仍应为缺失值提供合理兜底，以兼容 API 客户端。 |
+| `options` | `select` 建议 | 选项数组，每项包含 `label` 和 `value`。`value` 可以是 JSON 字符串、数字或布尔值。`list` 类型不使用此字段。 |
 
 完整示例：
 
@@ -325,6 +325,14 @@ manifest 必须是 UTF-8 无 BOM 的单个 JSON 对象。未知字段、尾随�
         { "label": "1080p", "value": "1080p" },
         { "label": "4K", "value": "2160p" }
       ]
+    },
+    {
+      "key": "keywords",
+      "label": "关键词",
+      "description": "每行一个关键词，可随时添加、删除或编辑",
+      "type": "list",
+      "default": ["news", "sports"],
+      "affects_source": true
     }
   ]
 }
@@ -343,7 +351,8 @@ SDK 的 `Run` 从 stdin 读取一个 UTF-8 JSON 请求，调用 `Handler`，再�
   "action": "fetch",
   "config": {
     "endpoint": "https://api.example.com/items",
-    "token": "secret"
+    "token": "secret",
+    "keywords": ["news", "sports"]
   },
   "now": "2026-07-22T08:00:00+08:00"
 }
@@ -352,7 +361,7 @@ SDK 的 `Run` 从 stdin 读取一个 UTF-8 JSON 请求，调用 `Handler`，再�
 | 字段 | 说明 |
 | --- | --- |
 | `action` | `healthcheck`、`validate_config` 或 `fetch`。 |
-| `config` | 当前订阅的配置对象；`healthcheck` 时通常省略。 |
+| `config` | 当前订阅的配置对象；`healthcheck` 时通常省略。字段值类型与 `config_fields` 声明一致：`text`/`password`/`select` 为字符串，`number` 为数字，`boolean` 为布尔，`list` 为字符串数组（JSON array of string）。插件方读取 `list` 时应在宿主侧按数组处理，例如 Go 中先断言为 `[]interface{}` 再逐元素转 `string`。 |
 | `now` | 本次调用的宿主时间，JSON 时间格式为 RFC 3339。需要“当前时间”时优先使用它，使测试行为更可控。 |
 
 SDK 单次最多读取 2 MiB stdin。正常订阅配置应远小于此限制。

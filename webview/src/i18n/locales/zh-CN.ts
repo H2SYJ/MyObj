@@ -863,6 +863,8 @@ export default {
     enabled: '启用',
     operation: '操作',
     runNow: '立即运行',
+    configListAdd: '添加一项',
+    configListPlaceholder: '请输入内容',
     history: '记录',
     confirmPermissions: '确认权限',
     empty: '暂无订阅',
