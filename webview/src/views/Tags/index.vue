@@ -172,6 +172,7 @@
   import type { MobileSheetAction } from '@/components/mobile/types'
   import { useI18n, useResponsive } from '@/composables'
   import { sortTagCloudItems, tagCloudFontSize, tagCloudSizeClass } from './tagCloud'
+  import { getContrastText } from '@/utils/ui'
 
   const router = useRouter()
   const { t } = useI18n()
@@ -230,7 +231,8 @@
     tagCloudFontSize(tag.file_count, minCount.value, maxCount.value, isHandheld.value)
   const tagStyle = (tag: TagCloudItem) => ({
     '--tag-color': tag.category.color,
-    '--tag-font-size': `${fontSize(tag)}px`
+    '--tag-font-size': `${fontSize(tag)}px`,
+    '--tag-text-color': getContrastText(tag.category.color)
   })
   const tooltip = (tag: TagCloudItem) =>
     tag.system
@@ -454,13 +456,13 @@
     min-width: 0;
     min-height: 38px;
     padding: 7px 10px 7px 15px;
-    border: 1px solid color-mix(in srgb, var(--tag-color) 44%, var(--desktop-border));
+    border: 1px solid color-mix(in srgb, var(--tag-color) 62%, rgb(0 0 0));
     border-radius: 999px;
     display: inline-flex;
     align-items: center;
     gap: 8px;
-    color: color-mix(in srgb, var(--tag-color) 82%, var(--text-primary));
-    background: color-mix(in srgb, var(--tag-color) 10%, var(--desktop-surface));
+    color: var(--tag-text-color);
+    background: var(--tag-color);
     box-shadow: 0 4px 12px color-mix(in srgb, var(--tag-color) 8%, transparent);
     cursor: pointer;
     user-select: none;
@@ -481,8 +483,8 @@
   }
   .tag-cloud-item:hover {
     transform: translateY(-2px);
-    border-color: color-mix(in srgb, var(--tag-color) 74%, var(--desktop-border));
-    background: color-mix(in srgb, var(--tag-color) 14%, var(--desktop-surface));
+    border-color: color-mix(in srgb, var(--tag-color) 70%, rgb(0 0 0));
+    background: color-mix(in srgb, var(--tag-color) 88%, rgb(0 0 0));
     box-shadow: 0 9px 20px color-mix(in srgb, var(--tag-color) 18%, transparent);
   }
   .tag-cloud-item:active {
@@ -509,8 +511,8 @@
     border-radius: 999px;
     display: inline-grid;
     place-items: center;
-    color: var(--text-secondary);
-    background: color-mix(in srgb, var(--tag-color) 12%, var(--desktop-surface));
+    color: var(--tag-text-color);
+    background: rgba(0, 0, 0, 0.14);
     font-size: 11px;
     font-weight: 750;
   }
@@ -619,13 +621,13 @@
     line-height: 1.5;
   }
   html.dark .tag-cloud-item {
-    color: color-mix(in srgb, var(--tag-color) 58%, var(--text-primary));
-    background: color-mix(in srgb, var(--tag-color) 9%, var(--desktop-surface));
-    border-color: color-mix(in srgb, var(--tag-color) 48%, var(--desktop-border));
+    color: var(--tag-text-color);
+    background: var(--tag-color);
+    border-color: color-mix(in srgb, var(--tag-color) 62%, rgb(255 255 255));
   }
   html.dark .tag-cloud-item__count {
-    color: var(--text-regular);
-    background: color-mix(in srgb, var(--tag-color) 15%, var(--desktop-fill));
+    color: var(--tag-text-color);
+    background: rgba(255, 255, 255, 0.14);
   }
   @media (max-width: 767px) {
     .tag-cloud-page {

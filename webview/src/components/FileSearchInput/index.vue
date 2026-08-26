@@ -10,6 +10,7 @@
           closable
           disable-transitions
           :color="tag.color || undefined"
+          :style="tagTextStyle(tag.color)"
           @close="removeTag(tag.id)"
         >
           #{{ tag.name }}
@@ -111,6 +112,7 @@
   import { getTagSuggestions, type TagSuggestionScope } from '@/api/tag'
   import { useI18n } from '@/composables'
   import type { CompactTag } from '@/types'
+  import { getContrastText } from '@/utils/ui'
 
   interface SearchSubmitPayload {
     keyword: string
@@ -150,6 +152,7 @@
   }>()
 
   const { t } = useI18n()
+  const tagTextStyle = (color?: string) => (color ? { '--el-tag-text-color': getContrastText(color) } : {})
   const rootRef = ref<HTMLElement>()
   const inputRef = ref<HTMLInputElement>()
   const focused = ref(false)
@@ -377,7 +380,7 @@
   }
   .file-search-input__tag {
     flex: 0 0 auto;
-    color: var(--el-text-color-primary);
+    color: var(--el-tag-text-color, var(--el-text-color-primary));
   }
   .file-search-input__native {
     min-width: 90px;

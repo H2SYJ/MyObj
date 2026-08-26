@@ -5,7 +5,7 @@
       :key="tag.id"
       size="small"
       effect="plain"
-      :style="{ '--tag-color': tag.color || 'var(--el-color-primary)' }"
+      :style="tagStyle(tag.color)"
       @click.stop="$emit('tag-click', tag)"
     >
       {{ tag.name }}
@@ -18,6 +18,7 @@
   import { computed } from 'vue'
   import type { CompactTag } from '@/types'
   import { useI18n } from '@/composables'
+  import { getTagStyle } from '@/utils/ui'
 
   const props = withDefaults(
     defineProps<{
@@ -29,6 +30,7 @@
   )
   defineEmits<{ 'tag-click': [tag: CompactTag] }>()
   const { t } = useI18n()
+  const tagStyle = (color?: string) => getTagStyle(color || '')
   const visibleTags = computed(() => props.tags.slice(0, props.limit))
   const hiddenCount = computed(() => Math.max(0, props.tags.length - props.limit))
 </script>
@@ -43,9 +45,9 @@
   }
   .file-tags :deep(.el-tag) {
     max-width: 120px;
-    border-color: color-mix(in srgb, var(--tag-color) 52%, var(--el-border-color));
-    color: var(--tag-color);
-    background: color-mix(in srgb, var(--tag-color) 8%, transparent);
+    border-color: var(--el-tag-border-color, var(--el-color-primary-light-8));
+    color: var(--el-tag-text-color, var(--el-color-primary));
+    background: var(--el-tag-bg-color, var(--el-color-primary-light-9));
   }
   .file-tags :deep(.el-tag__content) {
     overflow: hidden;

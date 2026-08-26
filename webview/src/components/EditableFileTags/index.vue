@@ -113,6 +113,7 @@
   } from '@/api/tag'
   import type { CompactTag } from '@/types'
   import { useI18n } from '@/composables'
+  import { getTagStyle } from '@/utils/ui'
 
   const props = withDefaults(defineProps<{ fileId: string; initialTags?: CompactTag[] }>(), {
     initialTags: () => []
@@ -173,7 +174,7 @@
     () => saving.value || cleanSelectedNames.value.length === 0 || categories.value.length === 0 || !categoryId.value
   )
 
-  const tagStyle = (tag: FileTag) => ({ '--tag-color': tag.category.color || 'var(--el-color-primary)' })
+  const tagStyle = (tag: FileTag) => getTagStyle(tag.category.color || '')
 
   const removeLabel = (tag: FileTag) => {
     const manual = tag.sources.includes('manual')
@@ -394,9 +395,9 @@
   }
   .editable-file-tags__tag {
     max-width: 180px;
-    border-color: color-mix(in srgb, var(--tag-color) 52%, var(--el-border-color));
-    color: var(--tag-color);
-    background: color-mix(in srgb, var(--tag-color) 8%, transparent);
+    border-color: var(--el-tag-border-color, var(--el-color-primary-light-8));
+    color: var(--el-tag-text-color, var(--el-color-primary));
+    background: var(--el-tag-bg-color, var(--el-color-primary-light-9));
   }
   .editable-file-tags__tag.is-removing {
     opacity: 0.62;

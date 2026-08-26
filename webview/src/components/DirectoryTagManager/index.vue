@@ -15,7 +15,7 @@
             :key="tag.id"
             closable
             effect="plain"
-            :style="{ borderColor: tag.category.color, color: tag.category.color }"
+            :style="tagStyle(tag.category.color)"
             @close="removeTag(tag.id)"
           >
             {{ tag.name }}
@@ -67,10 +67,12 @@
     type TagCategory
   } from '@/api/tag'
   import type { CompactTag } from '@/types'
+  import { getTagStyle } from '@/utils/ui'
 
   const props = defineProps<{ modelValue: boolean; directoryId: number; directoryName: string }>()
   const emit = defineEmits<{ 'update:modelValue': [value: boolean]; saved: [] }>()
   const { proxy } = getCurrentInstance() as ComponentInternalInstance
+  const tagStyle = (color?: string) => getTagStyle(color || '')
   const loading = ref(false)
   const saving = ref(false)
   const suggestionsLoading = ref(false)

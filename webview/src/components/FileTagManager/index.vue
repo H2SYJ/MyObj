@@ -171,6 +171,7 @@
   } from '@/api/tag'
   import type { CompactTag } from '@/types'
   import { useI18n } from '@/composables'
+  import { getTagStyle } from '@/utils/ui'
 
   const props = defineProps<{ modelValue: boolean; fileIds: string[]; fileName?: string }>()
   const emit = defineEmits<{ 'update:modelValue': [value: boolean]; saved: [] }>()
@@ -213,10 +214,7 @@
     batchMode.value && batchAction.value === 'remove' ? removeTagIds.value.length === 0 : newTagNames.value.length === 0
   )
 
-  const tagStyle = (tag: FileTag) => ({
-    borderColor: tag.category.color,
-    color: tag.category.color
-  })
+  const tagStyle = (tag: FileTag) => getTagStyle(tag.category.color || '')
 
   const load = async () => {
     loading.value = true
