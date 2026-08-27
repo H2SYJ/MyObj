@@ -3,9 +3,6 @@ package models
 import "time"
 
 const (
-	TagRuleScopeGlobal = "global"
-	TagRuleScopeUser   = "user"
-
 	TagRuleSetDraft    = "draft"
 	TagRuleSetActive   = "active"
 	TagRuleSetArchived = "archived"
@@ -66,20 +63,6 @@ type TagDefinition struct {
 
 func (TagDefinition) TableName() string { return "tag_definition" }
 
-// UserTagPreference 保存用户对共享标签的显示偏好，不改变标签定义和其他用户的数据。
-type UserTagPreference struct {
-	UserID                string    `gorm:"column:user_id;type:varchar(64);not null;primaryKey;index:idx_user_tag_preference_hidden,priority:1;index:idx_user_tag_preference_display_name,priority:1" json:"user_id"`
-	TagID                 string    `gorm:"column:tag_id;type:varchar(64);not null;primaryKey;index" json:"tag_id"`
-	Hidden                bool      `gorm:"column:hidden;type:boolean;not null;default:false;index:idx_user_tag_preference_hidden,priority:2" json:"hidden"`
-	DisplayName           *string   `gorm:"column:display_name;type:varchar(255)" json:"display_name,omitempty"`
-	NormalizedDisplayName *string   `gorm:"column:normalized_display_name;type:varchar(191);index:idx_user_tag_preference_display_name,priority:2" json:"normalized_display_name,omitempty"`
-	DisplayCategoryID     *string   `gorm:"column:display_category_id;type:varchar(64);index" json:"display_category_id,omitempty"`
-	CreatedAt             time.Time `gorm:"column:created_at;type:datetime;not null" json:"created_at"`
-	UpdatedAt             time.Time `gorm:"column:updated_at;type:datetime;not null" json:"updated_at"`
-}
-
-func (UserTagPreference) TableName() string { return "user_tag_preference" }
-
 // UserFileTag 保存用户文件与标签之间的一条来源绑定。
 type UserFileTag struct {
 	ID          string    `gorm:"column:id;type:varchar(64);primaryKey" json:"id"`
@@ -133,7 +116,6 @@ type UserFileTagState struct {
 	UFID          string     `gorm:"column:uf_id;type:varchar(64);primaryKey" json:"uf_id"`
 	UserID        string     `gorm:"column:user_id;type:varchar(64);not null;index" json:"user_id"`
 	GlobalVersion int64      `gorm:"column:global_version;type:bigint;not null;default:0;index" json:"global_version"`
-	UserVersion   int64      `gorm:"column:user_version;type:bigint;not null;default:0" json:"user_version"`
 	MetadataVer   int64      `gorm:"column:metadata_version;type:bigint;not null;default:0" json:"metadata_version"`
 	Status        string     `gorm:"column:status;type:varchar(32);not null;index:idx_tag_state_schedule,priority:1" json:"status"`
 	LastError     string     `gorm:"column:last_error;type:text" json:"last_error,omitempty"`
@@ -178,11 +160,9 @@ func (FileMetadataState) TableName() string { return "file_metadata_state" }
 // TagRuleSet 保存一个可原子发布的规则版本。
 type TagRuleSet struct {
 	ID             string     `gorm:"column:id;type:varchar(64);primaryKey" json:"id"`
-	ScopeType      string     `gorm:"column:scope_type;type:varchar(16);not null;index:idx_tag_rule_scope,priority:1" json:"scope_type"`
-	ScopeID        string     `gorm:"column:scope_id;type:varchar(64);not null;default:'';index:idx_tag_rule_scope,priority:2" json:"scope_id"`
-	Version        int64      `gorm:"column:version;type:bigint;not null;index:idx_tag_rule_scope,priority:4" json:"version"`
+	Version        int64      `gorm:"column:version;type:bigint;not null;index:idx_tag_rule_status_version,priority:2" json:"version"`
 	Revision       int        `gorm:"column:revision;type:integer;not null;default:1" json:"revision"`
-	Status         string     `gorm:"column:status;type:varchar(16);not null;index:idx_tag_rule_scope,priority:3" json:"status"`
+	Status         string     `gorm:"column:status;type:varchar(16);not null;index:idx_tag_rule_status_version,priority:1" json:"status"`
 	BasedOnVersion int64      `gorm:"column:based_on_version;type:bigint;not null;default:0" json:"based_on_version"`
 	CreatedBy      string     `gorm:"column:created_by;type:varchar(64);not null;default:''" json:"created_by"`
 	CreatedAt      time.Time  `gorm:"column:created_at;type:datetime;not null" json:"created_at"`
@@ -212,8 +192,6 @@ func (TagRule) TableName() string { return "tag_rule" }
 
 type TagRebuildJob struct {
 	ID            string     `gorm:"column:id;type:varchar(64);primaryKey" json:"id"`
-	ScopeType     string     `gorm:"column:scope_type;type:varchar(16);not null;index" json:"scope_type"`
-	ScopeID       string     `gorm:"column:scope_id;type:varchar(64);not null;default:'';index" json:"scope_id"`
 	TargetVersion int64      `gorm:"column:target_version;type:bigint;not null" json:"target_version"`
 	Status        string     `gorm:"column:status;type:varchar(32);not null;index:idx_tag_job_schedule,priority:1" json:"status"`
 	Cursor        string     `gorm:"column:cursor_value;type:varchar(64);not null;default:''" json:"cursor"`

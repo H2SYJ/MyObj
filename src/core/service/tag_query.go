@@ -25,14 +25,11 @@ func (s *TagService) CompactTags(ctx context.Context, ownerUserID, viewerUserID 
 		return result, nil
 	}
 	query := s.factory.DB().WithContext(ctx).Table("user_file_tag AS uft").
-		Select("uft.uf_id, td.id, COALESCE(pref.display_name, td.name) AS name, COALESCE(display.code, tc.code) AS category_code, COALESCE(display.color, tc.color) AS color, uft.visibility, uft.source_type, td.system_code").
+		Select("uft.uf_id, td.id, td.name, tc.code AS category_code, tc.color, uft.visibility, uft.source_type, td.system_code").
 		Joins("JOIN tag_definition td ON td.id = uft.tag_id").
 		Joins("JOIN tag_category tc ON tc.id = td.category_id").
-		Joins("LEFT JOIN user_tag_preference pref ON pref.tag_id = td.id AND pref.user_id = ?", viewerUserID).
-		Joins("LEFT JOIN tag_category display ON display.id = pref.display_category_id AND display.enabled = ?", true).
 		Where("uft.uf_id IN ?", ufIDs).
-		Where("NOT EXISTS (SELECT 1 FROM user_file_tag_exclusion e WHERE e.user_id = uft.user_id AND e.uf_id = uft.uf_id AND e.tag_id = uft.tag_id)").
-		Where("COALESCE(pref.hidden, ?) = ?", false, false)
+		Where("NOT EXISTS (SELECT 1 FROM user_file_tag_exclusion e WHERE e.user_id = uft.user_id AND e.uf_id = uft.uf_id AND e.tag_id = uft.tag_id)")
 	if ownerUserID != "" {
 		query = query.Where("uft.user_id = ?", ownerUserID)
 	}
@@ -40,7 +37,7 @@ func (s *TagService) CompactTags(ctx context.Context, ownerUserID, viewerUserID 
 		query = query.Where("uft.source_type <> ? OR uft.visibility = ?", models.TagSourceManual, models.TagVisibilityPublic)
 	}
 	var rows []compactTagRow
-	if err := query.Order("tc.sort_order ASC, COALESCE(pref.display_name, td.name) ASC, td.id ASC").Scan(&rows).Error; err != nil {
+	if err := query.Order("tc.sort_order ASC, td.name ASC, td.id ASC").Scan(&rows).Error; err != nil {
 		return nil, err
 	}
 	seen := make(map[string]struct{})
@@ -74,14 +71,11 @@ func (s *TagService) CompactDirectoryTags(ctx context.Context, userID string, di
 	}
 	var rows []compactDirectoryTagRow
 	err := s.factory.DB().WithContext(ctx).Table("user_directory_tag AS udt").
-		Select("udt.directory_id, td.id, COALESCE(pref.display_name, td.name) AS name, COALESCE(display.code, tc.code) AS category_code, COALESCE(display.color, tc.color) AS color, td.system_code").
+		Select("udt.directory_id, td.id, td.name, tc.code AS category_code, tc.color, td.system_code").
 		Joins("JOIN tag_definition td ON td.id = udt.tag_id").
 		Joins("JOIN tag_category tc ON tc.id = td.category_id").
-		Joins("LEFT JOIN user_tag_preference pref ON pref.tag_id = td.id AND pref.user_id = ?", userID).
-		Joins("LEFT JOIN tag_category display ON display.id = pref.display_category_id AND display.enabled = ?", true).
 		Where("udt.user_id = ? AND udt.directory_id IN ?", userID, directoryIDs).
-		Where("COALESCE(pref.hidden, ?) = ?", false, false).
-		Order("tc.sort_order ASC, COALESCE(pref.display_name, td.name) ASC, td.id ASC").Scan(&rows).Error
+		Order("tc.sort_order ASC, td.name ASC, td.id ASC").Scan(&rows).Error
 	if err != nil {
 		return nil, err
 	}

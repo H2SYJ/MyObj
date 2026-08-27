@@ -134,9 +134,6 @@ func (s *TagService) processRebuildJob(job *models.TagRebuildJob) {
 		}
 		var files []models.UserFiles
 		query := s.factory.DB().WithContext(s.ctx).Where("deleted_at IS NULL AND uf_id > ?", job.Cursor)
-		if job.ScopeType == models.TagRuleScopeUser {
-			query = query.Where("user_id = ?", job.ScopeID)
-		}
 		if err := query.Order("uf_id ASC").Limit(tagRebuildBatch).Find(&files).Error; err != nil {
 			s.finishRebuildJob(job, "failed", err.Error())
 			return
@@ -173,11 +170,7 @@ func (s *TagService) processRebuildJob(job *models.TagRebuildJob) {
 				s.recordRebuildFailure(job.ID, file.UserID, file.UfID, err)
 				continue
 			}
-			targetGlobalVersion := int64(0)
-			if job.ScopeType == models.TagRuleScopeGlobal {
-				targetGlobalVersion = job.TargetVersion
-			}
-			affectedTagIDs, err := s.generateUserFileForRebuild(s.ctx, file.UserID, file.UfID, state.RunToken, targetGlobalVersion, &tagRebuildGuard{
+			affectedTagIDs, err := s.generateUserFileForRebuild(s.ctx, file.UserID, file.UfID, state.RunToken, job.TargetVersion, &tagRebuildGuard{
 				jobID: job.ID, runToken: job.RunToken,
 			})
 			if err != nil {
@@ -270,15 +263,8 @@ func (s *TagService) claimRebuildState(userID, ufID string) (*models.UserFileTag
 }
 
 func (s *TagService) jobVersionCurrent(job *models.TagRebuildJob) bool {
-	if job.ScopeType == models.TagRuleScopeGlobal {
-		runtime := s.globalRuntime.Load()
-		return runtime != nil && runtime.snapshot != nil && runtime.snapshot.GlobalVersion == job.TargetVersion
-	}
-	personal, err := s.loadActiveRuleSet(s.ctx, models.TagRuleScopeUser, job.ScopeID)
-	if errors.Is(err, gorm.ErrRecordNotFound) && job.TargetVersion == 0 {
-		return true
-	}
-	return err == nil && personal.Version == job.TargetVersion
+	runtime := s.globalRuntime.Load()
+	return runtime != nil && runtime.snapshot != nil && runtime.snapshot.GlobalVersion == job.TargetVersion
 }
 
 func (s *TagService) jobStillOwned(job *models.TagRebuildJob) bool {

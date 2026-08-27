@@ -175,18 +175,6 @@ export const routes: RouteRecordRaw[] = [
           hideMobileNav: true
         }
       },
-      {
-        path: '/settings/tag-dictionary',
-        name: 'SettingsTagDictionary',
-        component: () => import('@/views/Settings/index.vue'),
-        meta: {
-          title: '个人分词词典',
-          mobileTitle: '个人分词词典',
-          settingSection: 'tag-dictionary',
-          mobileParent: '/settings',
-          hideMobileNav: true
-        }
-      },
       // 协作功能暂时隐藏
       // {
       //   path: '/collaboration',

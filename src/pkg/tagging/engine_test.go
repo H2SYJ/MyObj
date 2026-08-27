@@ -6,11 +6,10 @@ import (
 	"myobj/src/pkg/models"
 )
 
-func testSnapshot(t *testing.T, personal ...models.TagRule) *Snapshot {
+func testSnapshot(t *testing.T, extraRules ...models.TagRule) *Snapshot {
 	t.Helper()
 	global := models.TagRuleSet{
-		ScopeType: models.TagRuleScopeGlobal,
-		Version:   3,
+		Version: 3,
 		Rules: []models.TagRule{
 			{ID: "year", Type: models.TagRuleTypeRegex, TargetField: "basename", Pattern: `((?:19|20)\d{2})`, Replacement: "$1", CategoryID: "year", Priority: 90, Weight: 1, Enabled: true},
 			{ID: "resolution", Type: models.TagRuleTypeRegex, TargetField: "basename", Pattern: `(?i)(2160p|4k|1080p)`, Replacement: "$1", CategoryID: "resolution", Priority: 100, Weight: 1, Enabled: true},
@@ -19,11 +18,8 @@ func testSnapshot(t *testing.T, personal ...models.TagRule) *Snapshot {
 			{ID: "stop", Type: models.TagRuleTypeStopWord, Pattern: "完整版", Enabled: true},
 		},
 	}
-	ruleSets := []models.TagRuleSet{global}
-	if len(personal) > 0 {
-		ruleSets = append(ruleSets, models.TagRuleSet{ScopeType: models.TagRuleScopeUser, Version: 2, Rules: personal})
-	}
-	snapshot, err := CompileSnapshot(ruleSets, 20)
+	global.Rules = append(global.Rules, extraRules...)
+	snapshot, err := CompileSnapshot(global, 20)
 	if err != nil {
 		t.Fatalf("编译规则失败: %v", err)
 	}
@@ -45,13 +41,13 @@ func TestGenerateFilenameAndMetadataTags(t *testing.T) {
 	assertNoTag(t, tags, "完整版")
 }
 
-func TestPersonalAliasOverridesGlobalAndQueryUsesRules(t *testing.T) {
+func TestGlobalAliasAndCustomWordApplyToGenerationAndQuery(t *testing.T) {
 	snapshot := testSnapshot(t,
-		models.TagRule{ID: "personal-word", Type: models.TagRuleTypeWord, Pattern: "葬送的芙莉莲", CategoryID: "title", Priority: 10, Weight: 1, Enabled: true},
-		models.TagRule{ID: "personal-alias", Type: models.TagRuleTypeAlias, Pattern: "hevc", Replacement: "高效视频编码", CategoryID: "codec", Priority: 10, Weight: 1, Enabled: true},
+		models.TagRule{ID: "global-word", Type: models.TagRuleTypeWord, Pattern: "葬送的芙莉莲", CategoryID: "title", Priority: 10, Weight: 1, Enabled: true},
+		models.TagRule{ID: "global-alias", Type: models.TagRuleTypeAlias, Pattern: "hevc", Replacement: "高效视频编码", CategoryID: "codec", Priority: 10, Weight: 1, Enabled: true},
 	)
-	if snapshot.GlobalVersion != 3 || snapshot.UserVersion != 2 {
-		t.Fatalf("规则版本错误: global=%d user=%d", snapshot.GlobalVersion, snapshot.UserVersion)
+	if snapshot.GlobalVersion != 3 {
+		t.Fatalf("规则版本错误: global=%d", snapshot.GlobalVersion)
 	}
 	tags := snapshot.Generate(Input{Filename: "葬送的芙莉莲.hevc.mkv", MIME: "video/x-matroska"})
 	assertTag(t, tags, "葬送的芙莉莲", "title")
@@ -72,23 +68,21 @@ func TestValidTagNameRejectsBOMAndControlCharacters(t *testing.T) {
 	}
 }
 
-func TestLongestForcedWordWinsAndPersonalWordOverridesSamePhrase(t *testing.T) {
-	global := models.TagRuleSet{ScopeType: models.TagRuleScopeGlobal, Version: 1, Rules: []models.TagRule{
+func TestLongestForcedWordWinsAndPriorityResolvesSamePhrase(t *testing.T) {
+	global := models.TagRuleSet{Version: 1, Rules: []models.TagRule{
 		{ID: "global-long", Type: models.TagRuleTypeWord, Pattern: "人工智能", CategoryID: "title", Priority: 1, Weight: 1, Enabled: true},
 		{ID: "global-short", Type: models.TagRuleTypeWord, Pattern: "智能", CategoryID: "other", Priority: 999, Weight: 1, Enabled: true},
-		{ID: "global-same", Type: models.TagRuleTypeWord, Pattern: "大模型", CategoryID: "other", Priority: 999, Weight: 1, Enabled: true},
+		{ID: "global-same", Type: models.TagRuleTypeWord, Pattern: "大模型", CategoryID: "other", Priority: 1, Weight: 1, Enabled: true},
+		{ID: "priority-same", Type: models.TagRuleTypeWord, Pattern: "大模型", CategoryID: "title", Priority: 999, Weight: 1, Enabled: true},
 	}}
-	personal := models.TagRuleSet{ScopeType: models.TagRuleScopeUser, Version: 2, Rules: []models.TagRule{
-		{ID: "personal-same", Type: models.TagRuleTypeWord, Pattern: "大模型", CategoryID: "title", Priority: 1, Weight: 1, Enabled: true},
-	}}
-	snapshot, err := CompileSnapshot([]models.TagRuleSet{global, personal}, 20)
+	snapshot, err := CompileSnapshot(global, 20)
 	if err != nil {
 		t.Fatal(err)
 	}
 	tags := snapshot.Generate(Input{Filename: "人工智能与大模型.txt", MIME: "text/plain"})
 	assertRuleTag(t, tags, "人工智能", "global-long")
 	assertNoTag(t, tags, "智能")
-	assertRuleTag(t, tags, "大模型", "personal-same")
+	assertRuleTag(t, tags, "大模型", "priority-same")
 }
 
 func TestNFKCAliasTieBreakStopWordUnionAndLimit(t *testing.T) {
@@ -99,10 +93,9 @@ func TestNFKCAliasTieBreakStopWordUnionAndLimit(t *testing.T) {
 		{ID: "stop-global", Type: models.TagRuleTypeStopWord, Pattern: "完整版", Enabled: true},
 		{ID: "regex", Type: models.TagRuleTypeRegex, TargetField: "basename", Pattern: `(?i)(hevc)`, Replacement: "$1", CategoryID: "codec", Priority: 50, Weight: 1, Enabled: true},
 	}
-	personal := []models.TagRule{{ID: "stop-personal", Type: models.TagRuleTypeStopWord, Pattern: "电影", Enabled: true}}
-	global := models.TagRuleSet{ScopeType: models.TagRuleScopeGlobal, Version: 1, Rules: rules}
-	user := models.TagRuleSet{ScopeType: models.TagRuleScopeUser, Version: 1, Rules: personal}
-	snapshot, err := CompileSnapshot([]models.TagRuleSet{global, user}, 20)
+	rules = append(rules, models.TagRule{ID: "stop-extra", Type: models.TagRuleTypeStopWord, Pattern: "电影", Enabled: true})
+	global := models.TagRuleSet{Version: 1, Rules: rules}
+	snapshot, err := CompileSnapshot(global, 20)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -112,7 +105,7 @@ func TestNFKCAliasTieBreakStopWordUnionAndLimit(t *testing.T) {
 	assertNoTag(t, tags, "完整版")
 	assertNoTag(t, tags, "电影")
 
-	limited, err := CompileSnapshot([]models.TagRuleSet{global}, 1)
+	limited, err := CompileSnapshot(global, 1)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -128,12 +121,43 @@ func TestNFKCIsAppliedBeforeExtensionAndRegexExtraction(t *testing.T) {
 	assertTag(t, tags, "MKV", "file_type")
 }
 
+func TestPreprocessTitleSplitsBoundariesAndReplacesPunctuation(t *testing.T) {
+	actual := preprocessTitle("ＭｙHTTPServer2-最终版（副本）")
+	if actual != "my http server 2 最终版 副本" {
+		t.Fatalf("标题预处理结果错误: %q", actual)
+	}
+}
+
+func TestStrictFilenameTokenFiltering(t *testing.T) {
+	tests := []struct {
+		name  string
+		token SegmentToken
+		want  bool
+	}{
+		{name: "允许中文名词", token: SegmentToken{Text: "人工智能", POS: "n"}, want: true},
+		{name: "拒绝中文形容词", token: SegmentToken{Text: "美丽", POS: "a"}},
+		{name: "允许纯字母词", token: SegmentToken{Text: "AI", POS: "x"}, want: true},
+		{name: "拒绝字母数字噪声", token: SegmentToken{Text: "A1", POS: "n"}},
+		{name: "拒绝纯数字", token: SegmentToken{Text: "2024", POS: "m"}},
+		{name: "拒绝单字符", token: SegmentToken{Text: "A", POS: "x"}},
+		{name: "拒绝常见中文文件名噪声", token: SegmentToken{Text: "文件", POS: "n"}},
+		{name: "拒绝常见英文文件名噪声", token: SegmentToken{Text: "final", POS: "x"}},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			if actual := validFilenameToken(test.token, nil, nil); actual != test.want {
+				t.Fatalf("过滤结果错误: got=%v want=%v token=%+v", actual, test.want, test.token)
+			}
+		})
+	}
+}
+
 func TestGenerateFiltersPureNumericTagsFromEveryAutomaticSource(t *testing.T) {
-	global := models.TagRuleSet{ScopeType: models.TagRuleScopeGlobal, Version: 1, Rules: []models.TagRule{
+	global := models.TagRuleSet{Version: 1, Rules: []models.TagRule{
 		{ID: "word", Type: models.TagRuleTypeWord, Pattern: "１２３", CategoryID: "title", Enabled: true},
 		{ID: "regex", Type: models.TagRuleTypeRegex, TargetField: "basename", Pattern: `(2024)`, Replacement: "$1", CategoryID: "year", Enabled: true},
 	}}
-	snapshot, err := CompileSnapshot([]models.TagRuleSet{global}, 20)
+	snapshot, err := CompileSnapshot(global, 20)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -169,15 +193,13 @@ func TestInvalidUTF8FilenameKeepsOnlyBasicMetadataTags(t *testing.T) {
 }
 
 func TestQueryAppliesAliasAndStopWordsToForcedTerms(t *testing.T) {
-	global := models.TagRuleSet{ScopeType: models.TagRuleScopeGlobal, Version: 1, Rules: []models.TagRule{
+	global := models.TagRuleSet{Version: 1, Rules: []models.TagRule{
 		{ID: "word-a", Type: models.TagRuleTypeWord, Pattern: "人工智能", CategoryID: "title", Enabled: true},
 		{ID: "word-b", Type: models.TagRuleTypeWord, Pattern: "机器学习", CategoryID: "title", Enabled: true},
-	}}
-	personal := models.TagRuleSet{ScopeType: models.TagRuleScopeUser, Version: 1, Rules: []models.TagRule{
 		{ID: "stop", Type: models.TagRuleTypeStopWord, Pattern: "人工智能", Enabled: true},
 		{ID: "alias", Type: models.TagRuleTypeAlias, Pattern: "机器学习", Replacement: "ML", CategoryID: "title", Enabled: true},
 	}}
-	snapshot, err := CompileSnapshot([]models.TagRuleSet{global, personal}, 20)
+	snapshot, err := CompileSnapshot(global, 20)
 	if err != nil {
 		t.Fatal(err)
 	}

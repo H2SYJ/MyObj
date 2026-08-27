@@ -31,7 +31,7 @@ func TestMigrateTaggingSchemaMySQL(t *testing.T) {
 		"tag_rebuild_failure", "tag_rebuild_job", "tag_rule", "tag_rule_set",
 		"file_metadata_state", "file_metadata", "user_file_tag_state",
 		"user_file_tag_exclusion", "user_directory_tag", "user_file_tag", "tag_definition", "tag_category",
-		"user_tag_stat",
+		"user_tag_stat", "user_tag_preference",
 		"group_power", "power", "sys_config", "user_files",
 	} {
 		if err := db.Exec("DROP TABLE IF EXISTS " + table).Error; err != nil {
@@ -75,7 +75,7 @@ func TestMigrateTaggingSchemaMySQL(t *testing.T) {
 		&models.UserFileTag{}:       {"idx_user_tag_file", "idx_uf_source"},
 		&models.UserTagStat{}:       {"idx_user_tag_stat_count"},
 		&models.FileMetadata{}:      {"uk_file_metadata"},
-		&models.TagRuleSet{}:        {"idx_tag_rule_scope"},
+		&models.TagRuleSet{}:        {"idx_tag_rule_status_version"},
 		&models.TagRebuildJob{}:     {"idx_tag_job_schedule"},
 		&models.TagRebuildFailure{}: {"idx_tag_rebuild_failure_status"},
 	} {
@@ -84,6 +84,9 @@ func TestMigrateTaggingSchemaMySQL(t *testing.T) {
 				t.Fatalf("MySQL标签迁移缺少索引%s", index)
 			}
 		}
+	}
+	if db.Migrator().HasTable("user_tag_preference") {
+		t.Fatal("MySQL迁移后不应存在用户标签偏好表")
 	}
 	var cinemaTag models.TagDefinition
 	if err := db.Where("system_code = ?", models.TagSystemCodeCinemaMode).First(&cinemaTag).Error; err != nil {

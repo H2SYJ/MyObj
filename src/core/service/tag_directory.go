@@ -21,14 +21,11 @@ func (s *TagService) GetDirectoryTags(ctx context.Context, userID string, direct
 	}
 	var rows []detailedTagRow
 	err := s.factory.DB().WithContext(ctx).Table("user_directory_tag AS udt").
-		Select("td.id, COALESCE(pref.display_name, td.name) AS name, COALESCE(display.id, tc.id) AS category_id, COALESCE(display.code, tc.code) AS category_code, COALESCE(display.name, tc.name) AS category_name, COALESCE(display.color, tc.color) AS color").
+		Select("td.id, td.name, tc.id AS category_id, tc.code AS category_code, tc.name AS category_name, tc.color").
 		Joins("JOIN tag_definition td ON td.id = udt.tag_id").
 		Joins("JOIN tag_category tc ON tc.id = td.category_id").
-		Joins("LEFT JOIN user_tag_preference pref ON pref.tag_id = td.id AND pref.user_id = ?", userID).
-		Joins("LEFT JOIN tag_category display ON display.id = pref.display_category_id AND display.enabled = ?", true).
 		Where("udt.user_id = ? AND udt.directory_id = ?", userID, directoryID).
-		Where("COALESCE(pref.hidden, ?) = ?", false, false).
-		Order("tc.sort_order ASC, COALESCE(pref.display_name, td.name) ASC, td.id ASC").Scan(&rows).Error
+		Order("tc.sort_order ASC, td.name ASC, td.id ASC").Scan(&rows).Error
 	if err != nil {
 		return nil, err
 	}

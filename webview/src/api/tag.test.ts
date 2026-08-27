@@ -5,8 +5,7 @@ import {
   publishGlobalDraft,
   retryTagRebuildFailure,
   rollbackGlobalRuleSet,
-  saveGlobalDraft,
-  updateTagCloudItem
+  saveGlobalDraft
 } from './tag'
 
 const network = vi.hoisted(() => ({
@@ -64,18 +63,6 @@ describe('标签管理 API', () => {
       tag_ids: 'tag-1,tag-2',
       scope: 'public',
       limit: 2
-    })
-  })
-
-  it('标签云编辑提交显示名称、分类和完整别名列表', async () => {
-    network.put.mockResolvedValue({ code: 200 })
-
-    await updateTagCloudItem('tag-1', '个人名称', 'title', ['别名一', '别名二'])
-
-    expect(network.put).toHaveBeenCalledWith('/file/tag-cloud/tag-1', {
-      display_name: '个人名称',
-      display_category_id: 'title',
-      aliases: ['别名一', '别名二']
     })
   })
 })

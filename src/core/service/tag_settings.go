@@ -82,7 +82,7 @@ func (s *TagService) UpdateTagSettings(ctx context.Context, enabled bool, limit 
 		if runtime == nil || runtime.snapshot == nil {
 			return nil, errors.New("全局标签规则尚未加载")
 		}
-		if _, err := s.CreateRebuildJob(ctx, models.TagRuleScopeGlobal, "", runtime.snapshot.GlobalVersion, "settings"); err != nil {
+		if _, err := s.CreateRebuildJob(ctx, runtime.snapshot.GlobalVersion, "settings"); err != nil {
 			return nil, err
 		}
 	}

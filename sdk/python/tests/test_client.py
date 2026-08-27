@@ -142,10 +142,9 @@ class MyObjClientTest(unittest.TestCase):
         with self.assertRaises(ValueError):
             client.search_files()
 
-    def test_tag_and_dictionary_methods_serialize_utf8_content(self) -> None:
+    def test_tag_method_serializes_utf8_content(self) -> None:
         session = FakeSession(
             [
-                json_response({"code": 200, "message": "ok", "data": {}}),
                 json_response({"code": 200, "message": "ok", "data": {}}),
             ]
         )
@@ -155,23 +154,8 @@ class MyObjClientTest(unittest.TestCase):
             "uf-1",
             add=[{"name": "流浪地球", "category_id": "title", "visibility": "private"}],
         )
-        client.update_tag_dictionary(
-            [
-                {
-                    "type": "word",
-                    "pattern": "流浪地球",
-                    "category_id": "title",
-                    "enabled": True,
-                }
-            ]
-        )
-
         self.assertEqual(session.calls[0]["method"], "PUT")
         self.assertEqual(session.calls[0]["json"]["add"][0]["name"], "流浪地球")
-        self.assertEqual(
-            session.calls[1]["url"], "http://localhost:8080/api/file/tag-dictionary"
-        )
-        self.assertEqual(session.calls[1]["json"]["rules"][0]["pattern"], "流浪地球")
 
     def test_tag_suggestions_and_single_file_retry(self) -> None:
         session = FakeSession(

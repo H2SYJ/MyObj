@@ -31,7 +31,7 @@ func (s *TagService) generateUserFileWithStats(ctx context.Context, userID, ufID
 	if !s.autoEnabled.Load() {
 		return nil, errAutoTagDisabled
 	}
-	snapshot, err := s.snapshotForUser(ctx, userID)
+	snapshot, err := s.snapshot()
 	if err != nil {
 		return nil, err
 	}
@@ -78,20 +78,11 @@ func (s *TagService) generateUserFileWithStats(ctx context.Context, userID, ufID
 		}
 		var activeGlobalVersion int64
 		if err := tx.Model(&models.TagRuleSet{}).
-			Where("scope_type = ? AND scope_id = '' AND status = ?", models.TagRuleScopeGlobal, models.TagRuleSetActive).
+			Where("status = ?", models.TagRuleSetActive).
 			Select("COALESCE(MAX(version), 0)").Scan(&activeGlobalVersion).Error; err != nil {
 			return err
 		}
 		if activeGlobalVersion != snapshot.GlobalVersion {
-			return errStaleTagGeneration
-		}
-		var activeUserVersion int64
-		if err := tx.Model(&models.TagRuleSet{}).
-			Where("scope_type = ? AND scope_id = ? AND status = ?", models.TagRuleScopeUser, userID, models.TagRuleSetActive).
-			Select("COALESCE(MAX(version), 0)").Scan(&activeUserVersion).Error; err != nil {
-			return err
-		}
-		if activeUserVersion != snapshot.UserVersion {
 			return errStaleTagGeneration
 		}
 		var oldAutomaticTagIDs []string
@@ -114,13 +105,6 @@ func (s *TagService) generateUserFileWithStats(ctx context.Context, userID, ufID
 		for _, id := range excluded {
 			excludedSet[id] = struct{}{}
 		}
-		var hidden []string
-		if err := tx.Model(&models.UserTagPreference{}).Where("user_id = ? AND hidden = ?", userID, true).Pluck("tag_id", &hidden).Error; err != nil {
-			return err
-		}
-		for _, id := range hidden {
-			excludedSet[id] = struct{}{}
-		}
 		for _, candidate := range candidates {
 			tag, tagErr := ensureTagDefinition(tx, candidate.Name, candidate.CategoryID)
 			if tagErr != nil {
@@ -141,7 +125,7 @@ func (s *TagService) generateUserFileWithStats(ctx context.Context, userID, ufID
 			}
 		}
 		updates := map[string]interface{}{
-			"global_version": snapshot.GlobalVersion, "user_version": snapshot.UserVersion,
+			"global_version":   snapshot.GlobalVersion,
 			"metadata_version": metadataVersion, "status": status, "last_error": "",
 			"retry_count": 0, "next_retry_at": nil, "run_token": "", "lease_expires_at": nil,
 			"generated_at": now, "updated_at": now,
@@ -166,7 +150,7 @@ func (s *TagService) generateUserFileWithStats(ctx context.Context, userID, ufID
 		return nil, err
 	}
 	logger.LOG.Info("自动标签生成完成", "uf_id", ufID, "global_version", snapshot.GlobalVersion,
-		"user_version", snapshot.UserVersion, "generated", len(candidates), "status", status)
+		"generated", len(candidates), "status", status)
 	return uniqueTagStrings(affectedTagIDs), nil
 }
 
@@ -203,18 +187,4 @@ func (s *TagService) loadMetadata(ctx context.Context, fileID string, encrypted 
 		partial = state.Status == models.TagStatePartial || state.Status == models.TagStateFailed
 	}
 	return metadata, version, partial
-}
-
-func (s *TagService) markTagState(ctx context.Context, ufID, runToken, status, message string, globalVersion, userVersion, metadataVersion int64) error {
-	now := time.Now()
-	updates := map[string]interface{}{
-		"status": status, "last_error": message, "global_version": globalVersion,
-		"user_version": userVersion, "metadata_version": metadataVersion,
-		"run_token": "", "lease_expires_at": nil, "updated_at": now,
-	}
-	query := s.factory.DB().WithContext(ctx).Model(&models.UserFileTagState{}).Where("uf_id = ?", ufID)
-	if runToken != "" {
-		query = query.Where("run_token = ?", runToken)
-	}
-	return query.Updates(updates).Error
 }

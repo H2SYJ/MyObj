@@ -116,7 +116,7 @@ client.delete_files(["用户文件ID一", "用户文件ID二"])
 
 `ensure_directory()` 会按分页结果查找同名目录，未找到时创建后再次查询，因此目录不在第一页时也不会重复创建。可通过 `page_size` 调整每页数量。
 
-## 文件标签和个人词典
+## 文件标签
 
 ```python
 # 读取标签、获取建议，并在失败时重新生成自动标签
@@ -137,13 +137,6 @@ client.batch_update_tags(
     add=[{"name": "待整理", "category_id": "other", "visibility": "private"}],
 )
 
-# 预览并热更新个人自定义词、停用词和别名
-rules = [
-    {"type": "word", "pattern": "流浪地球", "category_id": "title", "enabled": True},
-    {"type": "alias", "pattern": "WEB DL", "replacement": "WEB-DL", "category_id": "source", "enabled": True},
-]
-preview = client.preview_tag_dictionary(["流浪地球2.2023.WEB DL.mkv"], rules)
-client.update_tag_dictionary(rules)
 ```
 
 `list_files()`、`search_files()`、`search_public_files()` 和 `list_public_files()` 都支持 `tag_ids` 与 `tag_mode="all"|"any"`。手工标签默认私有，只有明确设为 `public` 才会随公开文件出现在文件广场。

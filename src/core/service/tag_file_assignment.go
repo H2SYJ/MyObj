@@ -50,14 +50,11 @@ func (s *TagService) GetFileTags(ctx context.Context, userID, ufID string) (*res
 	}
 	var rows []detailedTagRow
 	err := s.factory.DB().WithContext(ctx).Table("user_file_tag AS uft").
-		Select("td.id, COALESCE(pref.display_name, td.name) AS name, COALESCE(display.id, tc.id) AS category_id, COALESCE(display.code, tc.code) AS category_code, COALESCE(display.name, tc.name) AS category_name, COALESCE(display.color, tc.color) AS color, uft.source_type, uft.visibility").
+		Select("td.id, td.name, tc.id AS category_id, tc.code AS category_code, tc.name AS category_name, tc.color, uft.source_type, uft.visibility").
 		Joins("JOIN tag_definition td ON td.id = uft.tag_id").
 		Joins("JOIN tag_category tc ON tc.id = td.category_id").
-		Joins("LEFT JOIN user_tag_preference pref ON pref.tag_id = td.id AND pref.user_id = ?", userID).
-		Joins("LEFT JOIN tag_category display ON display.id = pref.display_category_id AND display.enabled = ?", true).
 		Where("uft.user_id = ? AND uft.uf_id = ?", userID, ufID).
-		Where("COALESCE(pref.hidden, ?) = ?", false, false).
-		Order("tc.sort_order ASC, COALESCE(pref.display_name, td.name) ASC, td.id ASC").Scan(&rows).Error
+		Order("tc.sort_order ASC, td.name ASC, td.id ASC").Scan(&rows).Error
 	if err != nil {
 		return nil, err
 	}
@@ -88,13 +85,10 @@ func (s *TagService) GetFileTags(ctx context.Context, userID, ufID string) (*res
 
 	var suppressed []detailedTagRow
 	if err := s.factory.DB().WithContext(ctx).Table("user_file_tag_exclusion AS e").
-		Select("td.id, COALESCE(pref.display_name, td.name) AS name, COALESCE(display.id, tc.id) AS category_id, COALESCE(display.code, tc.code) AS category_code, COALESCE(display.name, tc.name) AS category_name, COALESCE(display.color, tc.color) AS color").
+		Select("td.id, td.name, tc.id AS category_id, tc.code AS category_code, tc.name AS category_name, tc.color").
 		Joins("JOIN tag_definition td ON td.id = e.tag_id").
 		Joins("JOIN tag_category tc ON tc.id = td.category_id").
-		Joins("LEFT JOIN user_tag_preference pref ON pref.tag_id = td.id AND pref.user_id = ?", userID).
-		Joins("LEFT JOIN tag_category display ON display.id = pref.display_category_id AND display.enabled = ?", true).
 		Where("e.user_id = ? AND e.uf_id = ?", userID, ufID).
-		Where("COALESCE(pref.hidden, ?) = ?", false, false).
 		Scan(&suppressed).Error; err != nil {
 		return nil, err
 	}

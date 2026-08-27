@@ -5,12 +5,9 @@ import { sortTagCloudItems, tagCloudFontSize, tagCloudSizeClass } from './tagClo
 const item = (id: string, name: string, fileCount: number): TagCloudItem => ({
   id,
   name,
-  base_name: name,
   file_count: fileCount,
-  hidden: false,
   system: false,
-  category: { id: 'other', code: 'other', name: '其他', color: '#409eff' },
-  base_category: { id: 'other', code: 'other', name: '其他', color: '#409eff' }
+  category: { id: 'other', code: 'other', name: '其他', color: '#409eff' }
 })
 
 describe('标签云视觉权重', () => {

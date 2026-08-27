@@ -82,20 +82,6 @@ func needsFileInfoJoin(query repository.UserFileQuery, includeSortJoin bool) boo
 	return includeSortJoin && query.SortBy == "size"
 }
 
-func tagPreferenceSQL(viewerUserID string) string {
-	if viewerUserID == "" {
-		return ""
-	}
-	return " AND NOT EXISTS (SELECT 1 FROM user_tag_preference pref WHERE pref.user_id = ? AND pref.tag_id = uft.tag_id AND pref.hidden = ?)"
-}
-
-func tagPreferenceArgs(viewerUserID string) []interface{} {
-	if viewerUserID == "" {
-		return nil
-	}
-	return []interface{}{viewerUserID, true}
-}
-
 func tagExistsSQL(publicOnly, multiple bool, viewerUserID string) string {
 	operator := "= ?"
 	if multiple {
@@ -106,7 +92,7 @@ func tagExistsSQL(publicOnly, multiple bool, viewerUserID string) string {
 		visibility = " AND (uft.source_type <> ? OR uft.visibility = ?)"
 	}
 	return "EXISTS (SELECT 1 FROM user_file_tag uft WHERE uft.user_id = user_files.user_id AND uft.uf_id = user_files.uf_id AND uft.tag_id " + operator + visibility +
-		" AND NOT EXISTS (SELECT 1 FROM user_file_tag_exclusion e WHERE e.user_id = uft.user_id AND e.uf_id = uft.uf_id AND e.tag_id = uft.tag_id)" + tagPreferenceSQL(viewerUserID) + ")"
+		" AND NOT EXISTS (SELECT 1 FROM user_file_tag_exclusion e WHERE e.user_id = uft.user_id AND e.uf_id = uft.uf_id AND e.tag_id = uft.tag_id))"
 }
 
 func tagExistsArgs(publicOnly bool, tagIDs interface{}, viewerUserID string) []interface{} {
@@ -114,7 +100,6 @@ func tagExistsArgs(publicOnly bool, tagIDs interface{}, viewerUserID string) []i
 	if publicOnly {
 		args = append(args, models.TagSourceManual, models.TagVisibilityPublic)
 	}
-	args = append(args, tagPreferenceArgs(viewerUserID)...)
 	return args
 }
 

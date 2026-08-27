@@ -14,6 +14,6 @@ declare module 'vue-router' {
     mobileParent?: string
     mobileSearch?: boolean
     hideMobileNav?: boolean
-    settingSection?: 'profile' | 'password' | 'appearance' | 'api-key' | 'tag-dictionary'
+    settingSection?: 'profile' | 'password' | 'appearance' | 'api-key'
   }
 }

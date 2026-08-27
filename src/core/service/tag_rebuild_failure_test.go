@@ -150,7 +150,7 @@ func TestRetryRebuildJobClearsOldFailureDetails(t *testing.T) {
 	service, db := newTagFailureTestService(t, &models.TagRebuildJob{}, &models.TagRebuildFailure{})
 	now := time.Now()
 	job := models.TagRebuildJob{
-		ID: "job-1", ScopeType: models.TagRuleScopeGlobal, TargetVersion: 2,
+		ID: "job-1", TargetVersion: 2,
 		Status: "completed_with_errors", Total: 1, Processed: 1, Failed: 1,
 		CreatedAt: now, UpdatedAt: now,
 	}
@@ -186,7 +186,7 @@ func TestCancelRebuildJobRejectsMissingOrFinishedJob(t *testing.T) {
 	service, db := newTagFailureTestService(t, &models.TagRebuildJob{})
 	now := time.Now()
 	job := models.TagRebuildJob{
-		ID: "job-pending", ScopeType: models.TagRuleScopeGlobal, TargetVersion: 2,
+		ID: "job-pending", TargetVersion: 2,
 		Status: "pending", CreatedAt: now, UpdatedAt: now,
 	}
 	if err := db.Create(&job).Error; err != nil {
@@ -213,7 +213,7 @@ func TestRebuildFailuresRequiresExistingJob(t *testing.T) {
 	service, db := newTagFailureTestService(t, &models.TagRebuildJob{}, &models.TagRebuildFailure{})
 	now := time.Now()
 	job := models.TagRebuildJob{
-		ID: "job-1", ScopeType: models.TagRuleScopeGlobal, TargetVersion: 2,
+		ID: "job-1", TargetVersion: 2,
 		Status: "completed_with_errors", CreatedAt: now, UpdatedAt: now,
 	}
 	if err := db.Create(&job).Error; err != nil {
@@ -257,7 +257,7 @@ func TestDisabledAutoTagWorkCanResumeWithoutLosingProgress(t *testing.T) {
 	}
 
 	job := models.TagRebuildJob{
-		ID: "job-1", ScopeType: models.TagRuleScopeGlobal, TargetVersion: 2,
+		ID: "job-1", TargetVersion: 2,
 		Status: "running", Cursor: "uf-100", Processed: 100, Succeeded: 99, Failed: 1,
 		RunToken: "job-token", LeaseExpires: &lease, StartedAt: &now, CreatedAt: now, UpdatedAt: now,
 	}
@@ -285,7 +285,7 @@ func TestRebuildGuardRejectsCancelledOrSupersededWorker(t *testing.T) {
 	_, db := newTagFailureTestService(t, &models.TagRebuildJob{})
 	now := time.Now()
 	job := models.TagRebuildJob{
-		ID: "job-1", ScopeType: models.TagRuleScopeGlobal, TargetVersion: 2,
+		ID: "job-1", TargetVersion: 2,
 		Status: "running", RunToken: "current-token", CreatedAt: now, UpdatedAt: now,
 	}
 	if err := db.Create(&job).Error; err != nil {
@@ -336,7 +336,7 @@ func TestClaimRebuildStateInvalidatesOlderFileWorker(t *testing.T) {
 func TestTagSuggestionsIncludeOnlyOwnedOrPubliclyAllowedTags(t *testing.T) {
 	service, db := newTagFailureTestService(t,
 		&models.TagCategory{}, &models.TagDefinition{}, &tagFailureTestUserFile{},
-		&models.UserFileTag{}, &models.UserFileTagExclusion{}, &models.UserTagPreference{},
+		&models.UserFileTag{}, &models.UserFileTagExclusion{},
 	)
 	now := time.Now()
 	if err := db.Create(&models.TagCategory{ID: "other", Code: "other", Name: "其他", Color: "#999999", Enabled: true, CreatedAt: now, UpdatedAt: now}).Error; err != nil {

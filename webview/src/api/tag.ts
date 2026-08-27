@@ -57,8 +57,6 @@ export interface TagRuleInput {
 
 export interface TagRuleSet {
   id: string
-  scope_type: 'global' | 'user'
-  scope_id: string
   version: number
   revision: number
   status: 'draft' | 'active' | 'archived'
@@ -75,8 +73,6 @@ export interface TagPreviewItem {
 
 export interface TagRebuildJob {
   id: string
-  scope_type: string
-  scope_id: string
   target_version: number
   status: string
   total: number
@@ -121,36 +117,17 @@ export interface AdminTagSettings {
 export interface TagCloudItem {
   id: string
   name: string
-  base_name: string
   category: TagCategory
-  base_category: TagCategory
   file_count: number
-  hidden: boolean
   system: boolean
   system_code?: string
 }
 
 export interface TagCloudData {
   tags: TagCloudItem[]
-  hidden: TagCloudItem[]
-}
-
-export interface TagCloudEditorData {
-  tag: TagCloudItem
-  aliases: string[]
 }
 
 export const getTagCloud = () => get<ApiResponse<TagCloudData>>(API_ENDPOINTS.FILE.TAG_CLOUD)
-export const getTagCloudItem = (tagId: string) =>
-  get<ApiResponse<TagCloudEditorData>>(`${API_ENDPOINTS.FILE.TAG_CLOUD}/${tagId}`)
-export const updateTagCloudItem = (tagId: string, displayName: string, displayCategoryId: string, aliases: string[]) =>
-  put<ApiResponse<{ editor: TagCloudEditorData; rebuild_job?: TagRebuildJob }>>(
-    `${API_ENDPOINTS.FILE.TAG_CLOUD}/${tagId}`,
-    { display_name: displayName, display_category_id: displayCategoryId, aliases }
-  )
-export const hideTagCloudItem = (tagId: string) => del<ApiResponse<null>>(`${API_ENDPOINTS.FILE.TAG_CLOUD}/${tagId}`)
-export const restoreTagCloudItem = (tagId: string) =>
-  post<ApiResponse<{ rebuild_job?: TagRebuildJob }>>(`${API_ENDPOINTS.FILE.TAG_CLOUD}/${tagId}/restore`)
 
 export const getFileTags = (fileId: string) => get<ApiResponse<FileTagsData>>(`${API_ENDPOINTS.FILE.TAGS}/${fileId}`)
 
@@ -204,14 +181,6 @@ export const updateDirectoryTags = (directoryId: number, add: ManualTagInput[], 
     add,
     remove_tag_ids: removeTagIds
   })
-
-export const getPersonalTagDictionary = () => get<ApiResponse<TagRuleSet>>(API_ENDPOINTS.FILE.TAG_DICTIONARY)
-
-export const updatePersonalTagDictionary = (rules: TagRuleInput[]) =>
-  put<ApiResponse<{ rule_set: TagRuleSet; rebuild_job: TagRebuildJob }>>(API_ENDPOINTS.FILE.TAG_DICTIONARY, { rules })
-
-export const previewPersonalTagDictionary = (samples: string[], rules: TagRuleInput[]) =>
-  post<ApiResponse<TagPreviewItem[]>>(`${API_ENDPOINTS.FILE.TAG_DICTIONARY}/preview`, { samples, rules })
 
 const adminTag = API_ENDPOINTS.ADMIN.TAG
 

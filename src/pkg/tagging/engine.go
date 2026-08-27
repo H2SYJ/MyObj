@@ -23,28 +23,37 @@ const (
 
 var separatorPattern = regexp.MustCompile(`[\s._\-\[\](){}【】（）]+`)
 
+var (
+	acronymBoundaryPattern    = regexp.MustCompile(`([\p{Lu}]+)([\p{Lu}][\p{Ll}])`)
+	lowerUpperBoundaryPattern = regexp.MustCompile(`([\p{Ll}\p{N}])([\p{Lu}])`)
+	letterDigitPattern        = regexp.MustCompile(`([\p{L}])([\p{N}])`)
+	digitLetterPattern        = regexp.MustCompile(`([\p{N}])([\p{L}])`)
+)
+
+var allowedFilenamePOS = map[string]struct{}{
+	"n": {}, "v": {}, "vn": {}, "nr": {}, "ns": {}, "nt": {}, "nz": {},
+}
+
+var defaultFilenameStopWords = map[string]struct{}{
+	"一个": {}, "进行": {}, "相关": {}, "文件": {}, "文档": {}, "新建": {}, "未命名": {},
+	"最终": {}, "最终版": {}, "副本": {}, "草稿": {}, "备份": {}, "扫描": {}, "下载": {},
+	"copy": {}, "draft": {}, "final": {}, "backup": {}, "scan": {}, "temp": {}, "tmp": {},
+}
+
 // Tokenizer 隔离具体分词实现，便于后续替换或增加语言模型。
 type Tokenizer interface {
 	Segment(text string) []string
+	SegmentWithPOS(text string) []SegmentToken
+	IsStopWord(text string) bool
+}
+
+type SegmentToken struct {
+	Text string
+	POS  string
 }
 
 type GSETokenizer struct {
 	segmenter *gse.Segmenter
-}
-
-func NewGSETokenizer(customWords []string) (*GSETokenizer, error) {
-	segmenter, err := gse.NewEmbed("zh")
-	if err != nil {
-		return nil, fmt.Errorf("加载GSE内置词典失败: %w", err)
-	}
-	for _, word := range customWords {
-		if word = strings.TrimSpace(word); word != "" {
-			if err := segmenter.AddTokenForce(word, 100000); err != nil {
-				return nil, fmt.Errorf("加载自定义词%s失败: %w", word, err)
-			}
-		}
-	}
-	return &GSETokenizer{segmenter: &segmenter}, nil
 }
 
 func (t *GSETokenizer) Segment(text string) []string {
@@ -52,6 +61,22 @@ func (t *GSETokenizer) Segment(text string) []string {
 		return nil
 	}
 	return t.segmenter.Cut(text, true)
+}
+
+func (t *GSETokenizer) SegmentWithPOS(text string) []SegmentToken {
+	if t == nil || t.segmenter == nil || strings.TrimSpace(text) == "" {
+		return nil
+	}
+	pairs := t.segmenter.Pos(text, false)
+	result := make([]SegmentToken, 0, len(pairs))
+	for _, pair := range pairs {
+		result = append(result, SegmentToken{Text: pair.Text, POS: pair.Pos})
+	}
+	return result
+}
+
+func (t *GSETokenizer) IsStopWord(text string) bool {
+	return t != nil && t.segmenter != nil && t.segmenter.IsStop(text)
 }
 
 type Input struct {
@@ -189,7 +214,6 @@ func (m *phraseMatcher) protect(text string) ([]forcedTerm, string) {
 // Snapshot 是可并发只读的完整规则快照。
 type Snapshot struct {
 	GlobalVersion int64
-	UserVersion   int64
 	Limit         int
 	tokenizer     Tokenizer
 	regexRules    []compiledRegexRule
@@ -198,76 +222,66 @@ type Snapshot struct {
 	matcher       *phraseMatcher
 }
 
-func CompileSnapshot(ruleSets []models.TagRuleSet, limit int) (*Snapshot, error) {
+func CompileSnapshot(ruleSet models.TagRuleSet, limit int) (*Snapshot, error) {
 	if limit < 1 || limit > 100 {
 		limit = DefaultAutoTagLimit
 	}
 	snapshot := &Snapshot{
-		Limit: limit, aliases: map[string]aliasTarget{}, stopWords: map[string]struct{}{},
+		GlobalVersion: ruleSet.Version, Limit: limit,
+		aliases: map[string]aliasTarget{}, stopWords: map[string]struct{}{},
 	}
 	forced := make([]forcedTerm, 0)
-	customWords := make([]string, 0)
-	for _, ruleSet := range ruleSets {
-		scopeBoost := 0
-		if ruleSet.ScopeType == models.TagRuleScopeUser {
-			snapshot.UserVersion = max(snapshot.UserVersion, ruleSet.Version)
-			scopeBoost = 100000
-		} else {
-			snapshot.GlobalVersion = max(snapshot.GlobalVersion, ruleSet.Version)
+	for _, rule := range ruleSet.Rules {
+		if !rule.Enabled {
+			continue
 		}
-		for _, rule := range ruleSet.Rules {
-			if !rule.Enabled {
-				continue
+		priority := rule.Priority
+		categoryID := rule.CategoryID
+		if categoryID == "" {
+			categoryID = "other"
+		}
+		switch rule.Type {
+		case models.TagRuleTypeWord:
+			name := displayTagName(rule.Pattern)
+			normalized := Normalize(name)
+			if normalized == "" {
+				return nil, fmt.Errorf("自定义词不能为空: %s", rule.ID)
 			}
-			priority := scopeBoost + rule.Priority
-			categoryID := rule.CategoryID
-			if categoryID == "" {
-				categoryID = "other"
+			forced = append(forced, forcedTerm{
+				id: rule.ID, name: name, normalized: normalized, categoryID: categoryID,
+				priority: 50000 + priority, weight: rule.Weight,
+			})
+		case models.TagRuleTypeStopWord:
+			word := Normalize(rule.Pattern)
+			if word != "" {
+				snapshot.stopWords[word] = struct{}{}
 			}
-			switch rule.Type {
-			case models.TagRuleTypeWord:
-				name := displayTagName(rule.Pattern)
-				normalized := Normalize(name)
-				if normalized == "" {
-					return nil, fmt.Errorf("自定义词不能为空: %s", rule.ID)
-				}
-				customWords = append(customWords, name)
-				forced = append(forced, forcedTerm{
-					id: rule.ID, name: name, normalized: normalized, categoryID: categoryID,
-					priority: 50000 + priority, weight: rule.Weight,
-				})
-			case models.TagRuleTypeStopWord:
-				word := Normalize(rule.Pattern)
-				if word != "" {
-					snapshot.stopWords[word] = struct{}{}
-				}
-			case models.TagRuleTypeAlias:
-				pattern, replacement := Normalize(rule.Pattern), displayTagName(rule.Replacement)
-				if pattern == "" || replacement == "" {
-					return nil, fmt.Errorf("别名规则必须包含原词和目标词: %s", rule.ID)
-				}
-				current, exists := snapshot.aliases[pattern]
-				if !exists || priority > current.priority || (priority == current.priority && rule.ID < current.id) {
-					snapshot.aliases[pattern] = aliasTarget{id: rule.ID, name: replacement, categoryID: categoryID, priority: priority}
-				}
-			case models.TagRuleTypeRegex:
-				if len(rule.Pattern) > 512 {
-					return nil, fmt.Errorf("正则规则超过512字符: %s", rule.ID)
-				}
-				expression, err := regexp.Compile(rule.Pattern)
-				if err != nil {
-					return nil, fmt.Errorf("正则规则%s无效: %w", rule.ID, err)
-				}
-				snapshot.regexRules = append(snapshot.regexRules, compiledRegexRule{
-					id: rule.ID, targetField: rule.TargetField, replacement: rule.Replacement,
-					categoryID: categoryID, priority: priority, weight: rule.Weight, expression: expression,
-				})
-			default:
-				return nil, fmt.Errorf("不支持的标签规则类型: %s", rule.Type)
+		case models.TagRuleTypeAlias:
+			pattern, replacement := Normalize(rule.Pattern), displayTagName(rule.Replacement)
+			if pattern == "" || replacement == "" {
+				return nil, fmt.Errorf("别名规则必须包含原词和目标词: %s", rule.ID)
 			}
+			current, exists := snapshot.aliases[pattern]
+			if !exists || priority > current.priority || (priority == current.priority && rule.ID < current.id) {
+				snapshot.aliases[pattern] = aliasTarget{id: rule.ID, name: replacement, categoryID: categoryID, priority: priority}
+			}
+		case models.TagRuleTypeRegex:
+			if len(rule.Pattern) > 512 {
+				return nil, fmt.Errorf("正则规则超过512字符: %s", rule.ID)
+			}
+			expression, err := regexp.Compile(rule.Pattern)
+			if err != nil {
+				return nil, fmt.Errorf("正则规则%s无效: %w", rule.ID, err)
+			}
+			snapshot.regexRules = append(snapshot.regexRules, compiledRegexRule{
+				id: rule.ID, targetField: rule.TargetField, replacement: rule.Replacement,
+				categoryID: categoryID, priority: priority, weight: rule.Weight, expression: expression,
+			})
+		default:
+			return nil, fmt.Errorf("不支持的标签规则类型: %s", rule.Type)
 		}
 	}
-	tokenizer, err := NewGSETokenizer(customWords)
+	tokenizer, err := sharedGSETokenizer()
 	if err != nil {
 		return nil, err
 	}
@@ -294,7 +308,7 @@ func (s *Snapshot) Generate(input Input) []Candidate {
 	}
 	extension := strings.TrimPrefix(filepath.Ext(filename), ".")
 	basename := strings.TrimSuffix(filename, filepath.Ext(filename))
-	normalizedBase := Normalize(separatorPattern.ReplaceAllString(basename, " "))
+	normalizedBase := preprocessTitle(basename)
 	normalizedInput := input
 	normalizedInput.Filename = Normalize(filename)
 	normalizedInput.MIME = Normalize(input.MIME)
@@ -328,10 +342,10 @@ func (s *Snapshot) Generate(input Input) []Candidate {
 		})
 	}
 
-	for _, word := range s.tokenizer.Segment(remainingBase) {
-		if validSegment(word) {
+	for _, token := range s.tokenizer.SegmentWithPOS(remainingBase) {
+		if validFilenameToken(token, s.tokenizer, s.stopWords) {
 			candidates = append(candidates, Candidate{
-				Name: word, CategoryID: "title", SourceType: models.TagSourceFilename,
+				Name: token.Text, CategoryID: "title", SourceType: models.TagSourceFilename,
 				SourceKey: "gse", Priority: 20, Weight: 1,
 			})
 		}
@@ -598,4 +612,51 @@ func validSegment(value string) bool {
 		}
 	}
 	return false
+}
+
+func preprocessTitle(value string) string {
+	value = norm.NFKC.String(value)
+	value = acronymBoundaryPattern.ReplaceAllString(value, `${1} ${2}`)
+	value = lowerUpperBoundaryPattern.ReplaceAllString(value, `${1} ${2}`)
+	value = letterDigitPattern.ReplaceAllString(value, `${1} ${2}`)
+	value = digitLetterPattern.ReplaceAllString(value, `${1} ${2}`)
+	value = strings.Map(func(char rune) rune {
+		if unicode.IsSpace(char) || unicode.IsPunct(char) || unicode.IsSymbol(char) || unicode.IsControl(char) {
+			return ' '
+		}
+		return char
+	}, value)
+	return Normalize(value)
+}
+
+func validFilenameToken(token SegmentToken, tokenizer Tokenizer, stopWords map[string]struct{}) bool {
+	word := displayTagName(token.Text)
+	normalized := Normalize(word)
+	if !ValidTagName(word) || IsPureNumericTagName(word) || utf8.RuneCountInString(word) < 2 {
+		return false
+	}
+	if _, stopped := defaultFilenameStopWords[normalized]; stopped {
+		return false
+	}
+	if _, stopped := stopWords[normalized]; stopped {
+		return false
+	}
+	if tokenizer != nil && (tokenizer.IsStopWord(word) || tokenizer.IsStopWord(normalized)) {
+		return false
+	}
+	hasHan := false
+	allLetters := true
+	for _, char := range word {
+		if unicode.Is(unicode.Han, char) {
+			hasHan = true
+		}
+		if !unicode.IsLetter(char) {
+			allLetters = false
+		}
+	}
+	if hasHan {
+		_, allowed := allowedFilenamePOS[strings.ToLower(strings.TrimSpace(token.POS))]
+		return allowed
+	}
+	return allLetters
 }

@@ -1483,6 +1483,143 @@ const docTemplate = `{
                 }
             }
         },
+        "/file/edit/load": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "加载文本文件并解码为 UTF-8，响应头携带 X-File-Encoding（原编码）与 X-File-Hash（明文 blake3，即保存时的 base_hash）",
+                "produces": [
+                    "text/plain"
+                ],
+                "tags": [
+                    "文件管理"
+                ],
+                "summary": "加载可编辑文本内容",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "用户文件ID（UserFiles的UfID）",
+                        "name": "file_id",
+                        "in": "query",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "文件解密密码（加密文件必需）",
+                        "name": "file_password",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "UTF-8 解码后的文本内容",
+                        "schema": {
+                            "type": "string"
+                        },
+                        "headers": {
+                            "X-File-Encoding": {
+                                "type": "string",
+                                "description": "原文件编码"
+                            },
+                            "X-File-Hash": {
+                                "type": "string",
+                                "description": "明文文件 blake3 哈希（base_hash）"
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "参数错误或文件不可编辑",
+                        "schema": {
+                            "$ref": "#/definitions/models.JsonResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "无权限",
+                        "schema": {
+                            "$ref": "#/definitions/models.JsonResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "加载失败",
+                        "schema": {
+                            "$ref": "#/definitions/models.JsonResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/file/edit/save": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "保存文本文件的新内容（按原编码写回；加密文件需提供密码；base_hash 不匹配返回 409）",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "文件管理"
+                ],
+                "summary": "在线编辑文本文件",
+                "parameters": [
+                    {
+                        "description": "编辑请求",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/request.EditFileContentRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "保存结果",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/models.JsonResponse"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "$ref": "#/definitions/response.EditFileContentResponse"
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    },
+                    "400": {
+                        "description": "参数错误",
+                        "schema": {
+                            "$ref": "#/definitions/models.JsonResponse"
+                        }
+                    },
+                    "409": {
+                        "description": "文件内容已被他人修改",
+                        "schema": {
+                            "$ref": "#/definitions/models.JsonResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "保存失败",
+                        "schema": {
+                            "$ref": "#/definitions/models.JsonResponse"
+                        }
+                    }
+                }
+            }
+        },
         "/file/list": {
             "get": {
                 "security": [
@@ -2181,20 +2318,21 @@ const docTemplate = `{
                 }
             }
         },
-        "/file/tag-dictionary": {
+        "/file/tag-cloud": {
             "get": {
                 "security": [
                     {
                         "BearerAuth": []
                     }
                 ],
+                "description": "返回当前用户在用标签的统一名称、分类和文件数量",
                 "produces": [
                     "application/json"
                 ],
                 "tags": [
                     "文件标签"
                 ],
-                "summary": "获取个人分词词典",
+                "summary": "获取只读标签云",
                 "responses": {
                     "200": {
                         "description": "OK",
@@ -2207,103 +2345,7 @@ const docTemplate = `{
                                     "type": "object",
                                     "properties": {
                                         "data": {
-                                            "$ref": "#/definitions/models.TagRuleSet"
-                                        }
-                                    }
-                                }
-                            ]
-                        }
-                    }
-                }
-            },
-            "put": {
-                "security": [
-                    {
-                        "BearerAuth": []
-                    }
-                ],
-                "description": "保存个人词语、停用词和别名，并创建用户范围历史重建任务",
-                "consumes": [
-                    "application/json"
-                ],
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "文件标签"
-                ],
-                "summary": "热更新个人分词词典",
-                "parameters": [
-                    {
-                        "description": "个人词典",
-                        "name": "request",
-                        "in": "body",
-                        "required": true,
-                        "schema": {
-                            "$ref": "#/definitions/request.UpdatePersonalDictionaryRequest"
-                        }
-                    }
-                ],
-                "responses": {
-                    "200": {
-                        "description": "OK",
-                        "schema": {
-                            "$ref": "#/definitions/models.JsonResponse"
-                        }
-                    },
-                    "400": {
-                        "description": "Bad Request",
-                        "schema": {
-                            "$ref": "#/definitions/models.JsonResponse"
-                        }
-                    }
-                }
-            }
-        },
-        "/file/tag-dictionary/preview": {
-            "post": {
-                "security": [
-                    {
-                        "BearerAuth": []
-                    }
-                ],
-                "consumes": [
-                    "application/json"
-                ],
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "文件标签"
-                ],
-                "summary": "预览个人分词词典",
-                "parameters": [
-                    {
-                        "description": "文件名样例和候选规则",
-                        "name": "request",
-                        "in": "body",
-                        "required": true,
-                        "schema": {
-                            "$ref": "#/definitions/request.TagPreviewRequest"
-                        }
-                    }
-                ],
-                "responses": {
-                    "200": {
-                        "description": "OK",
-                        "schema": {
-                            "allOf": [
-                                {
-                                    "$ref": "#/definitions/models.JsonResponse"
-                                },
-                                {
-                                    "type": "object",
-                                    "properties": {
-                                        "data": {
-                                            "type": "array",
-                                            "items": {
-                                                "$ref": "#/definitions/response.TagPreviewItem"
-                                            }
+                                            "$ref": "#/definitions/response.TagCloudResponse"
                                         }
                                     }
                                 }
@@ -4250,12 +4292,6 @@ const docTemplate = `{
                 "requested_by": {
                     "type": "string"
                 },
-                "scope_id": {
-                    "type": "string"
-                },
-                "scope_type": {
-                    "type": "string"
-                },
                 "started_at": {
                     "type": "string"
                 },
@@ -4343,12 +4379,6 @@ const docTemplate = `{
                     "items": {
                         "$ref": "#/definitions/models.TagRule"
                     }
-                },
-                "scope_id": {
-                    "type": "string"
-                },
-                "scope_type": {
-                    "type": "string"
                 },
                 "status": {
                     "type": "string"
@@ -4524,6 +4554,31 @@ const docTemplate = `{
             "properties": {
                 "task_id": {
                     "description": "任务ID（预检ID）",
+                    "type": "string"
+                }
+            }
+        },
+        "request.EditFileContentRequest": {
+            "type": "object",
+            "required": [
+                "content",
+                "file_id"
+            ],
+            "properties": {
+                "base_hash": {
+                    "description": "编辑器加载时的文件哈希，用于并发防覆盖（可选，传了才校验）",
+                    "type": "string"
+                },
+                "content": {
+                    "description": "编辑后的文本内容",
+                    "type": "string"
+                },
+                "file_id": {
+                    "description": "用户文件ID（UserFiles的UfID）",
+                    "type": "string"
+                },
+                "file_password": {
+                    "description": "文件解密密码（加密文件必填）",
                     "type": "string"
                 }
             }
@@ -4806,17 +4861,6 @@ const docTemplate = `{
                 }
             }
         },
-        "request.UpdatePersonalDictionaryRequest": {
-            "type": "object",
-            "properties": {
-                "rules": {
-                    "type": "array",
-                    "items": {
-                        "$ref": "#/definitions/request.TagRuleInput"
-                    }
-                }
-            }
-        },
         "request.UpdateTagExclusionsRequest": {
             "type": "object",
             "properties": {
@@ -5002,6 +5046,9 @@ const docTemplate = `{
                 "name": {
                     "type": "string"
                 },
+                "system_code": {
+                    "type": "string"
+                },
                 "visibility": {
                     "type": "string"
                 }
@@ -5027,6 +5074,27 @@ const docTemplate = `{
                 },
                 "updated_at": {
                     "type": "string"
+                }
+            }
+        },
+        "response.EditFileContentResponse": {
+            "type": "object",
+            "properties": {
+                "encoding": {
+                    "description": "检测到的原文件编码（utf-8 / utf-8-bom / utf-16le / utf-16be / gb18030）",
+                    "type": "string"
+                },
+                "file_hash": {
+                    "description": "新明文哈希（blake3 hex，可作为下一次编辑的 base_hash）",
+                    "type": "string"
+                },
+                "file_id": {
+                    "description": "用户文件ID（UserFiles的UfID）",
+                    "type": "string"
+                },
+                "size": {
+                    "description": "新文件大小（明文大小，字节）",
+                    "type": "integer"
                 }
             }
         },
@@ -5148,6 +5216,9 @@ const docTemplate = `{
                 "absolute_path": {
                     "type": "string"
                 },
+                "cinema_mode": {
+                    "type": "boolean"
+                },
                 "created_at": {
                     "type": "string"
                 },
@@ -5159,6 +5230,12 @@ const docTemplate = `{
                 },
                 "parent_id": {
                     "type": "integer"
+                },
+                "tags": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/response.CompactTagView"
+                    }
                 }
             }
         },
@@ -5220,6 +5297,40 @@ const docTemplate = `{
                 },
                 "name": {
                     "type": "string"
+                }
+            }
+        },
+        "response.TagCloudItem": {
+            "type": "object",
+            "properties": {
+                "category": {
+                    "$ref": "#/definitions/response.TagCategoryView"
+                },
+                "file_count": {
+                    "type": "integer"
+                },
+                "id": {
+                    "type": "string"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "system": {
+                    "type": "boolean"
+                },
+                "system_code": {
+                    "type": "string"
+                }
+            }
+        },
+        "response.TagCloudResponse": {
+            "type": "object",
+            "properties": {
+                "tags": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/response.TagCloudItem"
+                    }
                 }
             }
         },

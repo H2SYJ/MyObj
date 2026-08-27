@@ -19,12 +19,6 @@ var (
 	errAutoTagDisabled    = errors.New("自动标签已关闭")
 )
 
-type cachedUserSnapshot struct {
-	globalVersion int64
-	userVersion   int64
-	snapshot      *tagging.Snapshot
-}
-
 type globalTagRuntime struct {
 	ruleSet  *models.TagRuleSet
 	snapshot *tagging.Snapshot
@@ -46,8 +40,6 @@ type TagService struct {
 	autoLimit        atomic.Int64
 	runtimeReady     chan struct{}
 	runtimeReadyOnce sync.Once
-	userCacheMu      sync.RWMutex
-	userCache        map[string]cachedUserSnapshot
 	pendingWake      chan struct{}
 	rebuildWake      chan struct{}
 	metadataWake     chan struct{}
@@ -63,7 +55,7 @@ type TagService struct {
 func NewTagService(factory *impl.RepositoryFactory) (*TagService, error) {
 	ctx, cancel := context.WithCancel(context.Background())
 	service := &TagService{
-		factory: factory, userCache: make(map[string]cachedUserSnapshot),
+		factory:     factory,
 		pendingWake: make(chan struct{}, 1), rebuildWake: make(chan struct{}, 1),
 		metadataWake: make(chan struct{}, 1), ruleWake: make(chan struct{}, 1),
 		runtimeReady: make(chan struct{}), ctx: ctx, cancel: cancel,
@@ -114,11 +106,10 @@ func (s *TagService) installFallbackSnapshot(cause error) error {
 	}
 	now := time.Now()
 	ruleSet := &models.TagRuleSet{
-		ID: "builtin-fallback", ScopeType: models.TagRuleScopeGlobal, ScopeID: "",
-		Version: 0, Revision: 1, Status: models.TagRuleSetActive,
+		ID: "builtin-fallback", Version: 0, Revision: 1, Status: models.TagRuleSetActive,
 		CreatedBy: "system", CreatedAt: now, UpdatedAt: now,
 	}
-	snapshot, err := tagging.CompileSnapshot([]models.TagRuleSet{*ruleSet}, int(s.autoLimit.Load()))
+	snapshot, err := tagging.CompileSnapshot(*ruleSet, int(s.autoLimit.Load()))
 	if err != nil {
 		return fmt.Errorf("编译内置基础标签规则失败: %w", err)
 	}

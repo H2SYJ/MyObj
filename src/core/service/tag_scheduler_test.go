@@ -109,7 +109,7 @@ func TestTagSchedulersUsePersistedRetryAndLeaseTimes(t *testing.T) {
 	}
 
 	if err := db.Create(&models.TagRebuildJob{
-		ID: "rebuild", ScopeType: models.TagRuleScopeGlobal, TargetVersion: 1,
+		ID: "rebuild", TargetVersion: 1,
 		Status: "running", RunToken: "old", LeaseExpires: &retryAt, CreatedAt: now, UpdatedAt: now,
 	}).Error; err != nil {
 		t.Fatal(err)
@@ -148,7 +148,7 @@ func TestRuleReloadWakesPausedWorkersWhenAutoTagIsEnabled(t *testing.T) {
 		t.Fatal(err)
 	}
 	if err := db.Create(&models.TagRuleSet{
-		ID: "global-v1", ScopeType: models.TagRuleScopeGlobal, ScopeID: "", Version: 1,
+		ID: "global-v1", Version: 1,
 		Revision: 1, Status: models.TagRuleSetActive, CreatedBy: "system", CreatedAt: now, UpdatedAt: now,
 	}).Error; err != nil {
 		t.Fatal(err)

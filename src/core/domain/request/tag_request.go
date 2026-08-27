@@ -44,19 +44,9 @@ type TagRuleInput struct {
 	Enabled     bool    `json:"enabled"`
 }
 
-type UpdatePersonalDictionaryRequest struct {
-	Rules []TagRuleInput `json:"rules"`
-}
-
 type TagPreviewRequest struct {
 	Samples []string       `json:"samples" binding:"required,min=1,max=100"`
 	Rules   []TagRuleInput `json:"rules"`
-}
-
-type UpdateTagCloudItemRequest struct {
-	DisplayName       string   `json:"display_name"`
-	DisplayCategoryID string   `json:"display_category_id"`
-	Aliases           []string `json:"aliases" binding:"max=100"`
 }
 
 type AdminTagCategoryRequest struct {

@@ -48,23 +48,14 @@ type TagPreviewItem struct {
 }
 
 type TagCloudItem struct {
-	ID           string          `json:"id"`
-	Name         string          `json:"name"`
-	BaseName     string          `json:"base_name"`
-	Category     TagCategoryView `json:"category"`
-	BaseCategory TagCategoryView `json:"base_category"`
-	FileCount    int64           `json:"file_count"`
-	Hidden       bool            `json:"hidden"`
-	System       bool            `json:"system"`
-	SystemCode   string          `json:"system_code,omitempty"`
+	ID         string          `json:"id"`
+	Name       string          `json:"name"`
+	Category   TagCategoryView `json:"category"`
+	FileCount  int64           `json:"file_count"`
+	System     bool            `json:"system"`
+	SystemCode string          `json:"system_code,omitempty"`
 }
 
 type TagCloudResponse struct {
-	Tags   []TagCloudItem `json:"tags"`
-	Hidden []TagCloudItem `json:"hidden"`
-}
-
-type TagCloudEditorResponse struct {
-	Tag     TagCloudItem `json:"tag"`
-	Aliases []string     `json:"aliases"`
+	Tags []TagCloudItem `json:"tags"`
 }

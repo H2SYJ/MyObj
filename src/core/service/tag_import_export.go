@@ -19,7 +19,7 @@ import (
 	"myobj/src/pkg/tagging"
 )
 
-const maxTagDictionaryImportBytes = 1024 * 1024
+const maxTagRuleImportBytes = 1024 * 1024
 
 type tagRuleExport struct {
 	Rules []request.TagRuleInput `json:"rules"`
@@ -56,7 +56,7 @@ func (s *TagService) ExportRuleSet(ctx context.Context, id, format string) ([]by
 }
 
 func (s *TagService) ImportGlobalDraft(ctx context.Context, id string, revision int, format string, data []byte) (*models.TagRuleSet, error) {
-	if len(data) == 0 || len(data) > maxTagDictionaryImportBytes {
+	if len(data) == 0 || len(data) > maxTagRuleImportBytes {
 		return nil, errors.New("导入文件大小必须在1字节到1MB之间")
 	}
 	if !utf8.Valid(data) || bytes.HasPrefix(data, []byte{0xef, 0xbb, 0xbf}) {
@@ -102,7 +102,7 @@ func (s *TagService) RuleSetDiff(ctx context.Context, id string) (map[string]int
 	if baseVersion > 0 {
 		var found models.TagRuleSet
 		if err := s.factory.DB().WithContext(ctx).Preload("Rules").
-			Where("scope_type = ? AND scope_id = ? AND version = ?", target.ScopeType, target.ScopeID, baseVersion).
+			Where("version = ?", baseVersion).
 			First(&found).Error; err == nil {
 			base = &found
 		}

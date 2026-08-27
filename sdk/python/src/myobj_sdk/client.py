@@ -496,40 +496,6 @@ class MyObjClient:
             },
         )
 
-    def get_tag_dictionary(self) -> dict[str, Any]:
-        """读取当前用户的个人分词词典。"""
-
-        return self._request_json("GET", "/file/tag-dictionary")
-
-    def update_tag_dictionary(
-        self, rules: Sequence[Mapping[str, Any]]
-    ) -> dict[str, Any]:
-        """热更新个人词典并创建该用户的历史重建任务。"""
-
-        return self._request_json(
-            "PUT",
-            "/file/tag-dictionary",
-            json={"rules": [dict(rule) for rule in rules]},
-        )
-
-    def preview_tag_dictionary(
-        self,
-        samples: Sequence[str],
-        rules: Sequence[Mapping[str, Any]] = (),
-    ) -> dict[str, Any]:
-        """使用尚未保存的个人词典预览文件名标签。"""
-
-        if not 1 <= len(samples) <= 100:
-            raise ValueError("samples 数量必须在 1 到 100 之间")
-        return self._request_json(
-            "POST",
-            "/file/tag-dictionary/preview",
-            json={
-                "samples": list(samples),
-                "rules": [dict(rule) for rule in rules],
-            },
-        )
-
     def get_directories(self) -> dict[str, Any]:
         """获取当前用户的虚拟目录树。"""
 

@@ -232,9 +232,6 @@
               ><el-tag :type="jobStatusType(row.status)">{{ row.status }}</el-tag></template
             ></el-table-column
           >
-          <el-table-column :label="t('admin.tags.scope')" width="110"
-            ><template #default="{ row }">{{ row.scope_type }}</template></el-table-column
-          >
           <el-table-column label="Version" width="90"
             ><template #default="{ row }">v{{ row.target_version }}</template></el-table-column
           >

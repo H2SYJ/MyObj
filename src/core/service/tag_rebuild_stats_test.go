@@ -45,7 +45,7 @@ func TestRebuildRefreshesTagStatsOncePerBatch(t *testing.T) {
 
 	now := time.Now()
 	global := &models.TagRuleSet{
-		ID: "global-batch", ScopeType: models.TagRuleScopeGlobal, Version: 1,
+		ID: "global-batch", Version: 1,
 		Revision: 1, Status: models.TagRuleSetActive, CreatedAt: now, UpdatedAt: now,
 		Rules: []models.TagRule{{
 			ID: "rule-batch", RuleSetID: "global-batch", Type: models.TagRuleTypeRegex,
@@ -59,7 +59,7 @@ func TestRebuildRefreshesTagStatsOncePerBatch(t *testing.T) {
 	if err := db.Create(&global.Rules).Error; err != nil {
 		t.Fatal(err)
 	}
-	snapshot, err := tagging.CompileSnapshot([]models.TagRuleSet{*global}, 20)
+	snapshot, err := tagging.CompileSnapshot(*global, 20)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -93,7 +93,7 @@ func TestRebuildRefreshesTagStatsOncePerBatch(t *testing.T) {
 
 	lease := now.Add(tagWorkerLease)
 	job := &models.TagRebuildJob{
-		ID: "job-batch-stats", ScopeType: models.TagRuleScopeGlobal, TargetVersion: 1,
+		ID: "job-batch-stats", TargetVersion: 1,
 		Status: "running", RunToken: "job-token", LeaseExpires: &lease, StartedAt: &now,
 		Total: 3, CreatedAt: now, UpdatedAt: now,
 	}

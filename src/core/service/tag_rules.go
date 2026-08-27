@@ -19,11 +19,10 @@ import (
 	"myobj/src/pkg/tagging"
 )
 
-// 本文件负责全局和个人规则集的版本管理与预览。
+// 本文件负责全局规则集的版本管理与预览。
 func (s *TagService) GlobalRuleSets(ctx context.Context) ([]models.TagRuleSet, error) {
 	var sets []models.TagRuleSet
-	err := s.factory.DB().WithContext(ctx).Where("scope_type = ? AND scope_id = ''", models.TagRuleScopeGlobal).
-		Order("version DESC, created_at DESC").Find(&sets).Error
+	err := s.factory.DB().WithContext(ctx).Order("version DESC, created_at DESC").Find(&sets).Error
 	return sets, err
 }
 
@@ -38,7 +37,7 @@ func (s *TagService) RuleSet(ctx context.Context, id string) (*models.TagRuleSet
 func (s *TagService) CreateGlobalDraft(ctx context.Context, adminID string) (*models.TagRuleSet, error) {
 	var draft models.TagRuleSet
 	err := s.factory.DB().WithContext(ctx).Preload("Rules").
-		Where("scope_type = ? AND scope_id = '' AND status = ?", models.TagRuleScopeGlobal, models.TagRuleSetDraft).
+		Where("status = ?", models.TagRuleSetDraft).
 		Order("created_at DESC").First(&draft).Error
 	if err == nil {
 		return &draft, nil
@@ -46,19 +45,18 @@ func (s *TagService) CreateGlobalDraft(ctx context.Context, adminID string) (*mo
 	if !errors.Is(err, gorm.ErrRecordNotFound) {
 		return nil, err
 	}
-	active, err := s.loadActiveRuleSet(ctx, models.TagRuleScopeGlobal, "")
+	active, err := s.loadActiveRuleSet(ctx)
 	if err != nil {
 		return nil, err
 	}
 	var maxVersion int64
 	if err := s.factory.DB().WithContext(ctx).Model(&models.TagRuleSet{}).
-		Where("scope_type = ? AND scope_id = ''", models.TagRuleScopeGlobal).
 		Select("COALESCE(MAX(version), 0)").Scan(&maxVersion).Error; err != nil {
 		return nil, err
 	}
 	now := time.Now()
 	draft = models.TagRuleSet{
-		ID: uuid.NewString(), ScopeType: models.TagRuleScopeGlobal, Version: maxVersion + 1,
+		ID: uuid.NewString(), Version: maxVersion + 1,
 		Revision: 1, Status: models.TagRuleSetDraft, BasedOnVersion: active.Version,
 		CreatedBy: adminID, CreatedAt: now, UpdatedAt: now,
 	}
@@ -79,13 +77,13 @@ func (s *TagService) SaveGlobalDraft(ctx context.Context, id string, revision in
 	if err != nil {
 		return nil, err
 	}
-	if draft.ScopeType != models.TagRuleScopeGlobal || draft.Status != models.TagRuleSetDraft {
+	if draft.Status != models.TagRuleSetDraft {
 		return nil, errors.New("只能修改全局规则草稿")
 	}
 	if draft.Revision != revision {
 		return nil, fmt.Errorf("规则草稿已被其他操作修改")
 	}
-	rules, err := buildRules(inputs, draft.ID, false)
+	rules, err := buildRules(inputs, draft.ID)
 	if err != nil {
 		return nil, err
 	}
@@ -94,7 +92,7 @@ func (s *TagService) SaveGlobalDraft(ctx context.Context, id string, revision in
 	}
 	candidate := *draft
 	candidate.Rules = rules
-	if _, err := tagging.CompileSnapshot([]models.TagRuleSet{candidate}, int(s.autoLimit.Load())); err != nil {
+	if _, err := tagging.CompileSnapshot(candidate, int(s.autoLimit.Load())); err != nil {
 		return nil, err
 	}
 	now := time.Now()
@@ -126,21 +124,21 @@ func (s *TagService) PublishGlobalDraft(ctx context.Context, id, adminID string)
 	if err != nil {
 		return nil, nil, err
 	}
-	if draft.ScopeType != models.TagRuleScopeGlobal || draft.Status != models.TagRuleSetDraft {
+	if draft.Status != models.TagRuleSetDraft {
 		return nil, nil, errors.New("只能发布全局规则草稿")
 	}
-	snapshot, err := tagging.CompileSnapshot([]models.TagRuleSet{*draft}, int(s.autoLimit.Load()))
+	snapshot, err := tagging.CompileSnapshot(*draft, int(s.autoLimit.Load()))
 	if err != nil {
 		return nil, nil, err
 	}
 	now := time.Now()
 	job := &models.TagRebuildJob{
-		ID: uuid.NewString(), ScopeType: models.TagRuleScopeGlobal, TargetVersion: draft.Version,
+		ID: uuid.NewString(), TargetVersion: draft.Version,
 		Status: "pending", RequestedBy: adminID, CreatedAt: now, UpdatedAt: now,
 	}
 	err = s.factory.DB().WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		if err := tx.Model(&models.TagRuleSet{}).
-			Where("scope_type = ? AND scope_id = '' AND status = ?", models.TagRuleScopeGlobal, models.TagRuleSetActive).
+			Where("status = ?", models.TagRuleSetActive).
 			Updates(map[string]interface{}{"status": models.TagRuleSetArchived, "updated_at": now}).Error; err != nil {
 			return err
 		}
@@ -153,7 +151,7 @@ func (s *TagService) PublishGlobalDraft(ctx context.Context, id, adminID string)
 			return errors.New("规则草稿状态已变化")
 		}
 		if err := tx.Model(&models.TagRebuildJob{}).
-			Where("scope_type = ? AND status IN ?", models.TagRuleScopeGlobal, []string{"pending", "running"}).
+			Where("status IN ?", []string{"pending", "running"}).
 			Updates(map[string]interface{}{"status": "superseded", "finished_at": now, "updated_at": now, "run_token": "", "lease_expires_at": nil}).Error; err != nil {
 			return err
 		}
@@ -172,7 +170,6 @@ func (s *TagService) PublishGlobalDraft(ctx context.Context, id, adminID string)
 	s.degraded.Store(false)
 	s.degradedReason.Store("")
 	s.runtimeMu.Unlock()
-	s.clearUserCache()
 	s.markRuntimeReady()
 	s.notifyRules()
 	s.notifyRebuild()
@@ -184,18 +181,14 @@ func (s *TagService) RollbackGlobalRules(ctx context.Context, sourceID, adminID 
 	if err != nil {
 		return nil, nil, err
 	}
-	if source.ScopeType != models.TagRuleScopeGlobal {
-		return nil, nil, errors.New("只能回滚全局规则版本")
-	}
 	var maxVersion int64
 	if err := s.factory.DB().WithContext(ctx).Model(&models.TagRuleSet{}).
-		Where("scope_type = ? AND scope_id = ''", models.TagRuleScopeGlobal).
 		Select("COALESCE(MAX(version), 0)").Scan(&maxVersion).Error; err != nil {
 		return nil, nil, err
 	}
 	now := time.Now()
 	draft := &models.TagRuleSet{
-		ID: uuid.NewString(), ScopeType: models.TagRuleScopeGlobal, Version: maxVersion + 1,
+		ID: uuid.NewString(), Version: maxVersion + 1,
 		Revision: 1, Status: models.TagRuleSetDraft, BasedOnVersion: source.Version,
 		CreatedBy: adminID, CreatedAt: now, UpdatedAt: now,
 	}
@@ -215,103 +208,12 @@ func (s *TagService) RollbackGlobalRules(ctx context.Context, sourceID, adminID 
 	return s.PublishGlobalDraft(ctx, draft.ID, adminID)
 }
 
-func (s *TagService) PersonalDictionary(ctx context.Context, userID string) (*models.TagRuleSet, error) {
-	set, err := s.loadActiveRuleSet(ctx, models.TagRuleScopeUser, userID)
-	if errors.Is(err, gorm.ErrRecordNotFound) {
-		return &models.TagRuleSet{ScopeType: models.TagRuleScopeUser, ScopeID: userID, Status: models.TagRuleSetActive, Rules: []models.TagRule{}}, nil
-	}
-	return set, err
-}
-
-func (s *TagService) SavePersonalDictionary(ctx context.Context, userID string, inputs []request.TagRuleInput) (*models.TagRuleSet, *models.TagRebuildJob, error) {
-	ruleSet, job, err := s.savePersonalDictionary(ctx, userID, inputs, s.factory.DB())
-	if err != nil {
-		return nil, nil, err
-	}
-	s.afterPersonalDictionarySaved(userID)
-	return ruleSet, job, nil
-}
-
-func (s *TagService) savePersonalDictionary(ctx context.Context, userID string, inputs []request.TagRuleInput, db *gorm.DB) (*models.TagRuleSet, *models.TagRebuildJob, error) {
-	var maxVersion int64
-	if err := db.WithContext(ctx).Model(&models.TagRuleSet{}).
-		Where("scope_type = ? AND scope_id = ?", models.TagRuleScopeUser, userID).
-		Select("COALESCE(MAX(version), 0)").Scan(&maxVersion).Error; err != nil {
-		return nil, nil, err
-	}
-	now := time.Now()
-	ruleSet := &models.TagRuleSet{
-		ID: uuid.NewString(), ScopeType: models.TagRuleScopeUser, ScopeID: userID,
-		Version: maxVersion + 1, Revision: 1, Status: models.TagRuleSetActive,
-		CreatedBy: userID, CreatedAt: now, UpdatedAt: now, PublishedAt: &now,
-	}
-	rules, err := buildRules(inputs, ruleSet.ID, true)
-	if err != nil {
-		return nil, nil, err
-	}
-	if err := s.validateRuleCategories(ctx, inputs); err != nil {
-		return nil, nil, err
-	}
-	ruleSet.Rules = rules
-	runtime := s.globalRuntime.Load()
-	if runtime == nil || runtime.ruleSet == nil {
-		return nil, nil, errors.New("全局标签规则尚未加载")
-	}
-	if _, err := tagging.CompileSnapshot([]models.TagRuleSet{*runtime.ruleSet, *ruleSet}, int(s.autoLimit.Load())); err != nil {
-		return nil, nil, err
-	}
-	job := &models.TagRebuildJob{
-		ID: uuid.NewString(), ScopeType: models.TagRuleScopeUser, ScopeID: userID,
-		TargetVersion: ruleSet.Version, Status: "pending", RequestedBy: userID,
-		CreatedAt: now, UpdatedAt: now,
-	}
-	err = db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		if err := tx.Model(&models.TagRuleSet{}).
-			Where("scope_type = ? AND scope_id = ? AND status = ?", models.TagRuleScopeUser, userID, models.TagRuleSetActive).
-			Updates(map[string]interface{}{"status": models.TagRuleSetArchived, "updated_at": now}).Error; err != nil {
-			return err
-		}
-		// 规则由下方显式批量写入；这里跳过关联，避免 GORM 自动保存 Rules 后再次插入同一主键。
-		if err := tx.Omit("Rules").Create(ruleSet).Error; err != nil {
-			return err
-		}
-		if len(rules) > 0 {
-			if err := tx.Create(&rules).Error; err != nil {
-				return err
-			}
-		}
-		if err := tx.Model(&models.TagRebuildJob{}).
-			Where("scope_type = ? AND scope_id = ? AND status IN ?", models.TagRuleScopeUser, userID, []string{"pending", "running"}).
-			Updates(map[string]interface{}{"status": "superseded", "finished_at": now, "updated_at": now, "run_token": "", "lease_expires_at": nil}).Error; err != nil {
-			return err
-		}
-		if err := tx.Model(&models.UserFiles{}).Where("user_id = ? AND deleted_at IS NULL", userID).Count(&job.Total).Error; err != nil {
-			return err
-		}
-		return tx.Create(job).Error
-	})
-	if err != nil {
-		return nil, nil, err
-	}
-	return ruleSet, job, nil
-}
-
-func (s *TagService) afterPersonalDictionarySaved(userID string) {
-	s.invalidateUserCache(userID)
-	s.notifyRules()
-	s.notifyRebuild()
-}
-
-func (s *TagService) PreviewRules(ctx context.Context, userID string, samples []string, inputs []request.TagRuleInput, personal bool) ([]response.TagPreviewItem, error) {
+func (s *TagService) PreviewRules(ctx context.Context, samples []string, inputs []request.TagRuleInput) ([]response.TagPreviewItem, error) {
 	if len(samples) == 0 || len(samples) > 100 {
 		return nil, errors.New("预览样例数量必须在1到100之间")
 	}
-	scopeType, scopeID := models.TagRuleScopeGlobal, ""
-	if personal {
-		scopeType, scopeID = models.TagRuleScopeUser, userID
-	}
-	ruleSet := models.TagRuleSet{ID: "preview", ScopeType: scopeType, ScopeID: scopeID, Version: 1}
-	rules, err := buildRules(inputs, ruleSet.ID, personal)
+	ruleSet := models.TagRuleSet{ID: "preview", Version: 1}
+	rules, err := buildRules(inputs, ruleSet.ID)
 	if err != nil {
 		return nil, err
 	}
@@ -319,15 +221,7 @@ func (s *TagService) PreviewRules(ctx context.Context, userID string, samples []
 		return nil, err
 	}
 	ruleSet.Rules = rules
-	sets := []models.TagRuleSet{ruleSet}
-	if personal {
-		runtime := s.globalRuntime.Load()
-		if runtime == nil || runtime.ruleSet == nil {
-			return nil, errors.New("全局标签规则尚未加载")
-		}
-		sets = []models.TagRuleSet{*runtime.ruleSet, ruleSet}
-	}
-	snapshot, err := tagging.CompileSnapshot(sets, int(s.autoLimit.Load()))
+	snapshot, err := tagging.CompileSnapshot(ruleSet, int(s.autoLimit.Load()))
 	if err != nil {
 		return nil, err
 	}
@@ -355,15 +249,12 @@ func (s *TagService) PreviewRules(ctx context.Context, userID string, samples []
 	return result, nil
 }
 
-func buildRules(inputs []request.TagRuleInput, ruleSetID string, personal bool) ([]models.TagRule, error) {
+func buildRules(inputs []request.TagRuleInput, ruleSetID string) ([]models.TagRule, error) {
 	now := time.Now()
 	rules := make([]models.TagRule, 0, len(inputs))
 	for _, input := range inputs {
 		if containsControl(input.Pattern) || containsControl(input.Replacement) {
 			return nil, errors.New("规则内容不能包含控制字符或 BOM")
-		}
-		if personal && input.Type != models.TagRuleTypeWord && input.Type != models.TagRuleTypeStopWord && input.Type != models.TagRuleTypeAlias {
-			return nil, errors.New("个人词典仅支持自定义词、停用词和别名")
 		}
 		if input.Type != models.TagRuleTypeWord && input.Type != models.TagRuleTypeStopWord && input.Type != models.TagRuleTypeAlias && input.Type != models.TagRuleTypeRegex {
 			return nil, fmt.Errorf("不支持的规则类型: %s", input.Type)
@@ -383,8 +274,7 @@ func buildRules(inputs []request.TagRuleInput, ruleSetID string, personal bool) 
 			return nil, errors.New("别名目标无效")
 		}
 		id := input.ID
-		// 个人词典每次保存都会生成新的活动规则集，不能复用已归档规则的主键。
-		if personal || id == "" {
+		if id == "" {
 			id = uuid.NewString()
 		}
 		categoryID := input.CategoryID

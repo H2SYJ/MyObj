@@ -69,10 +69,6 @@ definitions:
         type: integer
       requested_by:
         type: string
-      scope_id:
-        type: string
-      scope_type:
-        type: string
       started_at:
         type: string
       status:
@@ -131,10 +127,6 @@ definitions:
         items:
           $ref: '#/definitions/models.TagRule'
         type: array
-      scope_id:
-        type: string
-      scope_type:
-        type: string
       status:
         type: string
       updated_at:
@@ -253,6 +245,24 @@ definitions:
         type: string
     required:
     - task_id
+    type: object
+  request.EditFileContentRequest:
+    properties:
+      base_hash:
+        description: 编辑器加载时的文件哈希，用于并发防覆盖（可选，传了才校验）
+        type: string
+      content:
+        description: 编辑后的文本内容
+        type: string
+      file_id:
+        description: 用户文件ID（UserFiles的UfID）
+        type: string
+      file_password:
+        description: 文件解密密码（加密文件必填）
+        type: string
+    required:
+    - content
+    - file_id
     type: object
   request.GenerateApiKeyRequest:
     properties:
@@ -443,13 +453,6 @@ definitions:
           type: string
         type: array
     type: object
-  request.UpdatePersonalDictionaryRequest:
-    properties:
-      rules:
-        items:
-          $ref: '#/definitions/request.TagRuleInput'
-        type: array
-    type: object
   request.UpdateTagExclusionsRequest:
     properties:
       restore_tag_ids:
@@ -576,6 +579,8 @@ definitions:
         type: string
       name:
         type: string
+      system_code:
+        type: string
       visibility:
         type: string
     type: object
@@ -593,6 +598,21 @@ definitions:
         type: integer
       updated_at:
         type: string
+    type: object
+  response.EditFileContentResponse:
+    properties:
+      encoding:
+        description: 检测到的原文件编码（utf-8 / utf-8-bom / utf-16le / utf-16be / gb18030）
+        type: string
+      file_hash:
+        description: 新明文哈希（blake3 hex，可作为下一次编辑的 base_hash）
+        type: string
+      file_id:
+        description: 用户文件ID（UserFiles的UfID）
+        type: string
+      size:
+        description: 新文件大小（明文大小，字节）
+        type: integer
     type: object
   response.FileItem:
     properties:
@@ -675,6 +695,8 @@ definitions:
     properties:
       absolute_path:
         type: string
+      cinema_mode:
+        type: boolean
       created_at:
         type: string
       id:
@@ -683,6 +705,10 @@ definitions:
         type: string
       parent_id:
         type: integer
+      tags:
+        items:
+          $ref: '#/definitions/response.CompactTagView'
+        type: array
     type: object
   response.ParseTorrentResponse:
     properties:
@@ -725,6 +751,28 @@ definitions:
         type: string
       name:
         type: string
+    type: object
+  response.TagCloudItem:
+    properties:
+      category:
+        $ref: '#/definitions/response.TagCategoryView'
+      file_count:
+        type: integer
+      id:
+        type: string
+      name:
+        type: string
+      system:
+        type: boolean
+      system_code:
+        type: string
+    type: object
+  response.TagCloudResponse:
+    properties:
+      tags:
+        items:
+          $ref: '#/definitions/response.TagCloudItem'
+        type: array
     type: object
   response.TagPreviewItem:
     properties:
@@ -1789,6 +1837,92 @@ paths:
       summary: 获取虚拟目录
       tags:
       - 文件管理
+  /file/edit/load:
+    get:
+      description: 加载文本文件并解码为 UTF-8，响应头携带 X-File-Encoding（原编码）与 X-File-Hash（明文 blake3，即保存时的
+        base_hash）
+      parameters:
+      - description: 用户文件ID（UserFiles的UfID）
+        in: query
+        name: file_id
+        required: true
+        type: string
+      - description: 文件解密密码（加密文件必需）
+        in: query
+        name: file_password
+        type: string
+      produces:
+      - text/plain
+      responses:
+        "200":
+          description: UTF-8 解码后的文本内容
+          headers:
+            X-File-Encoding:
+              description: 原文件编码
+              type: string
+            X-File-Hash:
+              description: 明文文件 blake3 哈希（base_hash）
+              type: string
+          schema:
+            type: string
+        "400":
+          description: 参数错误或文件不可编辑
+          schema:
+            $ref: '#/definitions/models.JsonResponse'
+        "403":
+          description: 无权限
+          schema:
+            $ref: '#/definitions/models.JsonResponse'
+        "500":
+          description: 加载失败
+          schema:
+            $ref: '#/definitions/models.JsonResponse'
+      security:
+      - BearerAuth: []
+      summary: 加载可编辑文本内容
+      tags:
+      - 文件管理
+  /file/edit/save:
+    post:
+      consumes:
+      - application/json
+      description: 保存文本文件的新内容（按原编码写回；加密文件需提供密码；base_hash 不匹配返回 409）
+      parameters:
+      - description: 编辑请求
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/request.EditFileContentRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: 保存结果
+          schema:
+            allOf:
+            - $ref: '#/definitions/models.JsonResponse'
+            - properties:
+                data:
+                  $ref: '#/definitions/response.EditFileContentResponse'
+              type: object
+        "400":
+          description: 参数错误
+          schema:
+            $ref: '#/definitions/models.JsonResponse'
+        "409":
+          description: 文件内容已被他人修改
+          schema:
+            $ref: '#/definitions/models.JsonResponse'
+        "500":
+          description: 保存失败
+          schema:
+            $ref: '#/definitions/models.JsonResponse'
+      security:
+      - BearerAuth: []
+      summary: 在线编辑文本文件
+      tags:
+      - 文件管理
   /file/list:
     get:
       consumes:
@@ -2212,8 +2346,9 @@ paths:
       summary: 获取可用标签分类
       tags:
       - 文件标签
-  /file/tag-dictionary:
+  /file/tag-cloud:
     get:
+      description: 返回当前用户在用标签的统一名称、分类和文件数量
       produces:
       - application/json
       responses:
@@ -2224,64 +2359,7 @@ paths:
             - $ref: '#/definitions/models.JsonResponse'
             - properties:
                 data:
-                  $ref: '#/definitions/models.TagRuleSet'
-              type: object
-      security:
-      - BearerAuth: []
-      summary: 获取个人分词词典
-      tags:
-      - 文件标签
-    put:
-      consumes:
-      - application/json
-      description: 保存个人词语、停用词和别名，并创建用户范围历史重建任务
-      parameters:
-      - description: 个人词典
-        in: body
-        name: request
-        required: true
-        schema:
-          $ref: '#/definitions/request.UpdatePersonalDictionaryRequest'
-      produces:
-      - application/json
-      responses:
-        "200":
-          description: OK
-          schema:
-            $ref: '#/definitions/models.JsonResponse'
-        "400":
-          description: Bad Request
-          schema:
-            $ref: '#/definitions/models.JsonResponse'
-      security:
-      - BearerAuth: []
-      summary: 热更新个人分词词典
-      tags:
-      - 文件标签
-  /file/tag-dictionary/preview:
-    post:
-      consumes:
-      - application/json
-      parameters:
-      - description: 文件名样例和候选规则
-        in: body
-        name: request
-        required: true
-        schema:
-          $ref: '#/definitions/request.TagPreviewRequest'
-      produces:
-      - application/json
-      responses:
-        "200":
-          description: OK
-          schema:
-            allOf:
-            - $ref: '#/definitions/models.JsonResponse'
-            - properties:
-                data:
-                  items:
-                    $ref: '#/definitions/response.TagPreviewItem'
-                  type: array
+                  $ref: '#/definitions/response.TagCloudResponse'
               type: object
         "400":
           description: Bad Request
@@ -2289,7 +2367,7 @@ paths:
             $ref: '#/definitions/models.JsonResponse'
       security:
       - BearerAuth: []
-      summary: 预览个人分词词典
+      summary: 获取只读标签云
       tags:
       - 文件标签
   /file/tags/{uf_id}:

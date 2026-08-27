@@ -12,8 +12,8 @@ import (
 )
 
 // 本文件负责标签全量重建任务的创建和人工控制。
-func (s *TagService) CreateRebuildJob(ctx context.Context, scopeType, scopeID string, targetVersion int64, requestedBy string) (*models.TagRebuildJob, error) {
-	job, err := s.createRebuildJob(ctx, scopeType, scopeID, targetVersion, requestedBy, s.factory.DB())
+func (s *TagService) CreateRebuildJob(ctx context.Context, targetVersion int64, requestedBy string) (*models.TagRebuildJob, error) {
+	job, err := s.createRebuildJob(ctx, targetVersion, requestedBy, s.factory.DB())
 	if err != nil {
 		return nil, err
 	}
@@ -21,15 +21,14 @@ func (s *TagService) CreateRebuildJob(ctx context.Context, scopeType, scopeID st
 	return job, nil
 }
 
-func (s *TagService) createRebuildJob(ctx context.Context, scopeType, scopeID string, targetVersion int64, requestedBy string, db *gorm.DB) (*models.TagRebuildJob, error) {
+func (s *TagService) createRebuildJob(ctx context.Context, targetVersion int64, requestedBy string, db *gorm.DB) (*models.TagRebuildJob, error) {
 	now := time.Now()
 	job := &models.TagRebuildJob{
-		ID: uuid.NewString(), ScopeType: scopeType, ScopeID: scopeID, TargetVersion: targetVersion,
+		ID: uuid.NewString(), TargetVersion: targetVersion,
 		Status: "pending", RequestedBy: requestedBy, CreatedAt: now, UpdatedAt: now,
 	}
 	if err := db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		unfinished := tx.Model(&models.TagRebuildJob{}).
-			Where("scope_type = ? AND scope_id = ? AND status IN ?", scopeType, scopeID, []string{"pending", "running"})
+		unfinished := tx.Model(&models.TagRebuildJob{}).Where("status IN ?", []string{"pending", "running"})
 		if err := unfinished.Updates(map[string]interface{}{
 			"status": "superseded", "finished_at": now, "updated_at": now,
 			"run_token": "", "lease_expires_at": nil,
@@ -37,9 +36,6 @@ func (s *TagService) createRebuildJob(ctx context.Context, scopeType, scopeID st
 			return err
 		}
 		query := tx.Model(&models.UserFiles{}).Where("deleted_at IS NULL")
-		if scopeType == models.TagRuleScopeUser {
-			query = query.Where("user_id = ?", scopeID)
-		}
 		if err := query.Count(&job.Total).Error; err != nil {
 			return err
 		}

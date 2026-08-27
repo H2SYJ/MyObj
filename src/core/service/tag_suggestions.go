@@ -47,11 +47,9 @@ func (s *TagService) SuggestionsForTarget(ctx context.Context, userID, keyword s
 		SystemCode   string
 	}
 	query := s.factory.DB().WithContext(ctx).Table("tag_definition td").Distinct().
-		Select("td.id, COALESCE(pref.display_name, td.name) AS name, COALESCE(display.code, tc.code) AS category_code, COALESCE(display.color, tc.color) AS color, td.system_code").
+		Select("td.id, td.name, tc.code AS category_code, tc.color, td.system_code").
 		Joins("JOIN tag_category tc ON tc.id = td.category_id").
-		Joins("LEFT JOIN user_tag_preference pref ON pref.tag_id = td.id AND pref.user_id = ?", userID).
-		Joins("LEFT JOIN tag_category display ON display.id = pref.display_category_id AND display.enabled = ?", true).
-		Where("tc.enabled = ?", true).Where("COALESCE(pref.hidden, ?) = ?", false, false)
+		Where("tc.enabled = ?", true)
 	if target == "directory" {
 		query = query.Where(`td.builtin = ? OR EXISTS (
 			SELECT 1 FROM user_file_tag uft JOIN user_files uf ON uf.user_id = uft.user_id AND uf.uf_id = uft.uf_id
@@ -79,10 +77,10 @@ func (s *TagService) SuggestionsForTarget(ctx context.Context, userID, keyword s
 	}
 	if keyword = strings.TrimSpace(keyword); keyword != "" {
 		normalizedKeyword := "%" + tagging.Normalize(keyword) + "%"
-		query = query.Where("td.normalized_name LIKE ? OR pref.normalized_display_name LIKE ?", normalizedKeyword, normalizedKeyword)
+		query = query.Where("td.normalized_name LIKE ?", normalizedKeyword)
 	}
 	var rows []suggestionRow
-	if err := query.Order("COALESCE(pref.display_name, td.name) ASC, td.id ASC").Limit(limit).Scan(&rows).Error; err != nil {
+	if err := query.Order("td.name ASC, td.id ASC").Limit(limit).Scan(&rows).Error; err != nil {
 		return nil, err
 	}
 	result := make([]response.CompactTagView, 0, len(rows))

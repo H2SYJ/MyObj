@@ -95,7 +95,7 @@ func TestMigrateTaggingSchemaIsIdempotentAndGrantsExistingPreviewGroups(t *testi
 	if err := db.Model(&models.TagCategory{}).Count(&categoryCount).Error; err != nil {
 		t.Fatal(err)
 	}
-	if err := db.Model(&models.TagRuleSet{}).Where("scope_type = ? AND status = ?", models.TagRuleScopeGlobal, models.TagRuleSetActive).Count(&activeCount).Error; err != nil {
+	if err := db.Model(&models.TagRuleSet{}).Where("status = ?", models.TagRuleSetActive).Count(&activeCount).Error; err != nil {
 		t.Fatal(err)
 	}
 	if err := db.Model(&models.Power{}).Where("characteristic = ?", "file:tag").Count(&permissionCount).Error; err != nil {
@@ -116,19 +116,17 @@ func TestMigrateTaggingSchemaIsIdempotentAndGrantsExistingPreviewGroups(t *testi
 			t.Fatalf("迁移后缺少表 %T", model)
 		}
 	}
-	if !db.Migrator().HasTable(&models.UserTagPreference{}) {
-		t.Fatal("缺少用户标签偏好表")
+	if db.Migrator().HasTable("user_tag_preference") {
+		t.Fatal("用户标签偏好表应被物理删除")
 	}
-	if !db.Migrator().HasIndex(&models.UserTagPreference{}, "idx_user_tag_preference_hidden") {
-		t.Fatal("缺少用户标签隐藏索引")
-	}
-	for _, column := range []string{"display_name", "normalized_display_name"} {
-		if !db.Migrator().HasColumn(&models.UserTagPreference{}, column) {
-			t.Fatalf("用户标签偏好表缺少字段 %s", column)
+	for _, item := range []struct{ table, column string }{
+		{"user_file_tag_state", "user_version"},
+		{"tag_rule_set", "scope_type"}, {"tag_rule_set", "scope_id"},
+		{"tag_rebuild_job", "scope_type"}, {"tag_rebuild_job", "scope_id"},
+	} {
+		if db.Migrator().HasColumn(item.table, item.column) {
+			t.Fatalf("迁移后仍存在废弃字段 %s.%s", item.table, item.column)
 		}
-	}
-	if !db.Migrator().HasIndex(&models.UserTagPreference{}, "idx_user_tag_preference_display_name") {
-		t.Fatal("缺少用户标签显示名称索引")
 	}
 	if !db.Migrator().HasIndex(&models.TagDefinition{}, "idx_tag_definition_system_code") {
 		t.Fatal("迁移后缺少系统标签编码唯一索引")
@@ -167,6 +165,16 @@ func TestMigrateTaggingSchemaIsIdempotentAndGrantsExistingPreviewGroups(t *testi
 	if statBackfillCount != 1 {
 		t.Fatalf("标签统计回填迁移记录数量异常: %d", statBackfillCount)
 	}
+	var globalMigrationCount, migrationJobCount int64
+	if err := db.Model(&schemaMigration{}).Where("version = ?", globalOnlyTagMigrationVersion).Count(&globalMigrationCount).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Model(&models.TagRebuildJob{}).Where("id = ?", globalOnlyTagRebuildJobID).Count(&migrationJobCount).Error; err != nil {
+		t.Fatal(err)
+	}
+	if globalMigrationCount != 1 || migrationJobCount != 1 {
+		t.Fatalf("全局标签迁移或固定重建任务不幂等: migration=%d job=%d", globalMigrationCount, migrationJobCount)
+	}
 	var stat models.UserTagStat
 	if err := db.Where("user_id = ? AND tag_id = ?", "user-1", normalTag.ID).First(&stat).Error; err != nil {
 		t.Fatalf("标签统计回填缺少普通标签: %v", err)
@@ -191,5 +199,148 @@ func TestMigrateTaggingSchemaIsIdempotentAndGrantsExistingPreviewGroups(t *testi
 		if count != 0 {
 			t.Fatalf("迁移后仍存在纯数字标签关联 %T", model)
 		}
+	}
+}
+
+func TestMigrateTaggingSchemaRemovesPersonalDataAndLegacyColumns(t *testing.T) {
+	db, err := gorm.Open(sqlite.Open("file:"+t.Name()+"?mode=memory&cache=shared"), &gorm.Config{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := db.AutoMigrate(
+		&models.SysConfig{}, &models.Power{}, &models.GroupPower{}, &tagMigrationTestUserFile{},
+		&models.TagCategory{}, &models.TagDefinition{}, &models.UserFileTag{}, &models.UserDirectoryTag{},
+		&models.UserFileTagExclusion{}, &models.UserTagStat{}, &models.UserFileTagState{},
+		&models.FileMetadata{}, &models.FileMetadataState{}, &models.TagRuleSet{}, &models.TagRule{},
+		&models.TagRebuildJob{}, &models.TagRebuildFailure{}, &schemaMigration{},
+	); err != nil {
+		t.Fatal(err)
+	}
+	for _, statement := range []string{
+		"ALTER TABLE user_file_tag_state ADD COLUMN user_version BIGINT NOT NULL DEFAULT 0",
+		"ALTER TABLE tag_rule_set ADD COLUMN scope_type VARCHAR(16) NOT NULL DEFAULT 'global'",
+		"ALTER TABLE tag_rule_set ADD COLUMN scope_id VARCHAR(64) NOT NULL DEFAULT ''",
+		"CREATE INDEX idx_tag_rule_scope ON tag_rule_set(scope_type, scope_id, status, version)",
+		"ALTER TABLE tag_rebuild_job ADD COLUMN scope_type VARCHAR(16) NOT NULL DEFAULT 'global'",
+		"ALTER TABLE tag_rebuild_job ADD COLUMN scope_id VARCHAR(64) NOT NULL DEFAULT ''",
+		"CREATE INDEX idx_tag_rebuild_scope ON tag_rebuild_job(scope_type, scope_id)",
+		`CREATE TABLE user_tag_preference (
+			user_id VARCHAR(64) NOT NULL,
+			tag_id VARCHAR(64) NOT NULL,
+			hidden BOOLEAN NOT NULL DEFAULT FALSE,
+			display_name VARCHAR(255),
+			normalized_display_name VARCHAR(191),
+			display_category_id VARCHAR(64),
+			created_at DATETIME NOT NULL,
+			updated_at DATETIME NOT NULL,
+			PRIMARY KEY(user_id, tag_id)
+		)`,
+	} {
+		if err := db.Exec(statement).Error; err != nil {
+			t.Fatal(err)
+		}
+	}
+	now := time.Now()
+	global := models.TagRuleSet{ID: "legacy-global", Version: 5, Revision: 1, Status: models.TagRuleSetActive, CreatedAt: now, UpdatedAt: now}
+	personal := models.TagRuleSet{ID: "legacy-personal", Version: 3, Revision: 1, Status: models.TagRuleSetActive, CreatedAt: now, UpdatedAt: now}
+	if err := db.Create(&global).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Create(&personal).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Table("tag_rule_set").Where("id = ?", personal.ID).Updates(map[string]interface{}{"scope_type": "user", "scope_id": "user-1"}).Error; err != nil {
+		t.Fatal(err)
+	}
+	for _, rule := range []models.TagRule{
+		{ID: "global-rule", RuleSetID: global.ID, Type: models.TagRuleTypeWord, Pattern: "全局词", CategoryID: "other", Enabled: true, CreatedAt: now, UpdatedAt: now},
+		{ID: "personal-rule", RuleSetID: personal.ID, Type: models.TagRuleTypeWord, Pattern: "个人词", CategoryID: "other", Enabled: true, CreatedAt: now, UpdatedAt: now},
+	} {
+		if err := db.Create(&rule).Error; err != nil {
+			t.Fatal(err)
+		}
+	}
+	jobs := []models.TagRebuildJob{
+		{ID: "global-history", TargetVersion: 4, Status: "completed", CreatedAt: now, UpdatedAt: now},
+		{ID: "global-running", TargetVersion: 5, Status: "running", CreatedAt: now, UpdatedAt: now},
+		{ID: "personal-running", TargetVersion: 3, Status: "running", CreatedAt: now, UpdatedAt: now},
+	}
+	if err := db.Create(&jobs).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Table("tag_rebuild_job").Where("id = ?", "personal-running").Updates(map[string]interface{}{"scope_type": "user", "scope_id": "user-1"}).Error; err != nil {
+		t.Fatal(err)
+	}
+	for _, failure := range []models.TagRebuildFailure{
+		{JobID: "global-history", UFID: "global-file", UserID: "user-1", Status: models.TagRebuildFailureFailed, CreatedAt: now, UpdatedAt: now},
+		{JobID: "personal-running", UFID: "personal-file", UserID: "user-1", Status: models.TagRebuildFailureFailed, CreatedAt: now, UpdatedAt: now},
+	} {
+		if err := db.Create(&failure).Error; err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := db.Create(&models.UserFileTagState{UFID: "state-1", UserID: "user-1", GlobalVersion: 5, Status: models.TagStateReady, UpdatedAt: now}).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Exec("UPDATE user_file_tag_state SET user_version = 7 WHERE uf_id = ?", "state-1").Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Exec(`INSERT INTO user_tag_preference(user_id, tag_id, hidden, display_name, created_at, updated_at)
+		VALUES(?, ?, ?, ?, ?, ?)`, "user-1", "normal", true, "个人显示名", now, now).Error; err != nil {
+		t.Fatal(err)
+	}
+
+	for run := 0; run < 2; run++ {
+		if err := migrateTaggingSchema(db); err != nil {
+			t.Fatalf("第%d次旧标签结构迁移失败: %v", run+1, err)
+		}
+	}
+
+	if db.Migrator().HasTable("user_tag_preference") {
+		t.Fatal("个人标签偏好表未删除")
+	}
+	for _, item := range []struct{ table, column string }{
+		{"user_file_tag_state", "user_version"},
+		{"tag_rule_set", "scope_type"}, {"tag_rule_set", "scope_id"},
+		{"tag_rebuild_job", "scope_type"}, {"tag_rebuild_job", "scope_id"},
+	} {
+		if db.Migrator().HasColumn(item.table, item.column) {
+			columns, _ := db.Migrator().ColumnTypes(item.table)
+			names := make([]string, 0, len(columns))
+			for _, column := range columns {
+				names = append(names, column.Name())
+			}
+			t.Fatalf("废弃字段未删除: %s.%s columns=%v", item.table, item.column, names)
+		}
+	}
+	var personalRuleSets, personalRules, personalJobs, personalFailures int64
+	db.Model(&models.TagRuleSet{}).Where("id = ?", personal.ID).Count(&personalRuleSets)
+	db.Model(&models.TagRule{}).Where("id = ?", "personal-rule").Count(&personalRules)
+	db.Model(&models.TagRebuildJob{}).Where("id = ?", "personal-running").Count(&personalJobs)
+	db.Model(&models.TagRebuildFailure{}).Where("job_id = ?", "personal-running").Count(&personalFailures)
+	if personalRuleSets+personalRules+personalJobs+personalFailures != 0 {
+		t.Fatalf("个人历史数据未清空: sets=%d rules=%d jobs=%d failures=%d", personalRuleSets, personalRules, personalJobs, personalFailures)
+	}
+	var globalRuleCount, globalJobCount, globalFailureCount, migrationJobCount int64
+	db.Model(&models.TagRule{}).Where("id = ?", "global-rule").Count(&globalRuleCount)
+	db.Model(&models.TagRebuildJob{}).Where("id IN ?", []string{"global-history", "global-running"}).Count(&globalJobCount)
+	db.Model(&models.TagRebuildFailure{}).Where("job_id = ?", "global-history").Count(&globalFailureCount)
+	db.Model(&models.TagRebuildJob{}).Where("id = ?", globalOnlyTagRebuildJobID).Count(&migrationJobCount)
+	if globalRuleCount != 1 || globalJobCount != 2 || globalFailureCount != 1 || migrationJobCount != 1 {
+		t.Fatalf("全局历史或固定迁移任务异常: rule=%d jobs=%d failure=%d migration_job=%d", globalRuleCount, globalJobCount, globalFailureCount, migrationJobCount)
+	}
+	var superseded models.TagRebuildJob
+	if err := db.Where("id = ?", "global-running").First(&superseded).Error; err != nil {
+		t.Fatal(err)
+	}
+	if superseded.Status != "superseded" {
+		t.Fatalf("旧未完成全局任务未终止: %+v", superseded)
+	}
+	var state models.UserFileTagState
+	if err := db.Where("uf_id = ?", "state-1").First(&state).Error; err != nil {
+		t.Fatal(err)
+	}
+	if state.GlobalVersion != 5 {
+		t.Fatalf("删除个人版本时损坏了全局状态: %+v", state)
 	}
 }

@@ -139,7 +139,7 @@ func TestPrepareSQLiteSnapshotCreatesCurrentTables(t *testing.T) {
 	if err := validateSourceTables(db); err != nil {
 		t.Fatal(err)
 	}
-	if !db.Migrator().HasColumn("user_files", "directory_id") || !db.Migrator().HasTable("user_tag_preference") {
+	if !db.Migrator().HasColumn("user_files", "directory_id") || !db.Migrator().HasTable("user_tag_stat") {
 		t.Fatal("快照升级未补齐当前结构")
 	}
 }

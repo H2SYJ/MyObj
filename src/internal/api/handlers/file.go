@@ -103,19 +103,12 @@ func (f *FileHandler) Router(c *gin.RouterGroup) {
 		fileGroup.PUT("/directories/:directory_id/tags/manual", middleware.PowerVerify("file:tag"), f.UpdateDirectoryTags)
 		fileGroup.GET("/tag-categories", middleware.PowerVerify("file:tag"), f.ListTagCategories)
 		fileGroup.GET("/tag-cloud", middleware.PowerVerify("file:tag"), f.GetTagCloud)
-		fileGroup.GET("/tag-cloud/:tag_id", middleware.PowerVerify("file:tag"), f.GetTagCloudItem)
-		fileGroup.PUT("/tag-cloud/:tag_id", middleware.PowerVerify("file:tag"), f.UpdateTagCloudItem)
-		fileGroup.DELETE("/tag-cloud/:tag_id", middleware.PowerVerify("file:tag"), f.HideTagCloudItem)
-		fileGroup.POST("/tag-cloud/:tag_id/restore", middleware.PowerVerify("file:tag"), f.RestoreTagCloudItem)
 		fileGroup.GET("/tags/suggestions", middleware.PowerVerify("file:tag"), f.TagSuggestions)
 		fileGroup.GET("/tags/:uf_id", middleware.PowerVerify("file:preview"), f.GetFileTags)
 		fileGroup.PUT("/tags/:uf_id/manual", middleware.PowerVerify("file:tag"), f.UpdateManualTags)
 		fileGroup.PUT("/tags/:uf_id/exclusions", middleware.PowerVerify("file:tag"), f.UpdateTagExclusions)
 		fileGroup.POST("/tags/:uf_id/retry", middleware.PowerVerify("file:tag"), f.RetryFileTags)
 		fileGroup.POST("/tags/batch", middleware.PowerVerify("file:tag"), f.BatchUpdateTags)
-		fileGroup.GET("/tag-dictionary", middleware.PowerVerify("file:tag"), f.GetPersonalTagDictionary)
-		fileGroup.PUT("/tag-dictionary", middleware.PowerVerify("file:tag"), f.UpdatePersonalTagDictionary)
-		fileGroup.POST("/tag-dictionary/preview", middleware.PowerVerify("file:tag"), f.PreviewPersonalTagDictionary)
 		// 打包下载
 		fileGroup.POST("/package/create", middleware.PowerVerify("file:download"), f.CreatePackage)
 		fileGroup.GET("/package/progress", middleware.PowerVerify("file:download"), f.GetPackageProgress)
@@ -197,6 +190,15 @@ func (f *FileHandler) ListTagCategories(c *gin.Context) {
 	c.JSON(http.StatusOK, models.NewJsonResponse(200, "查询成功", result))
 }
 
+// GetTagCloud godoc
+// @Summary 获取只读标签云
+// @Description 返回当前用户在用标签的统一名称、分类和文件数量
+// @Tags 文件标签
+// @Produce json
+// @Security BearerAuth
+// @Success 200 {object} models.JsonResponse{data=response.TagCloudResponse}
+// @Failure 400 {object} models.JsonResponse
+// @Router /file/tag-cloud [get]
 func (f *FileHandler) GetTagCloud(c *gin.Context) {
 	result, err := f.service.TagService().TagCloud(c.Request.Context(), c.GetString("userID"))
 	if err != nil {
@@ -204,46 +206,6 @@ func (f *FileHandler) GetTagCloud(c *gin.Context) {
 		return
 	}
 	c.JSON(http.StatusOK, models.NewJsonResponse(200, "查询成功", result))
-}
-
-func (f *FileHandler) GetTagCloudItem(c *gin.Context) {
-	result, err := f.service.TagService().TagCloudEditor(c.Request.Context(), c.GetString("userID"), c.Param("tag_id"))
-	if err != nil {
-		c.JSON(http.StatusOK, models.NewJsonResponse(400, err.Error(), nil))
-		return
-	}
-	c.JSON(http.StatusOK, models.NewJsonResponse(200, "查询成功", result))
-}
-
-func (f *FileHandler) UpdateTagCloudItem(c *gin.Context) {
-	var req request.UpdateTagCloudItemRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, models.NewJsonResponse(400, "参数错误", nil))
-		return
-	}
-	result, job, err := f.service.TagService().UpdateTagCloudItem(c.Request.Context(), c.GetString("userID"), c.Param("tag_id"), req)
-	if err != nil {
-		c.JSON(http.StatusOK, models.NewJsonResponse(400, err.Error(), nil))
-		return
-	}
-	c.JSON(http.StatusOK, models.NewJsonResponse(200, "标签设置已更新", gin.H{"editor": result, "rebuild_job": job}))
-}
-
-func (f *FileHandler) HideTagCloudItem(c *gin.Context) {
-	if err := f.service.TagService().HideTagCloudItem(c.Request.Context(), c.GetString("userID"), c.Param("tag_id")); err != nil {
-		c.JSON(http.StatusOK, models.NewJsonResponse(400, err.Error(), nil))
-		return
-	}
-	c.JSON(http.StatusOK, models.NewJsonResponse(200, "标签已隐藏", nil))
-}
-
-func (f *FileHandler) RestoreTagCloudItem(c *gin.Context) {
-	job, err := f.service.TagService().RestoreTagCloudItem(c.Request.Context(), c.GetString("userID"), c.Param("tag_id"))
-	if err != nil {
-		c.JSON(http.StatusOK, models.NewJsonResponse(400, err.Error(), nil))
-		return
-	}
-	c.JSON(http.StatusOK, models.NewJsonResponse(200, "标签已恢复", gin.H{"rebuild_job": job}))
 }
 
 // RetryFileTags godoc
@@ -376,71 +338,6 @@ func (f *FileHandler) TagSuggestions(c *gin.Context) {
 		return
 	}
 	c.JSON(200, models.NewJsonResponse(200, "查询成功", result))
-}
-
-// GetPersonalTagDictionary godoc
-// @Summary 获取个人分词词典
-// @Tags 文件标签
-// @Produce json
-// @Security BearerAuth
-// @Success 200 {object} models.JsonResponse{data=models.TagRuleSet}
-// @Router /file/tag-dictionary [get]
-func (f *FileHandler) GetPersonalTagDictionary(c *gin.Context) {
-	result, err := f.service.TagService().PersonalDictionary(c.Request.Context(), c.GetString("userID"))
-	if err != nil {
-		c.JSON(200, models.NewJsonResponse(400, err.Error(), nil))
-		return
-	}
-	c.JSON(200, models.NewJsonResponse(200, "查询成功", result))
-}
-
-// UpdatePersonalTagDictionary godoc
-// @Summary 热更新个人分词词典
-// @Description 保存个人词语、停用词和别名，并创建用户范围历史重建任务
-// @Tags 文件标签
-// @Accept json
-// @Produce json
-// @Security BearerAuth
-// @Param request body request.UpdatePersonalDictionaryRequest true "个人词典"
-// @Success 200 {object} models.JsonResponse
-// @Failure 400 {object} models.JsonResponse
-// @Router /file/tag-dictionary [put]
-func (f *FileHandler) UpdatePersonalTagDictionary(c *gin.Context) {
-	var req request.UpdatePersonalDictionaryRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(400, models.NewJsonResponse(400, "参数错误", nil))
-		return
-	}
-	ruleSet, job, err := f.service.TagService().SavePersonalDictionary(c.Request.Context(), c.GetString("userID"), req.Rules)
-	if err != nil {
-		c.JSON(200, models.NewJsonResponse(400, err.Error(), nil))
-		return
-	}
-	c.JSON(200, models.NewJsonResponse(200, "个人词典已热更新", gin.H{"rule_set": ruleSet, "rebuild_job": job}))
-}
-
-// PreviewPersonalTagDictionary godoc
-// @Summary 预览个人分词词典
-// @Tags 文件标签
-// @Accept json
-// @Produce json
-// @Security BearerAuth
-// @Param request body request.TagPreviewRequest true "文件名样例和候选规则"
-// @Success 200 {object} models.JsonResponse{data=[]response.TagPreviewItem}
-// @Failure 400 {object} models.JsonResponse
-// @Router /file/tag-dictionary/preview [post]
-func (f *FileHandler) PreviewPersonalTagDictionary(c *gin.Context) {
-	var req request.TagPreviewRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(400, models.NewJsonResponse(400, "参数错误", nil))
-		return
-	}
-	result, err := f.service.TagService().PreviewRules(c.Request.Context(), c.GetString("userID"), req.Samples, req.Rules, true)
-	if err != nil {
-		c.JSON(200, models.NewJsonResponse(400, err.Error(), nil))
-		return
-	}
-	c.JSON(200, models.NewJsonResponse(200, "预览成功", result))
 }
 
 // Precheck godoc

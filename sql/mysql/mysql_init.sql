@@ -542,22 +542,6 @@ CREATE TABLE `tag_definition` (
     KEY `idx_tag_definition_category` (`category_id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='标签定义';
 
-CREATE TABLE `user_tag_preference` (
-    `user_id` VARCHAR(64) NOT NULL,
-    `tag_id` VARCHAR(64) NOT NULL,
-    `hidden` BOOLEAN NOT NULL DEFAULT FALSE,
-    `display_name` VARCHAR(255) DEFAULT NULL,
-    `normalized_display_name` VARCHAR(191) DEFAULT NULL,
-    `display_category_id` VARCHAR(64) DEFAULT NULL,
-    `created_at` DATETIME NOT NULL,
-    `updated_at` DATETIME NOT NULL,
-    PRIMARY KEY (`user_id`, `tag_id`),
-    KEY `idx_user_tag_preference_hidden` (`user_id`, `hidden`),
-    KEY `idx_user_tag_preference_display_name` (`user_id`, `normalized_display_name`),
-    KEY `idx_user_tag_preference_tag_id` (`tag_id`),
-    KEY `idx_user_tag_preference_display_category_id` (`display_category_id`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='用户标签偏好';
-
 CREATE TABLE `user_file_tag` (
     `id` VARCHAR(64) NOT NULL,
     `user_id` VARCHAR(64) NOT NULL,
@@ -613,7 +597,6 @@ CREATE TABLE `user_file_tag_state` (
     `uf_id` VARCHAR(64) NOT NULL,
     `user_id` VARCHAR(64) NOT NULL,
     `global_version` BIGINT NOT NULL DEFAULT 0,
-    `user_version` BIGINT NOT NULL DEFAULT 0,
     `metadata_version` BIGINT NOT NULL DEFAULT 0,
     `status` VARCHAR(32) NOT NULL,
     `last_error` TEXT,
@@ -663,8 +646,6 @@ CREATE TABLE `file_metadata_state` (
 
 CREATE TABLE `tag_rule_set` (
     `id` VARCHAR(64) NOT NULL,
-    `scope_type` VARCHAR(16) NOT NULL,
-    `scope_id` VARCHAR(64) NOT NULL DEFAULT '',
     `version` BIGINT NOT NULL,
     `revision` INT NOT NULL DEFAULT 1,
     `status` VARCHAR(16) NOT NULL,
@@ -674,7 +655,7 @@ CREATE TABLE `tag_rule_set` (
     `updated_at` DATETIME NOT NULL,
     `published_at` DATETIME NULL,
     PRIMARY KEY (`id`),
-    KEY `idx_tag_rule_scope` (`scope_type`, `scope_id`, `status`, `version`)
+    KEY `idx_tag_rule_status_version` (`status`, `version`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='标签规则集版本';
 
 CREATE TABLE `tag_rule` (
@@ -698,8 +679,6 @@ CREATE TABLE `tag_rule` (
 
 CREATE TABLE `tag_rebuild_job` (
     `id` VARCHAR(64) NOT NULL,
-    `scope_type` VARCHAR(16) NOT NULL,
-    `scope_id` VARCHAR(64) NOT NULL DEFAULT '',
     `target_version` BIGINT NOT NULL,
     `status` VARCHAR(32) NOT NULL,
     `cursor_value` VARCHAR(64) NOT NULL DEFAULT '',
@@ -716,7 +695,6 @@ CREATE TABLE `tag_rebuild_job` (
     `created_at` DATETIME NOT NULL,
     `updated_at` DATETIME NOT NULL,
     PRIMARY KEY (`id`),
-    KEY `idx_tag_rebuild_scope` (`scope_type`, `scope_id`),
     KEY `idx_tag_job_schedule` (`status`, `lease_expires_at`),
     KEY `idx_tag_job_run_token` (`run_token`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='标签全量重建任务';
@@ -766,8 +744,8 @@ INSERT INTO `tag_category` (`id`, `code`, `name`, `color`, `sort_order`, `enable
 ('language', 'language', '语言', '#ff8a00', 80, TRUE, TRUE, '2026-08-04 00:00:00', '2026-08-04 00:00:00'),
 ('other', 'other', '其他', '#909399', 90, TRUE, TRUE, '2026-08-04 00:00:00', '2026-08-04 00:00:00');
 
-INSERT INTO `tag_rule_set` (`id`, `scope_type`, `scope_id`, `version`, `revision`, `status`, `based_on_version`, `created_by`, `created_at`, `updated_at`, `published_at`) VALUES
-('global-tag-rules-v1', 'global', '', 1, 1, 'active', 0, 'system', '2026-08-04 00:00:00', '2026-08-04 00:00:00', '2026-08-04 00:00:00');
+INSERT INTO `tag_rule_set` (`id`, `version`, `revision`, `status`, `based_on_version`, `created_by`, `created_at`, `updated_at`, `published_at`) VALUES
+('global-tag-rules-v1', 1, 1, 'active', 0, 'system', '2026-08-04 00:00:00', '2026-08-04 00:00:00', '2026-08-04 00:00:00');
 
 INSERT INTO `tag_rule` (`id`, `rule_set_id`, `rule_type`, `target_field`, `pattern`, `replacement`, `category_id`, `priority`, `weight`, `enabled`, `created_at`, `updated_at`) VALUES
 ('global-rule-year-v1', 'global-tag-rules-v1', 'regex', 'basename', '(?:^|[^0-9])((?:19|20)\\d{2})(?:[^0-9]|$)', '$1', 'year', 90, 1, TRUE, '2026-08-04 00:00:00', '2026-08-04 00:00:00'),
@@ -808,7 +786,7 @@ INSERT INTO `power` (`id`, `name`, `description`, `created_at`, `characteristic`
 (23, '移动文件/目录', '移动文件或目录至其他虚拟目录', '2025-11-18 01:17:59', 'file:move'),
 (24, '删除文件', '删除文件（移动到回收站）', '2025-12-11 19:02:02', 'file:delete'),
 (25, 'WebDAV访问', '允许通过WebDAV协议访问文件系统', '2025-12-30 07:34:05', 'webdav:access'),
-(26, '文件标签', '维护文件标签和个人分词词典', '2026-08-04 00:00:00', 'file:tag');
+(26, '文件标签', '维护文件与目录标签', '2026-08-04 00:00:00', 'file:tag');
 
 -- 插入组权限关联数据
 INSERT INTO `group_power` (`group_id`, `power_id`) VALUES

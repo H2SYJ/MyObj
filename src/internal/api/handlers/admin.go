@@ -337,7 +337,7 @@ func (a *AdminHandler) PreviewTagDraft(c *gin.Context) {
 			req.Rules = append(req.Rules, request.TagRuleInput{ID: rule.ID, Type: rule.Type, TargetField: rule.TargetField, Pattern: rule.Pattern, Replacement: rule.Replacement, CategoryID: rule.CategoryID, Priority: rule.Priority, Weight: rule.Weight, Enabled: rule.Enabled})
 		}
 	}
-	result, err := a.service.TagService().PreviewRules(c.Request.Context(), "", req.Samples, req.Rules, false)
+	result, err := a.service.TagService().PreviewRules(c.Request.Context(), req.Samples, req.Rules)
 	adminTagResult(c, result, err)
 }
 

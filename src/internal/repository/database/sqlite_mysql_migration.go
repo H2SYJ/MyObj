@@ -450,7 +450,6 @@ func currentMigrationTables() []migrationTable {
 		{Name: "recycled_directory_tag", Model: &models.RecycledDirectoryTag{}},
 		{Name: "tag_category", Model: &models.TagCategory{}},
 		{Name: "tag_definition", Model: &models.TagDefinition{}},
-		{Name: "user_tag_preference", Model: &models.UserTagPreference{}},
 		{Name: "user_file_tag", Model: &models.UserFileTag{}},
 		{Name: "user_directory_tag", Model: &models.UserDirectoryTag{}},
 		{Name: "user_file_tag_exclusion", Model: &models.UserFileTagExclusion{}},
