@@ -50,6 +50,9 @@ type TagService struct {
 	started          atomic.Bool
 	degraded         atomic.Bool
 	degradedReason   atomic.Value
+	// rebuildBatchFailures 记录每个重建任务连续提交批次失败的次数，用于熔断。
+	// 这是进程内的运行时保护，不需要持久化：服务重启后任务本就要重新评估。
+	rebuildBatchFailures sync.Map
 }
 
 func NewTagService(factory *impl.RepositoryFactory) (*TagService, error) {
@@ -66,14 +69,25 @@ func NewTagService(factory *impl.RepositoryFactory) (*TagService, error) {
 	return service, nil
 }
 
+// initializeRuntime 只在规则轮询器首次加载时调用，负责解锁等待 runtimeReady 的
+// 重建与自动标签 worker。这里的任何一步失败都必须降级而不是直接返回：一旦
+// markRuntimeReady 没被调用，两个 worker 会永久阻塞且几乎没有任何日志。
 func (s *TagService) initializeRuntime(ctx context.Context) error {
 	if err := s.reloadSettings(ctx); err != nil {
-		return err
+		// 读取自动标签开关失败时退化为内置默认值，保证后续流程继续。
+		logger.LOG.Error("加载自动标签设置失败，已使用内置默认值继续", "error", err)
 	}
 	if err := s.reloadGlobalRules(ctx, true); err != nil {
 		if fallbackErr := s.installFallbackSnapshot(err); fallbackErr != nil {
+			// 连内置基础规则都不可用时，仍然放开 worker：让文件级任务以失败的方式
+			// 被记录和诊断，而不是让两个 worker 永久静默阻塞在 waitForRuntime。
+			logger.LOG.Error("初始化标签规则运行时失败，标签任务将以失败方式继续", "error", fallbackErr)
+			s.markRuntimeReady()
 			return fallbackErr
 		}
+	}
+	if s.globalRuntime.Load() == nil {
+		s.markRuntimeReady()
 	}
 	return nil
 }

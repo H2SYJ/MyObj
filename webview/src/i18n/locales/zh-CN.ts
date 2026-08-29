@@ -927,6 +927,8 @@ export default {
       diff: 'Diff',
       rollback: '回滚为新版本',
       rebuildJobs: '重建任务',
+      rebuildAll: '重建全部标签',
+      rebuildStarted: '已创建全量标签重建任务',
       scope: '范围',
       progress: '进度',
       failedCount: '失败 {count}',

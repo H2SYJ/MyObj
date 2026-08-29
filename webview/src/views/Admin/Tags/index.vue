@@ -226,6 +226,13 @@
       </el-tab-pane>
 
       <el-tab-pane :label="t('admin.tags.rebuildJobs')" name="jobs">
+        <div class="tab-toolbar">
+          <el-button type="primary" :loading="rebuilding" @click="rebuildAll">{{
+            t('admin.tags.rebuildAll')
+          }}</el-button>
+          <span class="toolbar-spacer" />
+          <el-button icon="Refresh" :loading="loading" @click="loadJobs">{{ t('common.refresh') }}</el-button>
+        </div>
         <el-table :data="jobs" row-key="id">
           <el-table-column :label="t('common.status')" width="180"
             ><template #default="{ row }"
@@ -255,7 +262,7 @@
                 @click="cancelJob(row)"
                 >{{ t('common.cancel') }}</el-button
               ><el-button
-                v-if="['failed', 'completed_with_errors', 'cancelled'].includes(row.status)"
+                v-if="['failed', 'completed_with_errors', 'cancelled', 'superseded'].includes(row.status)"
                 text
                 type="primary"
                 @click="retryJob(row)"
@@ -337,6 +344,7 @@
     getRuleSetDiff,
     getTagCategories,
     getTagRebuildFailures,
+    createTagRebuildJob,
     getTagRebuildJobs,
     importGlobalDraft,
     previewGlobalDraft,
@@ -366,6 +374,7 @@
   const creatingDraft = ref(false)
   const savingDraft = ref(false)
   const publishing = ref(false)
+  const rebuilding = ref(false)
   const previewing = ref(false)
   const savingCategory = ref(false)
   const settings = ref<AdminTagSettings>()
@@ -616,6 +625,9 @@
       if (response.code !== 200) {
         throw new Error(response.message)
       }
+      // 发布会产生一个全量重建任务，直接切到任务页，否则用户停留在草稿页
+      // 看不到任何进度，会以为发布没有生效。
+      activeTab.value = 'jobs'
       proxy?.$modal.msgSuccess(t('admin.tags.publishSuccess', { version: response.data.active_version }))
       await loadAll()
     } catch (error) {
@@ -669,6 +681,7 @@
       if (response.code !== 200) {
         throw new Error(response.message)
       }
+      activeTab.value = 'jobs'
       await loadAll()
     } catch (error) {
       if (error instanceof Error) {
@@ -676,16 +689,36 @@
       }
     }
   }
+  // 这两个操作失败时必须给出提示，否则用户点了按钮看不到任何反馈，
+  // 会误以为任务卡死。后端常见的失败原因是任务状态不在允许重试/取消的范围内。
   const cancelJob = async (job: TagRebuildJob) => {
     const response = await cancelTagRebuildJob(job.id)
-    if (response.code === 200) {
-      await loadJobs()
+    if (response.code !== 200) {
+      return proxy?.$modal.msgError(response.message || t('common.operationFailed'))
     }
+    await loadJobs()
   }
   const retryJob = async (job: TagRebuildJob) => {
     const response = await retryTagRebuildJob(job.id)
-    if (response.code === 200) {
+    if (response.code !== 200) {
+      return proxy?.$modal.msgError(response.message || t('common.operationFailed'))
+    }
+    await loadJobs()
+  }
+  const rebuildAll = async () => {
+    rebuilding.value = true
+    try {
+      const response = await createTagRebuildJob()
+      if (response.code !== 200) {
+        throw new Error(response.message)
+      }
+      activeTab.value = 'jobs'
       await loadJobs()
+      proxy?.$modal.msgSuccess(t('admin.tags.rebuildStarted'))
+    } catch (error) {
+      proxy?.$modal.msgError(error instanceof Error ? error.message : t('common.operationFailed'))
+    } finally {
+      rebuilding.value = false
     }
   }
   const loadFailures = async () => {

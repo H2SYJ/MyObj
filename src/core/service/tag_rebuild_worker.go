@@ -2,6 +2,9 @@ package service
 
 import (
 	"errors"
+	"fmt"
+	"math"
+	"sync/atomic"
 	"time"
 
 	"github.com/google/uuid"
@@ -12,7 +15,16 @@ import (
 	"myobj/src/pkg/models"
 )
 
-const tagRebuildBatch = 100
+const (
+	tagRebuildBatch = 100
+	// tagRebuildMaxBatchFailures 连续提交批次失败达到该次数后强制终止任务。
+	// 没有这个熔断时，提交失败会让任务停留在 running 且游标不推进，租约到期后被
+	// 重新捞起再跑同一批，形成永久循环，界面表现为"一直 running 但进度不涨"。
+	tagRebuildMaxBatchFailures = 3
+	// tagRebuildLeaseRenewInterval 租约续期间隔。逐文件续租会给每批带来上百次写，
+	// 改为按间隔续租，同时保证间隔远小于租约时长，避免续租不及时被其他实例抢走。
+	tagRebuildLeaseRenewInterval = tagWorkerLease / 3
+)
 
 // 本文件负责规则变更后的全量标签重建。
 func (s *TagService) runRebuildWorker() {
@@ -119,6 +131,8 @@ func (s *TagService) processRebuildJob(job *models.TagRebuildJob) {
 		s.finishRebuildJob(job, "superseded", "活动词典版本已变化")
 		return
 	}
+	// claimRebuildJob 刚刚续过租，这里记录续租时刻用于后续按间隔续租。
+	leaseRenewedAt := time.Now()
 	for {
 		select {
 		case <-s.ctx.Done():
@@ -147,7 +161,7 @@ func (s *TagService) processRebuildJob(job *models.TagRebuildJob) {
 			return
 		}
 
-		batchSucceeded, batchFailed := int64(0), int64(0)
+		batchSucceeded, batchFailed, batchSkipped := int64(0), int64(0), int64(0)
 		batchAffectedTagIDs := make(map[string][]string)
 		lastCursor := job.Cursor
 		for _, file := range files {
@@ -156,8 +170,13 @@ func (s *TagService) processRebuildJob(job *models.TagRebuildJob) {
 				s.pauseRebuildJob(job)
 				return
 			}
-			if !s.renewRebuildLease(job) {
-				return
+			if time.Since(leaseRenewedAt) >= tagRebuildLeaseRenewInterval {
+				if !s.renewRebuildLease(job) {
+					logger.LOG.Warn("重建任务租约续期失败，放弃本轮处理", "job_id", job.ID,
+						"cursor", job.Cursor, "processed", job.Processed)
+					return
+				}
+				leaseRenewedAt = time.Now()
 			}
 			if !s.jobVersionCurrent(job) {
 				s.finishRebuildJob(job, "superseded", "活动词典版本已变化")
@@ -189,7 +208,8 @@ func (s *TagService) processRebuildJob(job *models.TagRebuildJob) {
 						return
 					}
 					// 文件在生成期间被重命名等新事件重新入队，交由最新文件级任务处理。
-					batchSucceeded++
+					// 这里不能计入成功，否则 succeeded 会虚高并掩盖真实失败。
+					batchSkipped++
 					continue
 				}
 				s.failPendingState(state, err)
@@ -228,16 +248,27 @@ func (s *TagService) processRebuildJob(job *models.TagRebuildJob) {
 			return nil
 		})
 		if err != nil {
-			if !errors.Is(err, errStaleTagGeneration) {
-				logger.LOG.Error("提交标签重建批次失败", "job_id", job.ID, "cursor", lastCursor, "error", err)
+			if errors.Is(err, errStaleTagGeneration) {
+				// 任务已被取消或被其他实例接管，这属于正常让位而不是失败，不参与熔断计数。
+				logger.LOG.Info("重建任务已被其他实例接管，放弃本轮处理", "job_id", job.ID,
+					"cursor", job.Cursor, "processed", job.Processed)
+				return
+			}
+			failures := s.bumpRebuildBatchFailure(job)
+			logger.LOG.Error("提交标签重建批次失败", "job_id", job.ID, "cursor", lastCursor,
+				"processed", job.Processed, "batch_failures", failures, "error", err)
+			if failures >= tagRebuildMaxBatchFailures {
+				s.failRebuildJobByID(job.ID, fmt.Sprintf("连续%d次提交批次失败: %v", failures, err))
 			}
 			return
 		}
+		s.resetRebuildBatchFailure(job)
 		job.Cursor = lastCursor
 		job.Processed = nextProcessed
 		job.Succeeded = nextSucceeded
 		job.Failed = nextFailed
 		job.LeaseExpires = timePointer(leaseExpires)
+		s.logRebuildProgress(job, batchSkipped)
 	}
 }
 
@@ -286,14 +317,24 @@ func (s *TagService) renewRebuildLease(job *models.TagRebuildJob) bool {
 	return true
 }
 
-func (s *TagService) finishRebuildJob(job *models.TagRebuildJob, status, message string) {
+// finishRebuildJob 结束任务并返回受影响行数。
+// 必须带上 status='running' 守卫：cancel 和 retry 都会把 run_token 置空，
+// 缺少守卫时持有空 token 的 job 对象会把已取消的任务重新改成终态。
+func (s *TagService) finishRebuildJob(job *models.TagRebuildJob, status, message string) int64 {
 	now := time.Now()
-	_ = s.factory.DB().Model(&models.TagRebuildJob{}).
-		Where("id = ? AND run_token = ?", job.ID, job.RunToken).
+	result := s.factory.DB().Model(&models.TagRebuildJob{}).
+		Where("id = ? AND run_token = ? AND status = ?", job.ID, job.RunToken, "running").
 		Updates(map[string]interface{}{
 			"status": status, "last_error": message, "run_token": "", "lease_expires_at": nil,
 			"finished_at": now, "updated_at": now,
-		}).Error
+		})
+	s.rebuildBatchFailures.Delete(job.ID)
+	if result.Error != nil {
+		logger.LOG.Warn("结束标签重建任务失败", "job_id", job.ID, "status", status, "error", result.Error)
+	} else if result.RowsAffected != 1 {
+		logger.LOG.Warn("结束标签重建任务未命中，任务可能已被取消或接管", "job_id", job.ID,
+			"status", status, "rows_affected", result.RowsAffected)
+	}
 	duration := time.Duration(0)
 	rate := float64(0)
 	if job.StartedAt != nil {
@@ -304,16 +345,77 @@ func (s *TagService) finishRebuildJob(job *models.TagRebuildJob, status, message
 	}
 	logger.LOG.Info("标签重建任务结束", "job_id", job.ID, "status", status, "processed", job.Processed,
 		"failed", job.Failed, "duration", duration, "files_per_second", rate)
+	return result.RowsAffected
 }
 
 func (s *TagService) pauseRebuildJob(job *models.TagRebuildJob) {
 	now := time.Now()
-	_ = s.factory.DB().Model(&models.TagRebuildJob{}).
+	result := s.factory.DB().Model(&models.TagRebuildJob{}).
 		Where("id = ? AND run_token = ? AND status = ?", job.ID, job.RunToken, "running").
 		Updates(map[string]interface{}{
 			"status": "pending", "run_token": "", "lease_expires_at": nil, "updated_at": now,
-		}).Error
+		})
+	if result.Error != nil {
+		logger.LOG.Warn("暂停标签重建任务失败", "job_id", job.ID, "error", result.Error)
+	} else if result.RowsAffected != 1 {
+		logger.LOG.Warn("暂停标签重建任务未命中，任务可能已被取消或接管", "job_id", job.ID,
+			"rows_affected", result.RowsAffected)
+	}
 	logger.LOG.Info("自动标签已关闭，重建任务暂停", "job_id", job.ID, "processed", job.Processed)
+}
+
+// bumpRebuildBatchFailure 递增任务连续提交批次失败的次数。计数只在进程内保存，
+// 服务重启后任务本就要重新评估，不需要持久化。
+func (s *TagService) bumpRebuildBatchFailure(job *models.TagRebuildJob) int64 {
+	value, _ := s.rebuildBatchFailures.LoadOrStore(job.ID, new(int64))
+	return atomic.AddInt64(value.(*int64), 1)
+}
+
+func (s *TagService) resetRebuildBatchFailure(job *models.TagRebuildJob) {
+	s.rebuildBatchFailures.Delete(job.ID)
+}
+
+// failRebuildJobByID 是连续提交失败后的熔断入口。这里刻意不校验 run_token：
+// 当租约已被其他实例接管时 token 早已变化，带 token 的写入会落空，任务会重新
+// 回到"永远 running 但进度不涨"的死循环。
+func (s *TagService) failRebuildJobByID(jobID, message string) {
+	now := time.Now()
+	result := s.factory.DB().WithContext(s.ctx).Model(&models.TagRebuildJob{}).
+		Where("id = ? AND status = ?", jobID, "running").
+		Updates(map[string]interface{}{
+			"status": "failed", "last_error": message, "run_token": "",
+			"lease_expires_at": nil, "finished_at": now, "updated_at": now,
+		})
+	s.rebuildBatchFailures.Delete(jobID)
+	if result.Error != nil {
+		logger.LOG.Error("终止标签重建任务失败", "job_id", jobID, "error", result.Error)
+		return
+	}
+	if result.RowsAffected != 1 {
+		logger.LOG.Warn("终止标签重建任务未命中，任务可能已结束", "job_id", jobID,
+			"rows_affected", result.RowsAffected)
+		return
+	}
+	logger.LOG.Error("标签重建任务连续提交批次失败，已强制终止", "job_id", jobID, "error", message)
+}
+
+// logRebuildProgress 每批提交成功后输出一次进度。此前只有任务结束时才有一条日志，
+// 大库重建过程中界面和日志都看不到任何推进，无法区分"在跑"和"卡死"。
+func (s *TagService) logRebuildProgress(job *models.TagRebuildJob, skipped int64) {
+	percent := float64(0)
+	if job.Total > 0 {
+		percent = math.Round(float64(job.Processed)/float64(job.Total)*10000) / 100
+	}
+	rate := float64(0)
+	if job.StartedAt != nil {
+		if duration := time.Since(*job.StartedAt); duration > 0 {
+			rate = float64(job.Processed) / duration.Seconds()
+		}
+	}
+	logger.LOG.Info("标签重建批次已提交", "job_id", job.ID, "cursor", job.Cursor,
+		"processed", job.Processed, "total", job.Total, "percent", percent,
+		"succeeded", job.Succeeded, "failed", job.Failed, "skipped", skipped,
+		"files_per_second", rate)
 }
 
 func (s *TagService) recordRebuildFailure(jobID, userID, ufID string, rebuildErr error) {

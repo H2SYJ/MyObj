@@ -936,6 +936,8 @@ export default {
       diff: 'Diff',
       rollback: 'Roll back as new version',
       rebuildJobs: 'Rebuild jobs',
+      rebuildAll: 'Rebuild all tags',
+      rebuildStarted: 'Full tag rebuild job created',
       scope: 'Scope',
       progress: 'Progress',
       failedCount: '{count} failed',

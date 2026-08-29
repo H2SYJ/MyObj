@@ -89,6 +89,7 @@ func (a *AdminHandler) Router(c *gin.RouterGroup) {
 		admin.POST("/tag/drafts/:id/preview", a.PreviewTagDraft)
 		admin.POST("/tag/drafts/:id/publish", a.PublishTagDraft)
 		admin.POST("/tag/rule-sets/:id/rollback", a.RollbackTagRuleSet)
+		admin.POST("/tag/rebuild-jobs", a.CreateTagRebuildJob)
 		admin.GET("/tag/rebuild-jobs", a.ListTagRebuildJobs)
 		admin.GET("/tag/rebuild-jobs/:id", a.GetTagRebuildJob)
 		admin.GET("/tag/rebuild-jobs/:id/failures", a.ListTagRebuildFailures)
@@ -377,6 +378,20 @@ func (a *AdminHandler) PublishTagDraft(c *gin.Context) {
 func (a *AdminHandler) RollbackTagRuleSet(c *gin.Context) {
 	ruleSet, job, err := a.service.TagService().RollbackGlobalRules(c.Request.Context(), c.Param("id"), c.GetString("userID"))
 	adminTagResult(c, gin.H{"rule_set": ruleSet, "rebuild_job": job}, err)
+}
+
+// CreateTagRebuildJob godoc
+// @Summary 创建全量标签重建任务
+// @Description 按当前活动规则版本重建全部文件的自动标签，存量未完成任务会被标记为已废弃
+// @Tags 标签与词典管理
+// @Produce json
+// @Security BearerAuth
+// @Success 200 {object} models.JsonResponse{data=models.TagRebuildJob}
+// @Failure 400 {object} models.JsonResponse
+// @Router /admin/tag/rebuild-jobs [post]
+func (a *AdminHandler) CreateTagRebuildJob(c *gin.Context) {
+	result, err := a.service.TagService().CreateGlobalRebuildJob(c.Request.Context(), c.GetString("userID"))
+	adminTagResult(c, result, err)
 }
 
 // ListTagRebuildJobs godoc

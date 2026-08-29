@@ -21,6 +21,16 @@ func (s *TagService) CreateRebuildJob(ctx context.Context, targetVersion int64, 
 	return job, nil
 }
 
+// CreateGlobalRebuildJob 按当前活动规则版本创建一次全量重建任务。
+// 这是运维主动触发重建的入口，避免只能通过改规则间接制造任务。
+func (s *TagService) CreateGlobalRebuildJob(ctx context.Context, requestedBy string) (*models.TagRebuildJob, error) {
+	runtime := s.globalRuntime.Load()
+	if runtime == nil || runtime.snapshot == nil {
+		return nil, errors.New("全局标签规则尚未加载")
+	}
+	return s.CreateRebuildJob(ctx, runtime.snapshot.GlobalVersion, requestedBy)
+}
+
 func (s *TagService) createRebuildJob(ctx context.Context, targetVersion int64, requestedBy string, db *gorm.DB) (*models.TagRebuildJob, error) {
 	now := time.Now()
 	job := &models.TagRebuildJob{
@@ -72,12 +82,22 @@ func (s *TagService) CancelRebuildJob(ctx context.Context, id string) error {
 func (s *TagService) RetryRebuildJob(ctx context.Context, id string) error {
 	now := time.Now()
 	err := s.factory.DB().WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		// 任务被废弃通常是因为期间发布了新规则。重试时必须把目标版本对齐到当前活动
+		// 版本，否则任务一被捞起就会再次因版本不匹配被标记回 superseded，表现为
+		// "重试后任务瞬间又没了"。
+		updates := map[string]interface{}{
+			"status": "pending", "cursor_value": "",
+			"processed": 0, "succeeded": 0, "failed": 0, "last_error": "",
+			"run_token": "", "lease_expires_at": nil, "started_at": nil, "finished_at": nil, "updated_at": now,
+		}
+		// 目标版本取自内存中的活动快照，与 worker 侧 jobVersionCurrent 的校验对象保持
+		// 一致。这里不再查库，既少一次查询，也避免读到的版本与 worker 校验的版本打架。
+		if runtime := s.globalRuntime.Load(); runtime != nil && runtime.snapshot != nil {
+			updates["target_version"] = runtime.snapshot.GlobalVersion
+		}
 		result := tx.Model(&models.TagRebuildJob{}).
-			Where("id = ? AND status IN ?", id, []string{"failed", "completed_with_errors", "cancelled"}).
-			Updates(map[string]interface{}{
-				"status": "pending", "cursor_value": "", "processed": 0, "succeeded": 0, "failed": 0,
-				"last_error": "", "run_token": "", "lease_expires_at": nil, "started_at": nil, "finished_at": nil, "updated_at": now,
-			})
+			Where("id = ? AND status IN ?", id, []string{"failed", "completed_with_errors", "cancelled", "superseded"}).
+			Updates(updates)
 		if result.Error != nil {
 			return result.Error
 		}

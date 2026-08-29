@@ -211,6 +211,7 @@ export const getTagRebuildFailures = (id: string, status = '', limit = 50) =>
   get<ApiResponse<TagRebuildFailure[]>>(`${adminTag.REBUILD_JOBS}/${id}/failures`, { status, limit })
 export const retryTagRebuildFailure = (jobId: string, fileId: string) =>
   post<ApiResponse<null>>(`${adminTag.REBUILD_JOBS}/${jobId}/failures/${fileId}/retry`)
+export const createTagRebuildJob = () => post<ApiResponse<TagRebuildJob>>(adminTag.REBUILD_JOBS)
 export const cancelTagRebuildJob = (id: string) => post<ApiResponse<null>>(`${adminTag.REBUILD_JOBS}/${id}/cancel`)
 export const retryTagRebuildJob = (id: string) => post<ApiResponse<null>>(`${adminTag.REBUILD_JOBS}/${id}/retry`)
 
