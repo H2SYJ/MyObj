@@ -31,7 +31,7 @@ type Subscription struct {
 	PluginVersion      string     `gorm:"column:plugin_version;type:varchar(64);not null" json:"plugin_version"`
 	ConfigEncrypted    string     `gorm:"column:config_encrypted;type:text" json:"-"`
 	GrantedPermissions string     `gorm:"column:granted_permissions;type:text" json:"-"`
-	ScheduleTime       string     `gorm:"column:schedule_time;type:varchar(5);not null" json:"schedule_time"`
+	ScheduleTime       string     `gorm:"column:schedule_time;type:varchar(64);not null" json:"schedule_time"`
 	SavePath           string     `gorm:"column:save_path;type:text;not null" json:"save_path"`
 	InitialLimit       int        `gorm:"column:initial_limit;type:integer;not null;default:10" json:"initial_limit"`
 	MaxItemsPerRun     int        `gorm:"column:max_items_per_run;type:integer;not null;default:100" json:"max_items_per_run"`

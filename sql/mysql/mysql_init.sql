@@ -331,7 +331,7 @@ CREATE TABLE `subscription` (
     `plugin_version` VARCHAR(64) NOT NULL,
     `config_encrypted` TEXT,
     `granted_permissions` TEXT,
-    `schedule_time` VARCHAR(5) NOT NULL,
+    `schedule_time` VARCHAR(64) NOT NULL,
     `save_path` TEXT NOT NULL,
     `initial_limit` INT NOT NULL DEFAULT 10,
     `max_items_per_run` INT NOT NULL DEFAULT 100,

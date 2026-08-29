@@ -19,7 +19,7 @@
           >{{ pluginName(row.plugin_id) }} v{{ row.plugin_version }}</template
         ></el-table-column
       >
-      <el-table-column prop="schedule_time" :label="t('subscriptions.dailyTime')" width="100" />
+      <el-table-column prop="schedule_time" :label="t('subscriptions.dailyTime')" min-width="110" show-overflow-tooltip />
       <el-table-column prop="save_path" :label="t('subscriptions.savePath')" min-width="180" />
       <el-table-column :label="t('subscriptions.status')" width="150"
         ><template #default="{ row }"
@@ -169,9 +169,26 @@
               />
             </el-form-item>
           </template>
-          <el-form-item :label="t('subscriptions.executionTime')"
-            ><el-time-picker v-model="form.schedule_time" value-format="HH:mm" format="HH:mm"
-          /></el-form-item>
+          <el-form-item :label="t('subscriptions.executionTime')">
+            <div class="schedule-editor">
+              <el-radio-group v-model="scheduleMode">
+                <el-radio value="daily">{{ t('subscriptions.modeDaily') }}</el-radio>
+                <el-radio value="cron">{{ t('subscriptions.modeCron') }}</el-radio>
+              </el-radio-group>
+              <el-time-picker
+                v-if="scheduleMode === 'daily'"
+                v-model="form.schedule_time"
+                value-format="HH:mm"
+                format="HH:mm"
+              />
+              <el-input
+                v-else
+                v-model="form.schedule_time"
+                :placeholder="t('subscriptions.cronPlaceholder')"
+                clearable
+              />
+            </div>
+          </el-form-item>
           <el-form-item :label="t('subscriptions.savePath')" required
             ><el-input v-model="form.save_path" placeholder="/离线下载/订阅"
           /></el-form-item>
@@ -334,6 +351,23 @@
   const mobileActionsVisible = ref(false)
   const mobileActionTarget = ref<Subscription>()
   const configuredSecrets = ref<string[]>([])
+  const scheduleMode = ref<'daily' | 'cron'>('daily')
+  const isDailySchedule = (value: string) => /^\d{1,2}:\d{2}$/.test((value || '').trim())
+  const isValidCron = (value: string) => {
+    const v = (value || '').trim()
+    if (v.startsWith('@')) return true
+    const fields = v.split(/\s+/).filter(Boolean)
+    return fields.length === 5 || fields.length === 6
+  }
+  // 切换模式时把执行时间转换为新模式下的默认等价值，避免出现无效混合值。
+  watch(scheduleMode, mode => {
+    if (mode === 'daily' && !isDailySchedule(form.schedule_time)) {
+      form.schedule_time = '08:00'
+    } else if (mode === 'cron' && isDailySchedule(form.schedule_time)) {
+      const [hour, minute] = form.schedule_time.split(':').map(Number)
+      form.schedule_time = `0 ${minute} ${hour} * * *`
+    }
+  })
   const listRequest = useLatestRequest()
   const historyRequest = useLatestRequest()
   const form = reactive<SubscriptionPayload>({
@@ -422,7 +456,7 @@
       }
     }
   }
-  const resetForm = () =>
+  const resetForm = () => {
     Object.assign(form, {
       name: '',
       plugin_id: '',
@@ -434,6 +468,8 @@
       max_items_per_run: 100,
       run_now: true
     })
+    scheduleMode.value = 'daily'
+  }
   const openCreate = () => {
     editingId.value = ''
     configuredSecrets.value = []
@@ -451,6 +487,7 @@
       }
     }
     Object.assign(form, { ...row, config })
+    scheduleMode.value = isDailySchedule(row.schedule_time) ? 'daily' : 'cron'
     dialogVisible.value = true
   }
   const addListItem = (key: string) => {
@@ -465,6 +502,9 @@
   const save = async () => {
     if (!form.name || !form.plugin_id || !form.schedule_time) {
       return ElMessage.warning(t('subscriptions.requiredFields'))
+    }
+    if (scheduleMode.value === 'cron' && !isValidCron(form.schedule_time)) {
+      return ElMessage.warning(t('subscriptions.cronInvalid'))
     }
     if (!form.save_path.trim()) return ElMessage.warning(t('subscriptions.savePathRequired'))
     saving.value = true
@@ -549,6 +589,12 @@
 </script>
 
 <style scoped>
+  .schedule-editor {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    width: 100%;
+  }
   .mobile-subscription-list,
   .mobile-history-list {
     display: grid;

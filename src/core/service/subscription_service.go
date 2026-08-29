@@ -26,6 +26,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/robfig/cron/v3"
 	"gorm.io/gorm"
 )
 
@@ -1250,17 +1251,36 @@ func nextSchedule(value string, now time.Time) (time.Time, error) {
 	return nextScheduleInLocation(value, now, subscriptionLocation())
 }
 
+// subscriptionCronParser 支持6段含秒（秒 分 时 日 月 周）的cron表达式及@daily等别名。
+var subscriptionCronParser = cron.NewParser(cron.Second | cron.Minute | cron.Hour |
+	cron.Dom | cron.Month | cron.Dow | cron.Descriptor)
+
 func nextScheduleInLocation(value string, now time.Time, location *time.Location) (time.Time, error) {
-	parsed, err := time.Parse("15:04", value)
+	v := strings.TrimSpace(value)
+	// 兼容存量"HH:mm"格式：每日一次，当天已过则顺延一天。
+	if parsed, err := time.Parse("15:04", v); err == nil {
+		now = now.In(location)
+		next := time.Date(now.Year(), now.Month(), now.Day(), parsed.Hour(), parsed.Minute(), 0, 0, location)
+		if !next.After(now) {
+			next = next.AddDate(0, 0, 1)
+		}
+		return next, nil
+	}
+	// cron表达式：@别名原样；5段（分 时 日 月 周）自动补秒位；6段原样。
+	expr := v
+	switch fields := strings.Fields(v); {
+	case strings.HasPrefix(v, "@"):
+	case len(fields) == 5:
+		expr = "0 " + v
+	case len(fields) == 6:
+	default:
+		return time.Time{}, fmt.Errorf("执行时间必须为HH:mm或5/6段cron表达式")
+	}
+	schedule, err := subscriptionCronParser.Parse(expr)
 	if err != nil {
-		return time.Time{}, fmt.Errorf("执行时间必须为HH:mm")
+		return time.Time{}, fmt.Errorf("cron表达式无效: %v", err)
 	}
-	now = now.In(location)
-	next := time.Date(now.Year(), now.Month(), now.Day(), parsed.Hour(), parsed.Minute(), 0, 0, location)
-	if !next.After(now) {
-		next = next.AddDate(0, 0, 1)
-	}
-	return next, nil
+	return schedule.Next(now.In(location)), nil
 }
 
 func subscriptionLocation() *time.Location {
