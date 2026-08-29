@@ -34,7 +34,7 @@ func (s *TagService) SaveCategory(ctx context.Context, input request.AdminTagCat
 		return nil, errors.New("标签分类代码或名称无效")
 	}
 	if input.Color == "" {
-		input.Color = "#909399"
+		input.Color = "#78716c"
 	}
 	now := time.Now()
 	if input.ID == "" {

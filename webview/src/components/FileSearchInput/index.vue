@@ -6,11 +6,10 @@
         <el-tag
           v-for="tag in tags"
           :key="tag.id"
-          class="file-search-input__tag"
+          class="file-search-input__tag myobj-tag"
           closable
           disable-transitions
-          :color="tag.color || undefined"
-          :style="tagTextStyle(tag.color)"
+          :style="tagStyle(tag.color)"
           @close="removeTag(tag.id)"
         >
           #{{ tag.name }}
@@ -112,7 +111,7 @@
   import { getTagSuggestions, type TagSuggestionScope } from '@/api/tag'
   import { useI18n } from '@/composables'
   import type { CompactTag } from '@/types'
-  import { getContrastText } from '@/utils/ui'
+  import { getTagStyle } from '@/utils/ui'
 
   interface SearchSubmitPayload {
     keyword: string
@@ -152,7 +151,7 @@
   }>()
 
   const { t } = useI18n()
-  const tagTextStyle = (color?: string) => (color ? { '--el-tag-text-color': getContrastText(color) } : {})
+  const tagStyle = (color?: string) => getTagStyle(color || '')
   const rootRef = ref<HTMLElement>()
   const inputRef = ref<HTMLInputElement>()
   const focused = ref(false)

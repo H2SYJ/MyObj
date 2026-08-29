@@ -3,6 +3,7 @@
     <el-tag
       v-for="tag in visibleTags"
       :key="tag.id"
+      class="myobj-tag"
       size="small"
       effect="plain"
       :style="tagStyle(tag.color)"
@@ -43,11 +44,9 @@
     gap: 5px;
     overflow: hidden;
   }
+  /* 配色交由全局 .myobj-tag 规则按 --myobj-tag-color 派生，此处只管布局 */
   .file-tags :deep(.el-tag) {
     max-width: 120px;
-    border-color: var(--el-tag-border-color, var(--el-color-primary-light-8));
-    color: var(--el-tag-text-color, var(--el-color-primary));
-    background: var(--el-tag-bg-color, var(--el-color-primary-light-9));
   }
   .file-tags :deep(.el-tag__content) {
     overflow: hidden;

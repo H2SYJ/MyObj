@@ -13,7 +13,7 @@ vi.mock('@/composables', () => ({
 
 const ElIcon = { template: '<span><slot /></span>' }
 const ElTag = {
-  props: ['closable', 'color'],
+  props: ['closable'],
   emits: ['close'],
   template: '<span class="tag"><slot /><button class="tag-close" @click="$emit(\'close\')">x</button></span>'
 }

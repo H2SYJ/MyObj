@@ -15,15 +15,15 @@ import (
 )
 
 var builtinTagCategories = []models.TagCategory{
-	{ID: "title", Code: "title", Name: "标题", Color: "#409eff", SortOrder: 10, Enabled: true, Builtin: true},
-	{ID: "file_type", Code: "file_type", Name: "文件类型", Color: "#67c23a", SortOrder: 20, Enabled: true, Builtin: true},
-	{ID: "year", Code: "year", Name: "年份", Color: "#e6a23c", SortOrder: 30, Enabled: true, Builtin: true},
-	{ID: "season_episode", Code: "season_episode", Name: "季集", Color: "#f56c6c", SortOrder: 40, Enabled: true, Builtin: true},
-	{ID: "resolution", Code: "resolution", Name: "分辨率", Color: "#909399", SortOrder: 50, Enabled: true, Builtin: true},
-	{ID: "codec", Code: "codec", Name: "编码", Color: "#7b61ff", SortOrder: 60, Enabled: true, Builtin: true},
-	{ID: "source", Code: "source", Name: "来源", Color: "#13ce66", SortOrder: 70, Enabled: true, Builtin: true},
-	{ID: "language", Code: "language", Name: "语言", Color: "#ff8a00", SortOrder: 80, Enabled: true, Builtin: true},
-	{ID: "other", Code: "other", Name: "其他", Color: "#909399", SortOrder: 90, Enabled: true, Builtin: true},
+	{ID: "title", Code: "title", Name: "标题", Color: "#3b82f6", SortOrder: 10, Enabled: true, Builtin: true},
+	{ID: "file_type", Code: "file_type", Name: "文件类型", Color: "#059669", SortOrder: 20, Enabled: true, Builtin: true},
+	{ID: "year", Code: "year", Name: "年份", Color: "#d97706", SortOrder: 30, Enabled: true, Builtin: true},
+	{ID: "season_episode", Code: "season_episode", Name: "季集", Color: "#dc2626", SortOrder: 40, Enabled: true, Builtin: true},
+	{ID: "resolution", Code: "resolution", Name: "分辨率", Color: "#475569", SortOrder: 50, Enabled: true, Builtin: true},
+	{ID: "codec", Code: "codec", Name: "编码", Color: "#7c3aed", SortOrder: 60, Enabled: true, Builtin: true},
+	{ID: "source", Code: "source", Name: "来源", Color: "#0d9488", SortOrder: 70, Enabled: true, Builtin: true},
+	{ID: "language", Code: "language", Name: "语言", Color: "#db2777", SortOrder: 80, Enabled: true, Builtin: true},
+	{ID: "other", Code: "other", Name: "其他", Color: "#78716c", SortOrder: 90, Enabled: true, Builtin: true},
 }
 
 const pureNumericTagCleanupVersion = "20260804_pure_numeric_tag_cleanup"

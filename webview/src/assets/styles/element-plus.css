@@ -370,6 +370,26 @@ html.dark .el-tag.el-tag--dark {
 }
 
 /* ============================================
+   业务标签：浅底彩字（由源色派生，亮暗自适应）
+   源色由 getTagStyle() 内联输出为 --myobj-tag-color；
+   无源色时回退到主题主色。
+   ============================================ */
+
+.myobj-tag {
+  --myobj-tag-color: var(--el-color-primary);
+  --el-tag-bg-color: color-mix(in srgb, var(--myobj-tag-color) 12%, transparent);
+  --el-tag-border-color: color-mix(in srgb, var(--myobj-tag-color) 28%, transparent);
+  --el-tag-text-color: var(--myobj-tag-color);
+  --el-tag-hover-color: var(--myobj-tag-color);
+}
+
+html.dark .myobj-tag {
+  --el-tag-bg-color: color-mix(in srgb, var(--myobj-tag-color) 20%, transparent);
+  --el-tag-border-color: color-mix(in srgb, var(--myobj-tag-color) 38%, transparent);
+  --el-tag-text-color: color-mix(in srgb, var(--myobj-tag-color) 60%, rgb(255 255 255));
+}
+
+/* ============================================
    深色模式：输入框样式（集中配置）
    ============================================ */
 

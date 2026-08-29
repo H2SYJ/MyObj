@@ -35,4 +35,22 @@ describe('Element Plus 全局主题样式', () => {
     expect(css).toMatch(/html\.dark \.el-tag\.el-tag--plain\s*{[^}]*--myobj-tag-bg-alpha: 0\.08;/s)
     expect(css).toMatch(/html\.dark \.el-tag\.el-tag--dark\s*{[^}]*--myobj-tag-bg-alpha: 0\.32;/s)
   })
+
+  it('为业务标签提供由源色派生的浅底彩字配色（亮暗自适应）', () => {
+    expect(css).toMatch(
+      /\.myobj-tag\s*{[^}]*--myobj-tag-color: var\(--el-color-primary\);[\s\S]*?--el-tag-bg-color: color-mix\(in srgb, var\(--myobj-tag-color\) 12%, transparent\);/s
+    )
+    expect(css).toMatch(
+      /\.myobj-tag\s*{[^}]*--el-tag-border-color: color-mix\(in srgb, var\(--myobj-tag-color\) 28%, transparent\);/s
+    )
+    expect(css).toMatch(
+      /html\.dark \.myobj-tag\s*{[^}]*--el-tag-bg-color: color-mix\(in srgb, var\(--myobj-tag-color\) 20%, transparent\);/s
+    )
+    expect(css).toMatch(
+      /html\.dark \.myobj-tag\s*{[^}]*--el-tag-border-color: color-mix\(in srgb, var\(--myobj-tag-color\) 38%, transparent\);/s
+    )
+    expect(css).toMatch(
+      /html\.dark \.myobj-tag\s*{[^}]*--el-tag-text-color: color-mix\(in srgb, var\(--myobj-tag-color\) 60%, rgb\(255 255 255\)\);/s
+    )
+  })
 })

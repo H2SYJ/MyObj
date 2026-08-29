@@ -45,7 +45,6 @@
   import { getTagCloud, type TagCloudItem } from '@/api/tag'
   import WorkspacePage from '@/components/WorkspacePage/index.vue'
   import { useI18n, useResponsive } from '@/composables'
-  import { getContrastText } from '@/utils/ui'
   import { sortTagCloudItems, tagCloudFontSize, tagCloudSizeClass } from './tagCloud'
 
   const router = useRouter()
@@ -75,10 +74,10 @@
   }
   const fontSize = (tag: TagCloudItem) =>
     tagCloudFontSize(tag.file_count, minCount.value, maxCount.value, isHandheld.value)
+  /* 只输出源色与字号，浅底彩字的文字/背景/边框由样式表按 color-mix 派生 */
   const tagStyle = (tag: TagCloudItem) => ({
     '--tag-color': tag.category.color,
-    '--tag-font-size': `${fontSize(tag)}px`,
-    '--tag-text-color': getContrastText(tag.category.color)
+    '--tag-font-size': `${fontSize(tag)}px`
   })
   const tooltip = (tag: TagCloudItem) =>
     tag.system
@@ -136,23 +135,21 @@
   }
   .tag-cloud-item {
     --tag-color: var(--primary-color);
+    --tag-text-color: var(--tag-color);
     min-width: 0;
     min-height: 38px;
     padding: 7px 10px 7px 15px;
-    border: 1px solid color-mix(in srgb, var(--tag-color) 62%, rgb(0 0 0));
+    border: 1px solid color-mix(in srgb, var(--tag-color) 28%, transparent);
     border-radius: 999px;
     display: inline-flex;
     align-items: center;
     gap: 8px;
     color: var(--tag-text-color);
-    background: var(--tag-color);
-    box-shadow: 0 4px 12px color-mix(in srgb, var(--tag-color) 8%, transparent);
+    background: color-mix(in srgb, var(--tag-color) 12%, transparent);
     cursor: pointer;
     user-select: none;
     transition:
-      transform 160ms ease,
       border-color 160ms ease,
-      box-shadow 160ms ease,
       background 160ms ease;
   }
   .tag-cloud-item.is-medium {
@@ -165,13 +162,8 @@
     gap: 10px;
   }
   .tag-cloud-item:hover {
-    transform: translateY(-2px);
-    border-color: color-mix(in srgb, var(--tag-color) 70%, rgb(0 0 0));
-    background: color-mix(in srgb, var(--tag-color) 88%, rgb(0 0 0));
-    box-shadow: 0 9px 20px color-mix(in srgb, var(--tag-color) 18%, transparent);
-  }
-  .tag-cloud-item:active {
-    transform: translateY(0);
+    border-color: color-mix(in srgb, var(--tag-color) 38%, transparent);
+    background: color-mix(in srgb, var(--tag-color) 18%, transparent);
   }
   .tag-cloud-item:focus-visible {
     outline: 3px solid color-mix(in srgb, var(--primary-color) 35%, transparent);
@@ -183,9 +175,9 @@
     text-overflow: ellipsis;
     white-space: nowrap;
     font-size: var(--tag-font-size);
-    font-weight: 720;
+    font-weight: 600;
     line-height: 1.15;
-    letter-spacing: -0.018em;
+    letter-spacing: -0.01em;
   }
   .tag-cloud-item__count {
     min-width: 24px;
@@ -195,9 +187,9 @@
     display: inline-grid;
     place-items: center;
     color: var(--tag-text-color);
-    background: rgba(0, 0, 0, 0.14);
+    background: color-mix(in srgb, var(--tag-color) 14%, transparent);
     font-size: 11px;
-    font-weight: 750;
+    font-weight: 600;
   }
   .is-large .tag-cloud-item__count {
     min-width: 30px;
@@ -209,13 +201,12 @@
     opacity: 0.7;
   }
   html.dark .tag-cloud-item {
-    color: var(--tag-text-color);
-    background: var(--tag-color);
-    border-color: color-mix(in srgb, var(--tag-color) 62%, rgb(255 255 255));
+    --tag-text-color: color-mix(in srgb, var(--tag-color) 60%, rgb(255 255 255));
+    background: color-mix(in srgb, var(--tag-color) 20%, transparent);
+    border-color: color-mix(in srgb, var(--tag-color) 38%, transparent);
   }
   html.dark .tag-cloud-item__count {
-    color: var(--tag-text-color);
-    background: rgba(255, 255, 255, 0.14);
+    background: color-mix(in srgb, var(--tag-color) 22%, transparent);
   }
   @media (max-width: 767px) {
     .tag-cloud-page {
@@ -241,10 +232,6 @@
   @media (prefers-reduced-motion: reduce) {
     .tag-cloud-item {
       transition: none;
-    }
-    .tag-cloud-item:hover,
-    .tag-cloud-item:active {
-      transform: none;
     }
   }
 </style>

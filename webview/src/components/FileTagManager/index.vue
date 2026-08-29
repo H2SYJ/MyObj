@@ -32,6 +32,7 @@
             <el-tag
               v-for="tag in automaticTags"
               :key="tag.id"
+              class="myobj-tag"
               closable
               effect="plain"
               :style="tagStyle(tag)"
@@ -69,7 +70,7 @@
           </div>
           <div v-if="manualTags.length" class="tag-manager__manual-list">
             <div v-for="tag in manualTags" :key="tag.id" class="tag-manager__manual-item">
-              <el-tag effect="plain" :style="tagStyle(tag)">{{ tag.name }} · {{ tag.category.name }}</el-tag>
+              <el-tag class="myobj-tag" effect="plain" :style="tagStyle(tag)">{{ tag.name }} · {{ tag.category.name }}</el-tag>
               <el-switch
                 :model-value="tag.visibility === 'public'"
                 :active-text="t('tags.public')"

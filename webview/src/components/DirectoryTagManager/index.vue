@@ -13,6 +13,7 @@
           <el-tag
             v-for="tag in details.tags"
             :key="tag.id"
+            class="myobj-tag"
             closable
             effect="plain"
             :style="tagStyle(tag.category.color)"

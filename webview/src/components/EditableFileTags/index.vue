@@ -5,7 +5,7 @@
       :key="tag.id"
       size="small"
       effect="plain"
-      class="editable-file-tags__tag"
+      class="editable-file-tags__tag myobj-tag"
       :class="{ 'is-removing': removingTagIds.has(tag.id) }"
       :style="tagStyle(tag)"
     >
@@ -393,11 +393,9 @@
     justify-content: flex-end;
     gap: 6px;
   }
+  /* 配色交由全局 .myobj-tag 规则按 --myobj-tag-color 派生 */
   .editable-file-tags__tag {
     max-width: 180px;
-    border-color: var(--el-tag-border-color, var(--el-color-primary-light-8));
-    color: var(--el-tag-text-color, var(--el-color-primary));
-    background: var(--el-tag-bg-color, var(--el-color-primary-light-9));
   }
   .editable-file-tags__tag.is-removing {
     opacity: 0.62;
